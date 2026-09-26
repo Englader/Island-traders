@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bankCheck, countsPhrase, rowKind, rowOf, rowSides, signed, stepRow, stepValue, type BoxRule } from '../web/src/game/trade.js';
+import { bankCheck, countsPhrase, pickRules, rowCount, rowKind, rowOf, rowSides, signed, stepRow, stepValue, type BoxRule, type SignedCounts } from '../web/src/game/trade.js';
 
 const rates = { brick: 4, lumber: 3, wool: 2, grain: 4, ore: 4 };
 
@@ -67,5 +67,40 @@ describe('trade row', () => {
     expect(countsPhrase({ brick: 1, wool: 2, ore: 3 })).toBe('1 brick, 2 wool and 3 ore');
     expect(countsPhrase({})).toBe('nothing');
     expect([signed(2), signed(-1), signed(0)]).toEqual(['+2', '−1', '0']);
+  });
+});
+
+describe('picking cards (discards on a 7, free resources)', () => {
+  const hand = { brick: 3, lumber: 2, wool: 1, grain: 3, ore: 0 };
+
+  it('discards up to what you hold, and stops at the number owed', () => {
+    let row: SignedCounts = {};
+    const tap = (r: keyof typeof hand) => (row = stepRow(row, r, -1, pickRules(row, 4, hand, -1)[r]));
+    expect(pickRules(row, 4, hand, -1).brick).toEqual({ min: -3, max: 0 });
+    // nothing to discard of ore, and nothing to take back yet
+    expect(stepValue(0, -1, pickRules(row, 4, hand, -1).ore)).toBeNull();
+    expect(stepValue(0, 1, pickRules(row, 4, hand, -1).brick)).toBeNull();
+    tap('wool');
+    tap('wool');
+    expect(row).toEqual({ wool: -1 });
+    tap('brick');
+    tap('brick');
+    tap('grain');
+    expect(rowCount(row)).toBe(4);
+    // four picked: no box goes further, but each can be taken back
+    const full = pickRules(row, 4, hand, -1);
+    for (const r of ['brick', 'lumber', 'wool', 'grain', 'ore'] as const) expect(stepValue(row[r] ?? 0, -1, full[r])).toBeNull();
+    expect(stepValue(-2, 1, pickRules(row, 4, hand, -1).brick)).toBe(-1);
+    tap('lumber');
+    expect(rowSides(row).give).toEqual({ brick: 2, wool: 1, grain: 1 });
+  });
+
+  it('takes up to what the bank has', () => {
+    const bank = { brick: 0, lumber: 19, wool: 1, grain: 19, ore: 19 };
+    expect(pickRules({}, 2, bank, 1).brick).toEqual({ min: 0, max: 0 });
+    expect(pickRules({}, 2, bank, 1).wool).toEqual({ min: 0, max: 1 });
+    expect(pickRules({ wool: 1, ore: 1 }, 2, bank, 1).ore).toEqual({ min: 0, max: 1 });
+    expect(pickRules({ wool: 1, ore: 1 }, 2, bank, 1).grain).toEqual({ min: 0, max: 0 });
+    expect(rowCount({ wool: 1, ore: -2 })).toBe(3);
   });
 });

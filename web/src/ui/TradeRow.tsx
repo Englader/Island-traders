@@ -21,14 +21,23 @@ function Lock() {
   );
 }
 
-function upLabel(name: string, v: number, rule: BoxRule): string {
+/** What the two sides of a row are called: a trade gets and gives, picking cards takes and discards. */
+export interface RowVerbs {
+  get: string;
+  give: string;
+}
+const TRADE_VERBS: RowVerbs = { get: 'get', give: 'give' };
+
+const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
+
+function upLabel(name: string, v: number, rule: BoxRule, verbs: RowVerbs): string {
   const n = stepSize(v, 1, rule);
-  return v < 0 ? `Give ${n === 1 ? 'one' : n} fewer ${name}` : `Get one more ${name}`;
+  return v < 0 ? `${cap(verbs.give)} ${n === 1 ? 'one' : n} fewer ${name}` : `${cap(verbs.get)} one more ${name}`;
 }
 
-function downLabel(name: string, v: number, rule: BoxRule): string {
+function downLabel(name: string, v: number, rule: BoxRule, verbs: RowVerbs): string {
   const n = stepSize(v, -1, rule);
-  return v > 0 ? `Get one fewer ${name}` : `Give ${n === 1 ? 'one' : n} more ${name}`;
+  return v > 0 ? `${cap(verbs.get)} one fewer ${name}` : `${cap(verbs.give)} ${n === 1 ? 'one' : n} more ${name}`;
 }
 
 /**
@@ -41,12 +50,15 @@ export function TradeRow({
   row,
   rules,
   notes,
+  verbs = TRADE_VERBS,
   onChange,
 }: {
   row: SignedCounts;
   rules: Record<Resource, BoxRule>;
   /** A small note under each box (the bank rates), with an extra class (`r3`, `r2`). */
   notes?: Record<Resource, { text: string; tone?: string }>;
+  /** The words for the two sides (default: get / give). */
+  verbs?: RowVerbs;
   onChange(row: SignedCounts): void;
 }) {
   return (
@@ -56,7 +68,7 @@ export function TradeRow({
         const rule = rules[r];
         const v = row[r] ?? 0;
         const state = v > 0 ? 'get' : v < 0 ? 'give' : 'zero';
-        const said = v > 0 ? `you get ${v}` : v < 0 ? `you give ${-v}` : 'none';
+        const said = v > 0 ? `you ${verbs.get} ${v}` : v < 0 ? `you ${verbs.give} ${-v}` : 'none';
         return (
           <div class="tcol" key={r}>
             <div
@@ -69,7 +81,7 @@ export function TradeRow({
               <button
                 type="button"
                 class="tbox-btn up"
-                aria-label={upLabel(name, v, rule)}
+                aria-label={upLabel(name, v, rule, verbs)}
                 disabled={stepValue(v, 1, rule) === null}
                 onClick={() => onChange(stepRow(row, r, 1, rule))}
               >
@@ -81,12 +93,12 @@ export function TradeRow({
               </span>
               <span class="tbox-val" key={v} aria-hidden="true">
                 <span class="tbox-n">{signed(v)}</span>
-                <span class="tbox-side">{v > 0 ? 'get' : v < 0 ? 'give' : ' '}</span>
+                <span class="tbox-side">{v > 0 ? verbs.get : v < 0 ? verbs.give : ' '}</span>
               </span>
               <button
                 type="button"
                 class="tbox-btn down"
-                aria-label={downLabel(name, v, rule)}
+                aria-label={downLabel(name, v, rule, verbs)}
                 disabled={stepValue(v, -1, rule) === null}
                 onClick={() => onChange(stepRow(row, r, -1, rule))}
               >

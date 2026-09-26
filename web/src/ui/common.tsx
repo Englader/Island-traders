@@ -26,17 +26,21 @@ export function Sheet({
   onClose,
   children,
   wide,
+  tools,
 }: {
   title: string;
   onClose?: () => void;
   children: ComponentChildren;
   wide?: boolean;
+  /** Buttons in the header, before the close button. */
+  tools?: ComponentChildren;
 }) {
   return (
     <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose?.()}>
       <section class={wide ? 'sheet wide' : 'sheet'} role="dialog" aria-label={title}>
         <header class="sheet-head">
           <h2>{title}</h2>
+          {tools && <div class="sheet-tools">{tools}</div>}
           {onClose && (
             <button type="button" class="icon-btn" aria-label="Close" onClick={onClose}>
               ✕
@@ -94,37 +98,6 @@ export function Cost({ cost }: { cost: PartialCounts }) {
     <span class="cost">
       {RESOURCE_LIST.flatMap((r) => Array.from({ length: cost[r] ?? 0 }, (_, i) => <ResGlyph key={`${r}${i}`} r={r} />))}
     </span>
-  );
-}
-
-/** Per-resource steppers, each bounded by `max[r]`. */
-export function ResourcePicker({
-  value,
-  max,
-  onChange,
-  step,
-}: {
-  value: PartialCounts;
-  max: PartialCounts;
-  onChange(v: PartialCounts): void;
-  step?: PartialCounts;
-}) {
-  return (
-    <div class="res-picker">
-      {RESOURCE_LIST.map((r) => (
-        <div class="res-picker-row" key={r}>
-          <ResIcon r={r} />
-          <span class="res-label">{RESOURCE_INFO[r].label}</span>
-          <Stepper
-            label={RESOURCE_INFO[r].label}
-            value={value[r] ?? 0}
-            max={max[r] ?? 0}
-            step={step?.[r] ?? 1}
-            onChange={(v) => onChange({ ...value, [r]: v })}
-          />
-        </div>
-      ))}
-    </div>
   );
 }
 

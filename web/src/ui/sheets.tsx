@@ -12,15 +12,16 @@ import {
   type TradeOffer,
 } from 'engine';
 import type { ComponentChildren } from 'preact';
-import { useMemo, useState } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST, WONDER_INFO, countsText, harborLabel } from '../game/names';
 import type { PlayerColor } from '../game/seats';
-import { Cost, ResIcon, ResourcePicker, Sheet, cleanCounts, sumCounts } from './common';
+import { Cost, ResIcon, Sheet, cleanCounts, sumCounts } from './common';
 import { Counts } from './icons';
 import { DevCardView, ResourceCard } from './cards';
-import { TradeRow, TradeSummary } from './TradeRow';
+import { TradeRow, TradeSummary, type RowVerbs } from './TradeRow';
 import { LogLine, logItems } from './GameLog';
-import { bankCheck, rowKind, rowOf, rowSides, type BoxRule, type SignedCounts } from '../game/trade';
+import { bankCheck, countsPhrase, pickRules, rowCount, rowKind, rowOf, rowSides, signed, type BoxRule, type SignedCounts } from '../game/trade';
 
 export interface SheetProps {
   view: GameView;
@@ -84,15 +85,34 @@ export function BuildSheet({ view, legal, seat, send, close, choose }: SheetProp
 
 // --- trade -----------------------------------------------------------------------
 
-/** The player's cards, one tile per resource with the count. */
-function YourCards({ hand }: { hand: PartialCounts }) {
+/**
+ * The player's cards, one tile per resource with the count. With `change`
+ * (cards being discarded, or taken) each tile counts what will be left,
+ * marked with the change, and underneath says what was held before.
+ */
+function YourCards({ hand, change }: { hand: PartialCounts; change?: SignedCounts }) {
   return (
-    <div class="your-cards" aria-label="Your cards">
+    <div class={change ? 'your-cards picking' : 'your-cards'} role="group" aria-label="Your cards">
       <span class="your-cards-label">Your cards</span>
       <div class="your-cards-row">
-        {RESOURCE_LIST.map((r) => (
-          <ResourceCard key={r} r={r} n={hand[r] ?? 0} look="tile" empty={!(hand[r] ?? 0)} />
-        ))}
+        {RESOURCE_LIST.map((r) => {
+          const held = hand[r] ?? 0;
+          const d = change?.[r] ?? 0;
+          const after = held + d;
+          const name = RESOURCE_INFO[r].label;
+          const said = d < 0 ? `${name}: you hold ${held}, discard ${-d}, keep ${after}` : d > 0 ? `${name}: you hold ${held}, take ${d}, then ${after}` : `${name}: ${held}`;
+          return (
+            <span key={r} class={d < 0 ? 'yc out' : d > 0 ? 'yc in' : 'yc'} data-res={r} role="img" aria-label={said} title={said}>
+              <ResourceCard r={r} n={after} look="tile" empty={after === 0} />
+              {d !== 0 && (
+                <span class="yc-delta" key={d}>
+                  {signed(d)}
+                </span>
+              )}
+              {change && <span class="yc-was">{d !== 0 ? `${held} → ${after}` : '\u00a0'}</span>}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -499,12 +519,15 @@ export function CardsSheet({ view, legal, seat, send, close }: SheetProps) {
     counts.set(c.type, e);
   }
   const [picking, setPicking] = useState<'monopoly' | 'yop' | null>(null);
-  const [yop, setYop] = useState<PartialCounts>({});
+  const [yop, setYop] = useState<SignedCounts>({});
   const yopNeed = Math.min(2, RESOURCE_LIST.reduce((n, r) => n + view.bank[r], 0));
+  const hand = me.resources!;
 
   if (picking === 'monopoly') {
     return (
       <Sheet title="Monopoly: pick a resource" onClose={() => setPicking(null)}>
+        <YourCards hand={hand} />
+        <p class="hint">Every other player gives you all their cards of it.</p>
         <div class="res-choice">
           {RESOURCE_LIST.map((r) => (
             <button
@@ -525,17 +548,17 @@ export function CardsSheet({ view, legal, seat, send, close }: SheetProps) {
     );
   }
   if (picking === 'yop') {
-    const bankMax: PartialCounts = { ...view.bank };
     return (
       <Sheet title={`Year of Plenty: take ${yopNeed}`} onClose={() => setPicking(null)}>
-        <ResourcePicker value={yop} max={bankMax} onChange={setYop} />
+        <PickCards hand={hand} row={yop} need={yopNeed} limit={view.bank} sign={1} onChange={setYop} />
         <button
           type="button"
           class="primary wide"
-          disabled={sumCounts(yop) !== yopNeed}
+          disabled={rowCount(yop) !== yopNeed}
           onClick={() => {
+            const take = rowSides(yop).get;
             const list: Resource[] = [];
-            for (const r of RESOURCE_LIST) for (let i = 0; i < (yop[r] ?? 0); i++) list.push(r);
+            for (const r of RESOURCE_LIST) for (let i = 0; i < (take[r] ?? 0); i++) list.push(r);
             send({ type: 'playYearOfPlenty', player: seat, resources: list });
             close();
           }}
@@ -594,54 +617,232 @@ export function CardsSheet({ view, legal, seat, send, close }: SheetProps) {
 
 // --- forced choices -------------------------------------------------------------------
 
-export function DiscardSheet({ view, seat, send }: Omit<SheetProps, 'close' | 'legal' | 'colors'>) {
-  const ph = view.phase;
-  const need = ph.kind === 'discard' ? ph.pending[seat] ?? 0 : 0;
-  const [pick, setPick] = useState<PartialCounts>({});
-  const hand = view.players[seat].resources!;
+type ForcedProps = Omit<SheetProps, 'close' | 'legal' | 'colors'> & {
+  /** Another sheet (the log, the scores) is open on top: hide, but keep the choices made so far. */
+  covered?: boolean;
+};
+
+function EyeIcon() {
   return (
-    <Sheet title={`Discard ${need} cards`}>
-      <p class="hint">A 7 was rolled and you hold more than {view.options.discardLimit} cards.</p>
-      <ResourcePicker value={pick} max={hand} onChange={setPick} />
-      <button
-        type="button"
-        class="primary wide"
-        disabled={sumCounts(pick) !== need}
-        onClick={() => send({ type: 'discard', player: seat, cards: cleanCounts(pick) })}
-      >
-        Discard {sumCounts(pick)}/{need}
-      </button>
+    <svg class="peek-eye" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.5 12 C5.5 6.5 9 4.8 12 4.8 S18.5 6.5 21.5 12 C18.5 17.5 15 19.2 12 19.2 S5.5 17.5 2.5 12 Z" />
+      <circle cx="12" cy="12" r="3.4" />
+    </svg>
+  );
+}
+
+/**
+ * A choice the game waits for (discarding on a 7, free resources, whom to
+ * rob). It can't be closed, but "Peek at the board" folds it into a small bar
+ * over the board, the choices made so far kept, and the bar opens it again.
+ */
+function ForcedSheet({
+  title,
+  bar,
+  back,
+  covered,
+  children,
+}: {
+  title: string;
+  /** What the folded bar says. */
+  bar: ComponentChildren;
+  /** The bar's button, e.g. "Back to discard". */
+  back: string;
+  covered?: boolean;
+  children: ComponentChildren;
+}) {
+  const [peek, setPeek] = useState(false);
+  // The bar sits at the foot of the map, like the confirm bar (or of the screen, if there is no map area).
+  const [area, setArea] = useState<Element | null>(null);
+  useLayoutEffect(() => setArea(document.querySelector('.game .board-area')), []);
+  // Keyboard users land on the button that undoes the fold.
+  const toggled = useRef(false);
+  const peekBtn = useRef<HTMLButtonElement>(null);
+  const backBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (toggled.current) (peek ? backBtn : peekBtn).current?.focus();
+  }, [peek]);
+  const fold = (on: boolean) => {
+    toggled.current = true;
+    setPeek(on);
+  };
+  if (covered) return null;
+  if (peek) {
+    const el = (
+      <div class={area ? 'confirm-bar peek-bar' : 'confirm-bar peek-bar floating'} role="region" aria-label={title}>
+        <span class="peek-text">{bar}</span>
+        <button type="button" class="primary" ref={backBtn} onClick={() => fold(false)}>
+          {back}
+        </button>
+      </div>
+    );
+    return area ? createPortal(el, area) : el;
+  }
+  // Beside a longer title, phones say just "Peek".
+  const long = title.length > 15;
+  return (
+    <Sheet
+      title={title}
+      tools={
+        <button
+          type="button"
+          class={long ? 'peek-btn long-title' : 'peek-btn'}
+          ref={peekBtn}
+          aria-label="Peek at the board"
+          title="Fold this away to look at the board"
+          onClick={() => fold(true)}
+        >
+          <EyeIcon />
+          <span>
+            Peek<span class="peek-more"> at the board</span>
+          </span>
+        </button>
+      }
+    >
+      {children}
     </Sheet>
   );
 }
 
-export function GoldSheet({ view, seat, send }: Omit<SheetProps, 'close' | 'legal' | 'colors'>) {
+/** Discarding, ▼ discards a card (▲ keeps it after all); taking, ▲ takes one (▼ returns it). */
+const DISCARD_VERBS: RowVerbs = { get: 'keep', give: 'discard' };
+const TAKE_VERBS: RowVerbs = { get: 'take', give: 'return' };
+
+/**
+ * Picking exactly `need` cards: your hand on top, counting what will be left
+ * as you pick, then a box per resource: ▼ discards a card from your hand
+ * (`sign` −1), ▲ takes one from the bank (+1), up to `limit`. A line
+ * underneath says what is picked and how many are still to pick.
+ */
+function PickCards({
+  hand,
+  row,
+  need,
+  limit,
+  sign,
+  onChange,
+}: {
+  hand: PartialCounts;
+  row: SignedCounts;
+  need: number;
+  limit: PartialCounts;
+  sign: 1 | -1;
+  onChange(row: SignedCounts): void;
+}) {
+  const picked = rowCount(row);
+  const { give, get } = rowSides(row);
+  const left = need - picked;
+  return (
+    <>
+      <YourCards hand={hand} change={row} />
+      <TradeRow row={row} rules={pickRules(row, need, limit, sign)} verbs={sign < 0 ? DISCARD_VERBS : TAKE_VERBS} onChange={onChange} />
+      <p class="tsum pick-sum" aria-live="polite">
+        {picked === 0 ? (
+          <span class="tsum-tip">{sign < 0 ? '▼ under a card discards it' : '▲ above a card takes it'}</span>
+        ) : (
+          <>
+            <span class={sign < 0 ? 'tsum-give' : 'tsum-get'}>
+              You {sign < 0 ? 'discard' : 'take'} <b>{countsPhrase(sign < 0 ? give : get)}</b>
+            </span>
+            {left > 0 && (
+              <span class="tsum-left">
+                {' · '}
+                {left} more to pick
+              </span>
+            )}
+          </>
+        )}
+      </p>
+    </>
+  );
+}
+
+const cardsWord = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
+
+/** The folded sheet's bar: what is asked, and what is picked so far. */
+function PeekLine({ title, picked, n, need }: { title: string; picked: PartialCounts; n: number; need: number }) {
+  return (
+    <>
+      <b>{title}</b>
+      <small>
+        {n} of {need} picked
+        {n > 0 && (
+          <>
+            : <Counts c={picked} />
+          </>
+        )}
+      </small>
+    </>
+  );
+}
+
+export function DiscardSheet({ view, seat, send, covered }: ForcedProps) {
+  const ph = view.phase;
+  const need = ph.kind === 'discard' ? ph.pending[seat] ?? 0 : 0;
+  const [row, setRow] = useState<SignedCounts>({});
+  const hand = view.players[seat].resources!;
+  const total = sumCounts(hand);
+  const picked = rowCount(row);
+  const title = `Discard ${cardsWord(need)}`;
+  return (
+    <ForcedSheet title={title} covered={covered} back="Back to discard" bar={<PeekLine title={title} picked={rowSides(row).give} n={picked} need={need} />}>
+      <p class="pick-lead">
+        Discard <b>{need}</b> of <b>{total}</b> — you keep <b>{total - need}</b>
+      </p>
+      <p class="hint pick-note">A 7 was rolled and you hold more than {view.options.discardLimit} cards.</p>
+      <PickCards hand={hand} row={row} need={need} limit={hand} sign={-1} onChange={setRow} />
+      <button
+        type="button"
+        class="primary wide"
+        disabled={picked !== need}
+        onClick={() => send({ type: 'discard', player: seat, cards: cleanCounts(rowSides(row).give) })}
+      >
+        {picked === need ? `Discard ${cardsWord(need)}` : `Discard ${picked}/${need}`}
+      </button>
+    </ForcedSheet>
+  );
+}
+
+export function GoldSheet({ view, seat, send, covered }: ForcedProps) {
   const ph = view.phase;
   const owed = ph.kind === 'gold' ? ph.pending[seat] ?? 0 : 0;
   const bankTotal = RESOURCE_LIST.reduce((n, r) => n + view.bank[r], 0);
   const need = Math.min(owed, bankTotal);
-  const [pick, setPick] = useState<PartialCounts>({});
+  const [row, setRow] = useState<SignedCounts>({});
+  const picked = rowCount(row);
+  const title = `Choose ${need} resource${need === 1 ? '' : 's'}`;
   return (
-    <Sheet title={`Choose ${need} resource${need === 1 ? '' : 's'}`}>
-      <p class="hint">Gold, a discovery or a beaten pirate fleet lets you pick any resources.</p>
-      <ResourcePicker value={pick} max={{ ...view.bank }} onChange={setPick} />
+    <ForcedSheet title={title} covered={covered} back="Back to your choice" bar={<PeekLine title={title} picked={rowSides(row).get} n={picked} need={need} />}>
+      <p class="hint pick-note">Gold, a discovery or a beaten pirate fleet lets you pick any resources.</p>
+      <PickCards hand={view.players[seat].resources!} row={row} need={need} limit={view.bank} sign={1} onChange={setRow} />
       <button
         type="button"
         class="primary wide"
-        disabled={sumCounts(pick) !== need}
-        onClick={() => send({ type: 'chooseGold', player: seat, resources: cleanCounts(pick) })}
+        disabled={picked !== need}
+        onClick={() => send({ type: 'chooseGold', player: seat, resources: cleanCounts(rowSides(row).get) })}
       >
-        Take {sumCounts(pick)}/{need}
+        {picked === need ? `Take ${need === 1 ? 'it' : 'them'}` : `Take ${picked}/${need}`}
       </button>
-    </Sheet>
+    </ForcedSheet>
   );
 }
 
 /** Pirate Islands: after a 7 the roller may rob any player. */
-export function RobAnySheet({ view, legal, colors, send }: Omit<SheetProps, 'close'>) {
+export function RobAnySheet({ view, legal, colors, seat, send, covered }: Omit<SheetProps, 'close'> & { covered?: boolean }) {
   const options = legal.filter((a): a is Extract<Action, { type: 'scenario' }> => a.type === 'scenario' && a.name === 'rob');
   return (
-    <Sheet title="Rob a player">
+    <ForcedSheet
+      title="Rob a player"
+      covered={covered}
+      back="Back to robbing"
+      bar={
+        <>
+          <b>Rob a player</b>
+          <small>Choose whom to rob</small>
+        </>
+      }
+    >
+      <YourCards hand={view.players[seat].resources!} />
       <div class="choice-list">
         {options.map((a, i) => {
           const victim = a.args?.victim as number | undefined;
@@ -659,7 +860,7 @@ export function RobAnySheet({ view, legal, colors, send }: Omit<SheetProps, 'clo
         })}
       </div>
       {options.length === 0 && <p class="hint">Waiting…</p>}
-    </Sheet>
+    </ForcedSheet>
   );
 }
 
