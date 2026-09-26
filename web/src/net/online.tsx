@@ -2,10 +2,12 @@ import type { Action } from 'engine';
 import Peer from 'peerjs';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { flashOf } from '../ui/flash';
+import { freeze, readSummary, type ClockFeed } from '../game/clock';
 import type { GameController, SeatSnapshot } from '../game/controller';
 import { PLAYER_COLORS } from '../game/seats';
 import { clientId, loadJson, saveJson } from '../game/storage';
 import { ChatWindow } from '../ui/ChatWindow';
+import { TimerSwitch } from '../ui/Clock';
 import { GameScreen } from '../ui/GameScreen';
 import { Logo } from '../ui/screens';
 import { ChatHub, mergeChat, type ChatMessage, type ChatPostResult } from './chat';
@@ -97,7 +99,8 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       return;
     }
     const snap: SeatSnapshot = ctrl.snapshot(g.seat);
-    g.send({ t: 'state', snap, seats, last: ctrl.last ? { action: ctrl.last.action, at: ctrl.last.at } : null });
+    const clock = ctrl.clockFeed()?.sum;
+    g.send({ t: 'state', snap, seats, last: ctrl.last ? { action: ctrl.last.action, at: ctrl.last.at } : null, ...(clock ? { clock } : {}) });
   };
 
   const broadcast = () => {
@@ -504,7 +507,16 @@ export function JoinScreen({ initialCode, onJoin, onBack }: { initialCode: strin
 type GuestState =
   | { kind: 'connecting'; msg: string }
   | { kind: 'lobby'; seats: LobbySeat[]; host: string; seat: number | null; note?: string }
-  | { kind: 'game'; snap: SeatSnapshot; seats: LobbySeat[]; last: { action: Action; at: number } | null; seat: number | null; note?: string };
+  | {
+      kind: 'game';
+      snap: SeatSnapshot;
+      seats: LobbySeat[];
+      last: { action: Action; at: number } | null;
+      seat: number | null;
+      note?: string;
+      /** The host's game clock, and when it arrived here (null: the game is not timed). */
+      clock: ClockFeed | null;
+    };
 
 export function GuestScreen({ code, playerName, onHome, onRules }: { code: string; playerName: string; onHome(): void; onRules(): void }) {
   const [st, setSt] = useState<GuestState>({ kind: 'connecting', msg: 'Looking for the room…' });
@@ -526,6 +538,13 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         online: (via) => {
           setOnline(via);
           if (via) setSt((cur) => (cur.kind === 'connecting' ? cur : { ...cur, note: undefined }));
+          // cut off from the host: its clock can't be followed, so the reading stops where it was
+          else
+            setSt((cur) => {
+              if (cur.kind !== 'game' || !cur.clock?.sum.running) return cur;
+              const now = Date.now();
+              return { ...cur, clock: { sum: freeze(cur.clock.sum, now - cur.clock.at), at: now } };
+            });
         },
         message: (msg) => {
           if (msg.t === 'welcome') {
@@ -534,7 +553,9 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
           } else if (msg.t === 'lobby') {
             setSt({ kind: 'lobby', seats: msg.seats, host: msg.host, seat: seatRef.current });
           } else if (msg.t === 'state') {
-            setSt({ kind: 'game', snap: msg.snap, seats: msg.seats, last: msg.last, seat: msg.snap.seat });
+            // the host's elapsed times as of now; a running clock goes on from here
+            const sum = readSummary(msg.clock, msg.snap.view.players.length);
+            setSt({ kind: 'game', snap: msg.snap, seats: msg.seats, last: msg.last, seat: msg.snap.seat, clock: sum && { sum, at: Date.now() } });
           } else if (msg.t === 'error') {
             setError(msg.message);
           } else if (msg.t === 'chatHistory') {
@@ -630,6 +651,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         onMenu={() => setMenu(true)}
         onHome={onHome}
         note={online ? `Room ${code}${online === 'relay' ? ' · via relay' : ''}` : st.note ?? 'Offline'}
+        clock={st.clock}
         chat={chat && <ChatWindow messages={chat} seat={st.seat} colors={colors} room={code} onSend={sendChat} />}
       />
       {menu && (
@@ -642,6 +664,13 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
               </button>
             </header>
             <div class="sheet-body menu">
+              <TimerSwitch
+                note={
+                  st.clock
+                    ? "The host keeps the time: it counts while the host's page is open. Each moment goes to the player whose turn it is."
+                    : "The host's game has no timer."
+                }
+              />
               <button type="button" class="wide" onClick={() => setMenu(false)}>
                 Back to the game
               </button>

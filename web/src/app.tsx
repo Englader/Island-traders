@@ -1,10 +1,12 @@
 import { createGame, getScenario } from 'engine';
 import { useEffect, useMemo, useReducer, useState } from 'preact/hooks';
-import { GameController, SAVE_KEY, newGameId, type GameRecord } from './game/controller';
+import { followPage } from './game/clock';
+import { GameController, SAVE_KEY, clockFor, newGameId, type GameRecord } from './game/controller';
 import { LEVEL_LABEL, PLAYER_COLORS, mustAct, type BotLevel, type BotSpeed } from './game/seats';
 import { loadJson } from './game/storage';
 import { Sheet } from './ui/common';
 import { ChatWindow } from './ui/ChatWindow';
+import { TimerSwitch } from './ui/Clock';
 import { GameScreen } from './ui/GameScreen';
 import { flashOf } from './ui/flash';
 import { HomeScreen, NewGameScreen, ONLINE, PassScreen, RulesSheet, type NewGameConfig } from './ui/screens';
@@ -42,7 +44,18 @@ function recordFrom(config: NewGameConfig, mode: 'local' | 'host', room?: string
     seed: config.seed,
     options: config.options,
   });
-  return { v: 1, id: newGameId(), mode, seats: config.seats, state, botSpeed: config.botSpeed, botLevel: config.botLevel, room, savedAt: Date.now() };
+  return {
+    v: 1,
+    id: newGameId(),
+    mode,
+    seats: config.seats,
+    state,
+    botSpeed: config.botSpeed,
+    botLevel: config.botLevel,
+    room,
+    clock: clockFor(state),
+    savedAt: Date.now(),
+  };
 }
 
 export function App() {
@@ -57,6 +70,8 @@ export function App() {
 
   const host = useHostNetwork(ctrl && ctrl.record.mode === 'host' ? ctrl : null);
   useWakeLock(route.name === 'game' || route.name === 'guest' || route.name === 'lobby');
+  // local games: timed while the game is on screen; online: once play has begun, while this page is open
+  useGameClock(ctrl, ctrl?.record.mode === 'host' ? !!ctrl.record.started : route.name === 'game');
 
   const startController = (record: GameRecord) => {
     ctrl?.destroy();
@@ -180,6 +195,7 @@ export function App() {
               : undefined
           }
           note={ctrl.record.mode === 'host' ? host.status : undefined}
+          clock={ctrl.clockFeed()}
           chat={
             ctrl.record.mode === 'host' && ctrl.record.room ? (
               <ChatWindow messages={host.chat} seat={seat} colors={colors} room={ctrl.record.room} onSend={host.sendChat} />
@@ -202,6 +218,13 @@ export function App() {
           level={ctrl.record.botLevel ?? 'medium'}
           hasBots={ctrl.seats.some((s) => s.kind === 'bot')}
           room={ctrl.record.room}
+          timerNote={
+            !ctrl.record.clock
+              ? 'This game began before the game kept time, so it has no timer.'
+              : ctrl.record.mode === 'host'
+                ? 'Counts while this page is open. Each moment goes to the player whose turn it is.'
+                : 'Counts while the game is on screen. Each moment goes to the player whose turn it is.'
+          }
           onSpeed={(s) => ctrl.setBotSpeed(s)}
           onLevel={(l) => ctrl.setBotLevel(l)}
           onRules={() => {
@@ -226,6 +249,15 @@ export function App() {
       )}
     </>
   );
+}
+
+/**
+ * Runs the game clock while the game is being played (`active`, see App): a
+ * game on this device only while the page is on screen, an online host's
+ * game also while it is hidden, as the friends are still playing.
+ */
+function useGameClock(ctrl: GameController | null, active: boolean): void {
+  useEffect(() => (ctrl ? followPage(ctrl, active, ctrl.record.mode === 'host') : undefined), [ctrl, active]);
 }
 
 /** Keeps the phone screen on while a game is open (ignored where unsupported). */
@@ -261,6 +293,7 @@ function GameMenu({
   level,
   hasBots,
   room,
+  timerNote,
   onSpeed,
   onLevel,
   onRules,
@@ -273,6 +306,7 @@ function GameMenu({
   level: BotLevel;
   hasBots: boolean;
   room?: string;
+  timerNote: string;
   onSpeed(s: BotSpeed): void;
   onLevel(l: BotLevel): void;
   onRules(): void;
@@ -312,6 +346,7 @@ function GameMenu({
             </div>
           </div>
         )}
+        <TimerSwitch note={timerNote} />
         <button type="button" class="wide" onClick={onClose}>
           Back to the game
         </button>

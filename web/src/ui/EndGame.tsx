@@ -1,6 +1,7 @@
 import type { GameView, PlayerId } from 'engine';
 import { createPortal } from 'preact/compat';
 import { useLayoutEffect, useState } from 'preact/hooks';
+import { formatRough, type ClockFeed } from '../game/clock';
 import type { PlayerColor, SeatKind } from '../game/seats';
 import { Sheet } from './common';
 import { GameStatsSheet } from './GameStats';
@@ -16,6 +17,7 @@ export function EndGame({
   colors,
   kinds,
   seat,
+  clock,
   covered,
   onHome,
   onRematch,
@@ -25,6 +27,8 @@ export function EndGame({
   colors: PlayerColor[];
   kinds: SeatKind[];
   seat: PlayerId | null;
+  /** The game clock (null: the game was not timed). */
+  clock: ClockFeed | null;
   /** Another sheet (the log, the dice statistics) is open on top. */
   covered?: boolean;
   onHome(): void;
@@ -46,6 +50,7 @@ export function EndGame({
         colors={colors}
         kinds={kinds}
         seat={seat}
+        clock={clock}
         onDice={onDice}
         close={() => {
           setStats(false);
@@ -78,7 +83,7 @@ export function EndGame({
           <div class="eg-hero-text">
             <strong>{winner === null ? 'Nobody wins' : winner === seat ? 'Congratulations!' : name(winner)}</strong>
             <span>
-              {ph.reason} · {view.turn.number} turns
+              {ph.reason} · {view.turn.number} turns{clock ? ` · ${formatRough(clock.sum.playedMs)}` : ''}
             </span>
           </div>
         </div>
