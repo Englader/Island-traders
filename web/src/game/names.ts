@@ -17,7 +17,7 @@ export const TERRAIN_INFO: Record<Terrain, { label: string; fill: string; icon: 
   fields: { label: 'Fields', fill: '#e8c24b', icon: '🌾' },
   mountains: { label: 'Mountains', fill: '#8e939c', icon: '⛰️' },
   desert: { label: 'Desert', fill: '#e4d3a0', icon: '🌵' },
-  gold: { label: 'Gold field', fill: '#f3c623', icon: '✨' },
+  gold: { label: 'Gold field', fill: '#4a4544', icon: '⛏️' },
   sea: { label: 'Sea', fill: '#3a86c8', icon: '' },
   fog: { label: 'Unexplored', fill: '#b9c2cc', icon: '❔' },
 };
