@@ -76,6 +76,24 @@ function polygon(points: Pt[]): string {
   return points.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(' ');
 }
 
+function distToSegment(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = dx * dx + dy * dy;
+  const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len));
+  return Math.hypot(a.x + t * dx - p.x, a.y + t * dy - p.y);
+}
+
+function insidePolygon(p: Pt, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 function shift(points: Pt[], dy: number): Pt[] {
   return points.map((p) => ({ x: p.x, y: p.y + dy }));
 }
@@ -138,6 +156,7 @@ function unrotatedAspect(layoutKey: string): number {
 
 export function Board({ view, colors, targets, accent, ghost, flash, onPick }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 360, h: 360 });
   useLayoutEffect(() => {
     const el = wrap.current;
@@ -265,11 +284,47 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick }: P
     }
     gesture.current = null;
     if (!gs || gs.moved) return;
-    const el = (e.target as Element | null)?.closest?.('[data-pick]');
-    const pick = el?.getAttribute('data-pick');
-    if (!pick) return;
-    const [kind, id] = [pick.slice(0, 1), pick.slice(2)];
-    onPick(kind === 'v' ? 'vertex' : kind === 'e' ? 'edge' : 'hex', id);
+    const hit = nearestTarget(e);
+    if (hit) onPick(hit.kind, hit.id);
+  };
+
+  /**
+   * Fingers are wide and board spots are small on a phone, so a tap picks
+   * the nearest highlighted spot within about a thumb's width.
+   */
+  const nearestTarget = (e: PointerEvent): { kind: PickKind; id: string } | null => {
+    const svg = svgRef.current;
+    const m = svg?.getScreenCTM();
+    if (!svg || !m) return null;
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    const p = { x: pt.x, y: pt.y };
+    const unitsPerPx = vb.w / Math.max(1, size.w);
+    const reach = Math.max(0.5, 34 * unitsPerPx);
+    let best: { kind: PickKind; id: string; d: number } | null = null;
+    const consider = (kind: PickKind, id: string, d: number) => {
+      if (d <= reach && (!best || d < best.d)) best = { kind, id, d };
+    };
+    for (const v of targets.vertices) {
+      const q = g.vpt[v];
+      if (q) consider('vertex', v, Math.hypot(q.x - p.x, q.y - p.y));
+    }
+    for (const ed of targets.edges) {
+      const ends = g.t.edgeVertices[ed];
+      if (!ends) continue;
+      // the middle part of the path: taps right at an end are ambiguous
+      const a = g.vpt[ends[0]];
+      const c = g.vpt[ends[1]];
+      const a2 = { x: a.x + (c.x - a.x) * 0.15, y: a.y + (c.y - a.y) * 0.15 };
+      const c2 = { x: c.x - (c.x - a.x) * 0.15, y: c.y - (c.y - a.y) * 0.15 };
+      consider('edge', ed, distToSegment(p, a2, c2));
+    }
+    for (const h of targets.hexes) {
+      const poly = g.hexPts[h];
+      if (!poly) continue;
+      consider('hex', h, insidePolygon(p, poly) ? 0 : Math.hypot(g.centers[h].x - p.x, g.centers[h].y - p.y) - 0.6);
+    }
+    const found = best as { kind: PickKind; id: string; d: number } | null;
+    return found ? { kind: found.kind, id: found.id } : null;
   };
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -278,55 +333,236 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick }: P
   };
 
   // --- drawing -----------------------------------------------------------------
-  const { t, hexPts, centers, vpt } = g;
-  const b = view.board;
-  const color = (p: number) => colors[p] ?? colors[0];
-  const hexIds = t.hexIds;
-  const sea = hexIds.filter((h) => b.hexes[h].terrain === 'sea');
-  // Back to front, so nearer tiles cover the sides of those behind them.
-  const land = hexIds.filter((h) => b.hexes[h].terrain !== 'sea').sort((a, c) => centers[a].y - centers[c].y || centers[a].x - centers[c].x);
+  // Built once per change of the game view; panning and zooming only move the viewBox.
+  const content = useMemo(() => {
+    const { t, hexPts, centers, vpt } = g;
+    const b = view.board;
+    const color = (p: number) => colors[p] ?? colors[0];
+    const hexIds = t.hexIds;
+    const sea = hexIds.filter((h) => b.hexes[h].terrain === 'sea');
+    // Back to front, so nearer tiles cover the sides of those behind them.
+    const land = hexIds.filter((h) => b.hexes[h].terrain !== 'sea').sort((a, c) => centers[a].y - centers[c].y || centers[a].x - centers[c].x);
 
-  const edgeEnds = (e: EdgeId): [Pt, Pt] => {
-    const [a, c] = t.edgeVertices[e];
-    return [vpt[a], vpt[c]];
-  };
-  const mid = (e: EdgeId): Pt => {
-    const [a, c] = edgeEnds(e);
-    return { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
-  };
+    const edgeEnds = (e: EdgeId): [Pt, Pt] => {
+      const [a, c] = t.edgeVertices[e];
+      return [vpt[a], vpt[c]];
+    };
+    const mid = (e: EdgeId): Pt => {
+      const [a, c] = edgeEnds(e);
+      return { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
+    };
 
-  const ext = view.ext as Record<string, unknown>;
-  const cloth = ext.cloth as { villages: Record<VertexId, { token: number; cloth: number; traders: number[] }> } | undefined;
-  const tribe = ext.tribe as { spots?: Record<EdgeId, string> } | undefined;
-  const pirateIslands = ext.pirateIslands as
-    | { circuit: HexId[]; fortresses: Array<{ hex: HexId; vertex: VertexId; waypoint: VertexId; chits: number; captured: boolean }> }
-    | undefined;
+    const ext = view.ext as Record<string, unknown>;
+    const cloth = ext.cloth as { villages: Record<VertexId, { token: number; cloth: number; traders: number[] }> } | undefined;
+    const tribe = ext.tribe as { spots?: Record<EdgeId, string> } | undefined;
+    const pirateIslands = ext.pirateIslands as
+      | { circuit: HexId[]; fortresses: Array<{ hex: HexId; vertex: VertexId; waypoint: VertexId; chits: number; captured: boolean }> }
+      | undefined;
 
-  function renderFlash(f: NonNullable<Props['flash']>) {
-    if (f.kind === 'vertex' && vpt[f.id]) {
-      return <ellipse key={`fl${f.key}`} class="flash" cx={vpt[f.id].x} cy={vpt[f.id].y} rx={0.34} ry={0.34 * TILT} />;
+    function renderFlash(f: NonNullable<Props['flash']>) {
+      if (f.kind === 'vertex' && vpt[f.id]) {
+        return <ellipse key={`fl${f.key}`} class="flash" cx={vpt[f.id].x} cy={vpt[f.id].y} rx={0.34} ry={0.34 * TILT} />;
+      }
+      if (f.kind === 'edge' && t.edgeVertices[f.id]) {
+        const [a, c] = edgeEnds(f.id);
+        return <line key={`fl${f.key}`} class="flash" x1={a.x} y1={a.y} x2={c.x} y2={c.y} />;
+      }
+      if (f.kind === 'hex' && hexPts[f.id]) {
+        return <polygon key={`fl${f.key}`} class="flash" points={polygon(hexPts[f.id])} />;
+      }
+      return null;
     }
-    if (f.kind === 'edge' && t.edgeVertices[f.id]) {
-      const [a, c] = edgeEnds(f.id);
-      return <line key={`fl${f.key}`} class="flash" x1={a.x} y1={a.y} x2={c.x} y2={c.y} />;
-    }
-    if (f.kind === 'hex' && hexPts[f.id]) {
-      return <polygon key={`fl${f.key}`} class="flash" points={polygon(hexPts[f.id])} />;
-    }
-    return null;
-  }
 
-  // Pieces are drawn back to front as well.
-  const pieces = Object.entries(b.pieces)
-    .filter(([e]) => t.edgeVertices[e])
-    .sort(([a], [c]) => mid(a).y - mid(c).y);
-  const buildings = Object.entries(b.buildings)
-    .filter(([v]) => vpt[v])
-    .sort(([a], [c]) => vpt[a].y - vpt[c].y);
+    // Pieces are drawn back to front as well.
+    const pieces = Object.entries(b.pieces)
+      .filter(([e]) => t.edgeVertices[e])
+      .sort(([a], [c]) => mid(a).y - mid(c).y);
+    const buildings = Object.entries(b.buildings)
+      .filter(([v]) => vpt[v])
+      .sort(([a], [c]) => vpt[a].y - vpt[c].y);
+
+    return (
+      <>
+            <BoardDefs />
+            {/* open sea: faint tile outlines only */}
+            {sea.map((h) => (
+              <polygon key={h} points={polygon(hexPts[h])} class="hex sea" />
+            ))}
+            {/* shallow water around the coasts */}
+            {land.map((h) => (
+              <polygon key={`sh${h}`} points={polygon(scaleAround(shift(hexPts[h], DEPTH * 0.6), centers[h], 1.16))} class="shallows" />
+            ))}
+            {/* raised tiles: side, top, texture */}
+            {land.map((h) => {
+              const hex = b.hexes[h];
+              const tile = TILE[hex.terrain as Exclude<Terrain, 'sea'>];
+              const top = hexPts[h];
+              return (
+                <g key={h}>
+                  <polygon points={polygon(shift(top, DEPTH))} fill={tile.side} class="tile-side" />
+                  <polygon points={polygon(top)} fill={`url(#tile-${hex.terrain})`} class="tile-top" />
+                  <polygon points={polygon(top)} fill={`url(#tex-${hex.terrain})`} class="tile-tex" />
+                  {hex.terrain === 'fog' && (
+                    <T x={centers[h].x} y={centers[h].y} s={0.62} cls="fog-mark">
+                      ?
+                    </T>
+                  )}
+                </g>
+              );
+            })}
+            {/* scenario: strait markers (Wonders) */}
+            {sea
+              .filter((h) => b.hexes[h].zone === 'strait')
+              .map((h) => (
+                <T key={`st${h}`} x={centers[h].x} y={centers[h].y + 0.05} s={0.4} cls="marker-icon">
+                  🌉
+                </T>
+              ))}
+            {/* pirate fleet circuit (Pirate Islands) */}
+            {pirateIslands &&
+              pirateIslands.circuit.map((h, i) => (
+                <ellipse key={`c${i}`} cx={centers[h].x} cy={centers[h].y} rx={0.08} ry={0.08 * TILT} class="circuit-dot" />
+              ))}
+            {/* number tokens: little discs standing on the tiles */}
+            {land.map((h) => {
+              const hex = b.hexes[h];
+              if (hex.token === null) return null;
+              const c = centers[h];
+              const n = pips(hex.token);
+              const red = hex.token === 6 || hex.token === 8;
+              const blocked = b.robber === h;
+              const r = 0.3;
+              return (
+                <g key={`tk${h}`} class={blocked ? 'token blocked' : 'token'}>
+                  <ellipse cx={c.x + 0.03} cy={c.y + 0.07} rx={r} ry={r * TILT} class="token-shadow" />
+                  <ellipse cx={c.x} cy={c.y + 0.045} rx={r} ry={r * TILT} class="token-rim" />
+                  <ellipse cx={c.x} cy={c.y} rx={r} ry={r * TILT} fill="url(#token-top)" class="token-top" />
+                  <T x={c.x} y={c.y - 0.02} s={red ? 0.27 : 0.24} cls={red ? 'token-num red' : 'token-num'}>
+                    {hex.token}
+                  </T>
+                  {Array.from({ length: n }, (_, i) => (
+                    <circle key={i} cx={c.x + (i - (n - 1) / 2) * 0.06} cy={c.y + 0.13} r={0.021} class={red ? 'pip red' : 'pip'} />
+                  ))}
+                </g>
+              );
+            })}
+            {/* harbors: a jetty from the coast to a flag */}
+            {b.harbors.map((hb) => {
+              const [h1, h2] = t.edgeHexes[hb.edge];
+              const seaHex = b.hexes[h1].terrain === 'sea' ? h1 : h2;
+              const m = mid(hb.edge);
+              const sc = centers[seaHex];
+              const p = { x: m.x + (sc.x - m.x) * 0.5, y: m.y + (sc.y - m.y) * 0.5 };
+              const [a, c] = edgeEnds(hb.edge);
+              return (
+                <g key={`hb${hb.edge}`} class="harbor">
+                  <line x1={p.x} y1={p.y} x2={a.x} y2={a.y} class="pier" />
+                  <line x1={p.x} y1={p.y} x2={c.x} y2={c.y} class="pier" />
+                  <ellipse cx={p.x + 0.02} cy={p.y + 0.06} rx={0.21} ry={0.21 * TILT} class="token-shadow" />
+                  <ellipse cx={p.x} cy={p.y} rx={0.21} ry={0.21 * TILT} class="harbor-bg" />
+                  <HarborText p={p} type={hb.type} />
+                </g>
+              );
+            })}
+            {/* Forgotten Tribe gifts */}
+            {tribe?.spots &&
+              Object.entries(tribe.spots).map(([e, gift]) => {
+                if (!t.edgeVertices[e]) return null;
+                const m = mid(e);
+                const kind = gift.split(':')[0];
+                const res = gift.startsWith('harbor:') ? (gift.slice(7) as HarborType) : null;
+                const label = kind === 'vp' ? '★' : kind === 'devCard' ? '?' : res && res !== 'generic' ? RESOURCE_INFO[res].icon : '⚓';
+                return (
+                  <g key={`gift${e}`} class={`gift gift-${kind}`}>
+                    <ellipse cx={m.x + 0.02} cy={m.y + 0.05} rx={0.16} ry={0.16 * TILT} class="token-shadow" />
+                    <ellipse cx={m.x} cy={m.y} rx={0.16} ry={0.16 * TILT} class="gift-bg" />
+                    <T x={m.x} y={m.y} s={kind === 'vp' ? 0.2 : 0.15} cls="gift-icon">
+                      {res === 'generic' ? '3:1' : label}
+                    </T>
+                  </g>
+                );
+              })}
+            {/* Pirate Islands: waypoints */}
+            {pirateIslands &&
+              pirateIslands.fortresses.map((f, i) =>
+                vpt[f.waypoint] ? (
+                  <ellipse key={`wp${i}`} cx={vpt[f.waypoint].x} cy={vpt[f.waypoint].y} rx={0.22} ry={0.22 * TILT} class="waypoint" stroke={color(i).fill} />
+                ) : null,
+              )}
+            {/* Cloth villages */}
+            {cloth &&
+              Object.entries(cloth.villages).map(([v, vil]) => {
+                const p = vpt[v];
+                if (!p) return null;
+                return (
+                  <g key={`vil${v}`} class={vil.cloth > 0 ? 'village' : 'village empty'}>
+                    <ellipse cx={p.x + 0.02} cy={p.y + 0.06} rx={0.24} ry={0.24 * TILT} class="token-shadow" />
+                    <ellipse cx={p.x} cy={p.y} rx={0.24} ry={0.24 * TILT} class="village-bg" />
+                    <T x={p.x} y={p.y - 0.035} s={0.15} cls="village-num">
+                      {vil.token}
+                    </T>
+                    <T x={p.x} y={p.y + 0.09} s={0.1} cls="village-cloth">
+                      {vil.cloth} cloth
+                    </T>
+                    {vil.traders.map((tr, k) => (
+                      <circle key={k} cx={p.x - 0.2 + k * 0.13} cy={p.y - 0.28} r={0.055} fill={color(tr).fill} stroke="#fff" stroke-width={0.015} />
+                    ))}
+                  </g>
+                );
+              })}
+            {/* roads and ships */}
+            {pieces.map(([e, piece]) => {
+              const col = color(piece.owner);
+              const [a, c] = edgeEnds(e);
+              if (piece.type === 'road') return <Road key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} />;
+              return <Ship key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} war={!!piece.warship} />;
+            })}
+            {/* Pirate Islands: fortresses */}
+            {pirateIslands &&
+              pirateIslands.fortresses.map((f, i) =>
+                !f.captured && vpt[f.vertex] ? <Fortress key={`pf${i}`} p={vpt[f.vertex]} col={color(i)} chits={f.chits} /> : null,
+              )}
+            {/* buildings */}
+            {buildings.map(([v, bd]) => {
+              const col = color(bd.owner);
+              return <Building key={`bd${v}`} p={vpt[v]} city={bd.type === 'city'} fill={col.fill} stroke={col.stroke} />;
+            })}
+            {/* robber & pirate */}
+            {b.robber && centers[b.robber] && <Robber p={centers[b.robber]} />}
+            {b.pirate && centers[b.pirate] && <PirateShip p={centers[b.pirate]} />}
+            {flash ? renderFlash(flash) : null}
+            {/* targets */}
+            {[...targets.hexes].map((h) =>
+              hexPts[h] ? <polygon key={`th${h}`} points={polygon(hexPts[h])} class="target-hex" stroke={accent} data-pick={`h:${h}`} /> : null,
+            )}
+            {[...targets.edges].map((e) => {
+              if (!t.edgeVertices[e]) return null;
+              const [a, c] = edgeEnds(e);
+              return (
+                <g key={`te${e}`} data-pick={`e:${e}`} class="target-edge-g">
+                  <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="target-edge-halo" />
+                  <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="target-edge" stroke={accent} />
+                  <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="hit-edge" />
+                </g>
+              );
+            })}
+            {[...targets.vertices].map((v) =>
+              vpt[v] ? (
+                <g key={`tv${v}`} data-pick={`v:${v}`}>
+                  <circle cx={vpt[v].x} cy={vpt[v].y} r={0.15} class="target-vertex" fill={accent} />
+                  <circle cx={vpt[v].x} cy={vpt[v].y} r={0.4} class="hit" />
+                </g>
+              ) : null,
+            )}
+            {ghost && <GhostPiece ghost={ghost} g={g} colors={colors} />}
+      </>
+    );
+  }, [view, g, targets, ghost, flash, colors, accent]);
 
   return (
     <div class="board-wrap" ref={wrap}>
       <svg
+        ref={svgRef}
         class="board"
         viewBox={`${fmt(vb.x)} ${fmt(vb.y)} ${fmt(vb.w)} ${fmt(vb.h)}`}
         onPointerDown={onPointerDown}
@@ -337,178 +573,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick }: P
         role="img"
         aria-label="Game board"
       >
-        <BoardDefs />
-        {/* open sea: faint tile outlines only */}
-        {sea.map((h) => (
-          <polygon key={h} points={polygon(hexPts[h])} class="hex sea" />
-        ))}
-        {/* shallow water around the coasts */}
-        {land.map((h) => (
-          <polygon key={`sh${h}`} points={polygon(scaleAround(shift(hexPts[h], DEPTH * 0.6), centers[h], 1.16))} class="shallows" />
-        ))}
-        {/* raised tiles: side, top, texture */}
-        {land.map((h) => {
-          const hex = b.hexes[h];
-          const tile = TILE[hex.terrain as Exclude<Terrain, 'sea'>];
-          const top = hexPts[h];
-          return (
-            <g key={h}>
-              <polygon points={polygon(shift(top, DEPTH))} fill={tile.side} class="tile-side" />
-              <polygon points={polygon(top)} fill={`url(#tile-${hex.terrain})`} class="tile-top" />
-              <polygon points={polygon(top)} fill={`url(#tex-${hex.terrain})`} class="tile-tex" />
-              {hex.terrain === 'fog' && (
-                <T x={centers[h].x} y={centers[h].y} s={0.62} cls="fog-mark">
-                  ?
-                </T>
-              )}
-            </g>
-          );
-        })}
-        {/* scenario: strait markers (Wonders) */}
-        {sea
-          .filter((h) => b.hexes[h].zone === 'strait')
-          .map((h) => (
-            <T key={`st${h}`} x={centers[h].x} y={centers[h].y + 0.05} s={0.4} cls="marker-icon">
-              🌉
-            </T>
-          ))}
-        {/* pirate fleet circuit (Pirate Islands) */}
-        {pirateIslands &&
-          pirateIslands.circuit.map((h, i) => (
-            <ellipse key={`c${i}`} cx={centers[h].x} cy={centers[h].y} rx={0.08} ry={0.08 * TILT} class="circuit-dot" />
-          ))}
-        {/* number tokens: little discs standing on the tiles */}
-        {land.map((h) => {
-          const hex = b.hexes[h];
-          if (hex.token === null) return null;
-          const c = centers[h];
-          const n = pips(hex.token);
-          const red = hex.token === 6 || hex.token === 8;
-          const blocked = b.robber === h;
-          const r = 0.3;
-          return (
-            <g key={`tk${h}`} class={blocked ? 'token blocked' : 'token'}>
-              <ellipse cx={c.x + 0.03} cy={c.y + 0.07} rx={r} ry={r * TILT} class="token-shadow" />
-              <ellipse cx={c.x} cy={c.y + 0.045} rx={r} ry={r * TILT} class="token-rim" />
-              <ellipse cx={c.x} cy={c.y} rx={r} ry={r * TILT} fill="url(#token-top)" class="token-top" />
-              <T x={c.x} y={c.y - 0.02} s={red ? 0.27 : 0.24} cls={red ? 'token-num red' : 'token-num'}>
-                {hex.token}
-              </T>
-              {Array.from({ length: n }, (_, i) => (
-                <circle key={i} cx={c.x + (i - (n - 1) / 2) * 0.06} cy={c.y + 0.13} r={0.021} class={red ? 'pip red' : 'pip'} />
-              ))}
-            </g>
-          );
-        })}
-        {/* harbors: a jetty from the coast to a flag */}
-        {b.harbors.map((hb) => {
-          const [h1, h2] = t.edgeHexes[hb.edge];
-          const seaHex = b.hexes[h1].terrain === 'sea' ? h1 : h2;
-          const m = mid(hb.edge);
-          const sc = centers[seaHex];
-          const p = { x: m.x + (sc.x - m.x) * 0.5, y: m.y + (sc.y - m.y) * 0.5 };
-          const [a, c] = edgeEnds(hb.edge);
-          return (
-            <g key={`hb${hb.edge}`} class="harbor">
-              <line x1={p.x} y1={p.y} x2={a.x} y2={a.y} class="pier" />
-              <line x1={p.x} y1={p.y} x2={c.x} y2={c.y} class="pier" />
-              <ellipse cx={p.x + 0.02} cy={p.y + 0.06} rx={0.21} ry={0.21 * TILT} class="token-shadow" />
-              <ellipse cx={p.x} cy={p.y} rx={0.21} ry={0.21 * TILT} class="harbor-bg" />
-              <HarborText p={p} type={hb.type} />
-            </g>
-          );
-        })}
-        {/* Forgotten Tribe gifts */}
-        {tribe?.spots &&
-          Object.entries(tribe.spots).map(([e, gift]) => {
-            if (!t.edgeVertices[e]) return null;
-            const m = mid(e);
-            const kind = gift.split(':')[0];
-            const res = gift.startsWith('harbor:') ? (gift.slice(7) as HarborType) : null;
-            const label = kind === 'vp' ? '★' : kind === 'devCard' ? '?' : res && res !== 'generic' ? RESOURCE_INFO[res].icon : '⚓';
-            return (
-              <g key={`gift${e}`} class={`gift gift-${kind}`}>
-                <ellipse cx={m.x + 0.02} cy={m.y + 0.05} rx={0.16} ry={0.16 * TILT} class="token-shadow" />
-                <ellipse cx={m.x} cy={m.y} rx={0.16} ry={0.16 * TILT} class="gift-bg" />
-                <T x={m.x} y={m.y} s={kind === 'vp' ? 0.2 : 0.15} cls="gift-icon">
-                  {res === 'generic' ? '3:1' : label}
-                </T>
-              </g>
-            );
-          })}
-        {/* Pirate Islands: waypoints */}
-        {pirateIslands &&
-          pirateIslands.fortresses.map((f, i) =>
-            vpt[f.waypoint] ? (
-              <ellipse key={`wp${i}`} cx={vpt[f.waypoint].x} cy={vpt[f.waypoint].y} rx={0.22} ry={0.22 * TILT} class="waypoint" stroke={color(i).fill} />
-            ) : null,
-          )}
-        {/* Cloth villages */}
-        {cloth &&
-          Object.entries(cloth.villages).map(([v, vil]) => {
-            const p = vpt[v];
-            if (!p) return null;
-            return (
-              <g key={`vil${v}`} class={vil.cloth > 0 ? 'village' : 'village empty'}>
-                <ellipse cx={p.x + 0.02} cy={p.y + 0.06} rx={0.24} ry={0.24 * TILT} class="token-shadow" />
-                <ellipse cx={p.x} cy={p.y} rx={0.24} ry={0.24 * TILT} class="village-bg" />
-                <T x={p.x} y={p.y - 0.035} s={0.15} cls="village-num">
-                  {vil.token}
-                </T>
-                <T x={p.x} y={p.y + 0.09} s={0.1} cls="village-cloth">
-                  {vil.cloth} cloth
-                </T>
-                {vil.traders.map((tr, k) => (
-                  <circle key={k} cx={p.x - 0.2 + k * 0.13} cy={p.y - 0.28} r={0.055} fill={color(tr).fill} stroke="#fff" stroke-width={0.015} />
-                ))}
-              </g>
-            );
-          })}
-        {/* roads and ships */}
-        {pieces.map(([e, piece]) => {
-          const col = color(piece.owner);
-          const [a, c] = edgeEnds(e);
-          if (piece.type === 'road') return <Road key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} />;
-          return <Ship key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} war={!!piece.warship} />;
-        })}
-        {/* Pirate Islands: fortresses */}
-        {pirateIslands &&
-          pirateIslands.fortresses.map((f, i) =>
-            !f.captured && vpt[f.vertex] ? <Fortress key={`pf${i}`} p={vpt[f.vertex]} col={color(i)} chits={f.chits} /> : null,
-          )}
-        {/* buildings */}
-        {buildings.map(([v, bd]) => {
-          const col = color(bd.owner);
-          return <Building key={`bd${v}`} p={vpt[v]} city={bd.type === 'city'} fill={col.fill} stroke={col.stroke} />;
-        })}
-        {/* robber & pirate */}
-        {b.robber && centers[b.robber] && <Robber p={centers[b.robber]} />}
-        {b.pirate && centers[b.pirate] && <PirateShip p={centers[b.pirate]} />}
-        {flash ? renderFlash(flash) : null}
-        {/* targets */}
-        {[...targets.hexes].map((h) =>
-          hexPts[h] ? <polygon key={`th${h}`} points={polygon(hexPts[h])} class="target-hex" stroke={accent} data-pick={`h:${h}`} /> : null,
-        )}
-        {[...targets.edges].map((e) => {
-          if (!t.edgeVertices[e]) return null;
-          const [a, c] = edgeEnds(e);
-          return (
-            <g key={`te${e}`} data-pick={`e:${e}`} class="target-edge-g">
-              <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="target-edge-halo" />
-              <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="target-edge" stroke={accent} />
-              <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="hit-edge" />
-            </g>
-          );
-        })}
-        {[...targets.vertices].map((v) =>
-          vpt[v] ? (
-            <g key={`tv${v}`} data-pick={`v:${v}`}>
-              <circle cx={vpt[v].x} cy={vpt[v].y} r={0.13} class="target-vertex" fill={accent} />
-              <circle cx={vpt[v].x} cy={vpt[v].y} r={0.3} class="hit" />
-            </g>
-          ) : null,
-        )}
-        {ghost && <GhostPiece ghost={ghost} g={g} colors={colors} />}
+        {content}
       </svg>
       <div class="zoom-controls">
         <button type="button" aria-label="Zoom in" onClick={() => zoomAt(1 / 1.3, size.w / 2, size.h / 2)}>

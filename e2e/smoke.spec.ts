@@ -155,3 +155,30 @@ test('pass-and-play hides hands behind a hand-over screen', async ({ page }) => 
   await expect(pass).toBeVisible({ timeout: 20_000 });
   expect(((await page.locator('.pass-name').textContent()) ?? '').trim()).not.toBe(first);
 });
+
+test('a tap near a highlighted spot selects it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  const spot = page.locator('.target-vertex').nth(4);
+  await expect(spot).toBeVisible({ timeout: 20_000 });
+  const b = (await spot.boundingBox())!;
+  // a finger landing 16px beside the dot still picks it
+  await page.touchscreen.tap(b.x + b.width / 2 + 16, b.y + b.height / 2 + 4);
+  await expect(page.locator('.confirm-bar')).toBeVisible();
+});
+
+test.describe('phone held sideways', () => {
+  test.use({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+  test('the board gets most of the screen and nothing scrolls sideways', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /New game/ }).click();
+    await page.getByRole('button', { name: 'Start game' }).click();
+    const board = (await page.locator('.board-area').boundingBox())!;
+    const panel = (await page.locator('.panel').boundingBox())!;
+    expect(board.width).toBeGreaterThan(470);
+    expect(board.height).toBeGreaterThan(300);
+    expect(panel.x).toBeGreaterThanOrEqual(board.x + board.width - 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(844);
+  });
+});
