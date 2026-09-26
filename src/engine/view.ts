@@ -3,6 +3,7 @@ import type {
   DevCardInHand,
   GameOptions,
   GameState,
+  GameStats,
   DiceRoll,
   LogEntry,
   Phase,
@@ -52,6 +53,11 @@ export interface GameView {
   log: LogEntry[];
   /** Every roll so far: who rolled and what (for the dice statistics). */
   rolls: DiceRoll[];
+  /**
+   * End-of-game statistics, only once the game is over (they include steals
+   * and hands, which are hidden during play). Missing for older saves.
+   */
+  stats?: GameStats;
 }
 
 /**
@@ -111,5 +117,6 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameView {
     ext,
     log: s.log.filter((e) => !e.visibleTo || (viewer !== null && e.visibleTo.includes(viewer))),
     rolls: s.rolls ?? [],
+    ...(gameOver && s.stats ? { stats: s.stats } : {}),
   };
 }

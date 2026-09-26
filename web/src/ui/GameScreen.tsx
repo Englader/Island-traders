@@ -11,6 +11,7 @@ import { DiceStatsSheet } from './DiceStats';
 import { ActionDeck, BUILD_KEYS, buildOrder, CheckIcon, EndIcon, notNowReason, StarIcon, TradeIcon, type DeckButton } from './ActionDeck';
 import { DockedLog, RichText, type LogPrefs } from './GameLog';
 import { landBox, roomForLog } from './boardRoom';
+import { EndGame } from './EndGame';
 import { DevCardView, ResourceCard } from './cards';
 import type { Flash } from './flash';
 import { Die, Sheet, useMedia } from './common';
@@ -20,7 +21,6 @@ import {
   BuildSheet,
   CardsSheet,
   DiscardSheet,
-  GameOverSheet,
   GoldSheet,
   LogSheet,
   RespondSheet,
@@ -864,7 +864,21 @@ export function GameScreen(props: GameScreenProps) {
       )}
       {sheet === 'dice' && <DiceStatsSheet view={view} colors={colors} player={diceFor} close={() => setSheet(null)} />}
       {!sheet && forced}
-      {gameOver && !sheet && <GameOverSheet view={view} colors={colors} onHome={props.onHome} onRematch={props.onRematch} />}
+      {gameOver && (
+        <EndGame
+          view={view}
+          colors={colors}
+          kinds={kinds}
+          seat={seat}
+          covered={sheet !== null}
+          onHome={props.onHome}
+          onRematch={props.onRematch}
+          onDice={() => {
+            setDiceFor(null);
+            setSheet('dice');
+          }}
+        />
+      )}
     </div>
   );
 }

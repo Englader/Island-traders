@@ -5,6 +5,7 @@ import { emptyCounts, filledCounts } from '../core/resources.js';
 import { rollDie, seedRng, shuffle } from '../core/rng.js';
 import type { DevCardType, GameConfig, GameOptions, GameState, PlayerId, PlayerState, RngState } from '../core/types.js';
 import { getScenario, mapSpecFor } from '../scenarios/registry.js';
+import { emptyStats } from './stats.js';
 import '../scenarios/all.js';
 
 export const DEFAULT_OPTIONS: GameOptions = {
@@ -130,6 +131,7 @@ export function createGame(config: GameConfig): GameState {
     ext: {},
     log: logLines.map((msg) => ({ turn: 0, msg })),
     rolls: [],
+    stats: emptyStats(n),
   };
   if (map.fogStack) state.ext.fog = map.fogStack;
   scenario.hooks.init?.(state, map);

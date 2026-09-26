@@ -33,6 +33,11 @@ GitHub Actions)
   the exact board you will play on; 🎲 deals another random map
 - Dice statistics: a bar chart of every total rolled against fair-dice odds,
   for everyone or one player
+- End-of-game results you can close to look at the final map (a Results
+  chip brings them back), and game stats: a VP breakdown per player, a
+  VP-over-turns race chart, resources produced by type, cards stolen, lost
+  and traded, and highlights such as the luckiest roller (dice production
+  against what their numbers should have given)
 - Drawn resource icons that look the same on every device
 - Illustrated cards: original painted scenes for the five resources and the
   development cards, in a parchment frame with a name ribbon
@@ -190,6 +195,13 @@ e2e/           Playwright tests for the browser game
   `specialBuild`, `scenario` and `gameOver`. Interrupt phases carry a
   `resume` phase. A `part` counter drives "not on the turn it was bought" and
   "ships built this turn". It also handles the 5–6 player parts cleanly.
+- **Game statistics.** `state.stats` (`src/engine/stats.ts`) keeps per-player
+  counters that the log can't give reliably: resources produced by type, what
+  the dice should have produced, cards traded, stolen, discarded and spent,
+  development cards, and everyone's VP after each turn. `applyAction` updates
+  it from how each hand changed during the action. It is optional (older
+  saves have none) and `viewFor` only shows it once the game is over, since
+  steals are hidden information during play.
 
 ### Map format
 
@@ -306,13 +318,18 @@ and the differences between printings.
 
 - **Heuristic bots** finish a full game in every scenario, supported player
   count and layout, using only moves the engine accepts.
+- **Game statistics** reconcile after whole bot games: every hand equals its
+  gains minus its losses, the bank and the log agree, and trades and steals
+  balance between players.
 - **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
   against the computer that is reloaded and continued, a Seafarers board,
   the pass-and-play hand-over, a random map whose preview (after a 🎲
   reroll) is the board the game starts with, and online games between two
   browsers through a local PeerJS broker and a local relay broker
   (`scripts/mqtt-broker.mjs`): a direct link on the host's random map, a
-  relay-only link, and a friend who joins while the host is away.
+  relay-only link, and a friend who joins while the host is away. The end
+  of a game: the results popup, the final map with the Results chip, and
+  the game stats with their charts and tables.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 
