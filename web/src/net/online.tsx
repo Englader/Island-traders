@@ -1,5 +1,5 @@
 import type { Action } from 'engine';
-import Peer, { type DataConnection } from 'peerjs';
+import Peer from 'peerjs';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { flashOf } from '../ui/flash';
 import type { GameController, SeatSnapshot } from '../game/controller';
@@ -7,15 +7,26 @@ import { PLAYER_COLORS } from '../game/seats';
 import { clientId, loadJson, saveJson } from '../game/storage';
 import { GameScreen } from '../ui/GameScreen';
 import { Logo } from '../ui/screens';
-import { PROTOCOL, brokerOptions, hostPeerId, normalizeCode, randomRoomCode, type GuestMessage, type HostMessage, type LobbySeat } from './protocol';
+import { GuestConnector, type Via } from './guest';
+import { PROTOCOL, brokerOptions, hostPeerId, normalizeCode, randomRoomCode, roomToken, rtcConfig, type GuestMessage, type HostMessage, type LobbySeat } from './protocol';
+import { RelayHost } from './relay';
 
 // --- host -----------------------------------------------------------------------------
 
+/** A connected friend, over a direct link or the relay. */
 interface Guest {
-  conn: DataConnection;
+  via: Via;
+  readonly open: boolean;
+  send(msg: HostMessage): void;
+  close(): void;
   client: string | null;
   seat: number | null;
+  /** When the guest was last heard from. */
+  seen: number;
 }
+
+/** Friends ping every 10 s; one silent for this long has gone. */
+const GUEST_SILENCE_LIMIT = 40000;
 
 export interface HostNet {
   status: string;
@@ -32,39 +43,33 @@ function lobbySeats(ctrl: GameController, online: Set<number>): LobbySeat[] {
 }
 
 /**
- * Runs the host side of an online game: registers the room code with the
- * PeerJS broker, seats friends who connect, applies their moves through the
- * controller and sends every connected friend their own view after each change.
+ * Runs the host side of an online game: opens the room on the PeerJS room
+ * server (direct links) and on the relay brokers, seats friends who connect,
+ * applies their moves through the controller and sends every connected friend
+ * their own view after each change.
  */
 export function useHostNetwork(ctrl: GameController | null): HostNet {
   const [status, setStatus] = useState('');
-  const [ready, setReady] = useState(false);
+  const [directReady, setDirectReady] = useState(false);
+  const [relayReady, setRelayReady] = useState(false);
   const [online, setOnline] = useState<Set<number>>(new Set());
   const guests = useRef(new Set<Guest>());
   const onlineRef = useRef(online);
   onlineRef.current = online;
 
-  const send = (g: Guest, msg: HostMessage) => {
-    try {
-      if (g.conn.open) g.conn.send(msg);
-    } catch {
-      // connection dropped; its close handler cleans up
-    }
-  };
-
   const sendState = (g: Guest) => {
     if (!ctrl) return;
     const seats = lobbySeats(ctrl, onlineRef.current);
     if (!ctrl.record.started) {
-      send(g, { t: 'lobby', scenario: ctrl.state.scenario, seats, started: false, host: ctrl.seats.find((s) => s.kind === 'human')?.name ?? 'Host' });
+      g.send({ t: 'lobby', scenario: ctrl.state.scenario, seats, started: false, host: ctrl.seats.find((s) => s.kind === 'human')?.name ?? 'Host' });
       return;
     }
     const snap: SeatSnapshot = ctrl.snapshot(g.seat);
-    send(g, { t: 'state', snap, seats, last: ctrl.last ? { action: ctrl.last.action, at: ctrl.last.at } : null });
+    g.send({ t: 'state', snap, seats, last: ctrl.last ? { action: ctrl.last.action, at: ctrl.last.at } : null });
   };
 
   const broadcast = () => {
-    for (const g of guests.current) sendState(g);
+    for (const g of guests.current) if (g.client !== null) sendState(g);
   };
 
   const room = ctrl?.record.room;
@@ -73,18 +78,34 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
     let peer: Peer | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
+    const relayGuests = new Map<string, Guest>();
 
     const refreshOnline = () => {
       const s = new Set<number>();
-      for (const g of guests.current) if (g.seat !== null && g.conn.open) s.add(g.seat);
+      for (const g of guests.current) if (g.seat !== null && g.open) s.add(g.seat);
       setOnline(s);
+    };
+
+    const drop = (g: Guest) => {
+      if (!guests.current.delete(g)) return;
+      g.close();
+      refreshOnline();
     };
 
     const handle = (g: Guest, msg: GuestMessage) => {
       if (!msg || typeof msg !== 'object') return;
+      g.seen = Date.now();
+      if (msg.t === 'ping') {
+        g.send({ t: 'pong' });
+        return;
+      }
+      if (msg.t === 'bye') {
+        drop(g);
+        return;
+      }
       if (msg.t === 'hello') {
         if (msg.v !== PROTOCOL) {
-          send(g, { t: 'welcome', seat: null, reason: 'This room runs a different version of the game. Reload the page.' });
+          g.send({ t: 'welcome', seat: null, reason: 'This room runs a different version of the game. Reload the page.' });
           return;
         }
         const client = String(msg.client).slice(0, 40);
@@ -96,17 +117,17 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
           const taken = new Set(Object.values(claims));
           seat = ctrl.seats.findIndex((s, i) => s.kind === 'remote' && !taken.has(i));
           if (seat < 0) {
-            send(g, { t: 'welcome', seat: null, reason: 'All seats are taken. You are watching.' });
+            g.send({ t: 'welcome', seat: null, reason: 'All seats are taken. You are watching.' });
             g.seat = null;
             sendState(g);
             return;
           }
         }
-        // one connection per seat: drop an older one from the same seat
-        for (const other of guests.current) if (other !== g && other.seat === seat) other.conn.close();
+        // one link per seat: drop an older one from the same seat
+        for (const other of [...guests.current]) if (other !== g && other.seat === seat) drop(other);
         g.seat = seat;
         ctrl.claimSeat(client, seat, name);
-        send(g, { t: 'welcome', seat });
+        g.send({ t: 'welcome', seat });
         refreshOnline();
         broadcast();
         return;
@@ -114,76 +135,151 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       if (msg.t === 'action') {
         const a = msg.action as Action;
         if (g.seat === null || !a || typeof a !== 'object' || a.player !== g.seat) {
-          send(g, { t: 'error', message: 'That is not your seat.' });
+          g.send({ t: 'error', message: 'That is not your seat.' });
           return;
         }
         if (!ctrl.record.started) {
-          send(g, { t: 'error', message: 'The host has not started the game yet.' });
+          g.send({ t: 'error', message: 'The host has not started the game yet.' });
           return;
         }
         const err = ctrl.act(a);
-        if (err) send(g, { t: 'error', message: err });
+        if (err) g.send({ t: 'error', message: err });
       }
     };
 
+    // relay: friends whose network can't make a direct link
+    const relay = new RelayHost(room);
+    relay.onstatus = () => setRelayReady(relay.ready > 0);
+    relay.onmessage = (from, msg) => {
+      const key = `${from.broker}:${from.id}`;
+      let g = relayGuests.get(key);
+      if (!g) {
+        if (msg.t !== 'hello') return; // a stale link from before a reload
+        let isOpen = true;
+        const ng: Guest = {
+          via: 'relay',
+          get open() {
+            return isOpen;
+          },
+          send: (m) => isOpen && relay.send(from, m),
+          close: () => {
+            isOpen = false;
+            relayGuests.delete(key);
+          },
+          client: null,
+          seat: null,
+          seen: Date.now(),
+        };
+        g = ng;
+        relayGuests.set(key, ng);
+        guests.current.add(ng);
+      }
+      handle(g, msg);
+    };
+
+    // direct links through the PeerJS room server
     const open = () => {
       if (closed) return;
-      setReady(false);
+      if (retry) clearTimeout(retry);
+      retry = null;
+      peer?.destroy();
+      setDirectReady(false);
       setStatus('Opening the room…');
-      peer = new Peer(hostPeerId(room), { debug: 0, ...brokerOptions() });
-      peer.on('open', () => {
-        setReady(true);
-        setStatus('Room open');
-      });
-      peer.on('connection', (conn) => {
-        const g: Guest = { conn, client: null, seat: null };
+      // the same token every time lets a reloaded or woken-up tab take the room
+      // code straight back instead of waiting for the server to drop the old one
+      const p = new Peer(hostPeerId(room), { debug: 0, token: roomToken(room), config: rtcConfig(), ...brokerOptions() });
+      peer = p;
+      p.on('open', () => setDirectReady(true));
+      p.on('connection', (conn) => {
+        const g: Guest = {
+          via: 'direct',
+          get open() {
+            return conn.open;
+          },
+          send: (m) => {
+            try {
+              if (conn.open) conn.send(m);
+            } catch {
+              // connection dropped; its close handler cleans up
+            }
+          },
+          close: () => conn.close(),
+          client: null,
+          seat: null,
+          seen: Date.now(),
+        };
         guests.current.add(g);
         conn.on('data', (d) => handle(g, d as GuestMessage));
-        conn.on('close', () => {
-          guests.current.delete(g);
-          refreshOnline();
-        });
-        conn.on('error', () => {
-          guests.current.delete(g);
-          refreshOnline();
-        });
+        conn.on('close', () => drop(g));
+        conn.on('error', () => drop(g));
       });
-      peer.on('disconnected', () => {
-        if (!closed && peer && !peer.destroyed) {
-          setStatus('Reconnecting to the room server…');
-          try {
-            peer.reconnect();
-          } catch {
-            // handled by the error/retry path
-          }
+      p.on('disconnected', () => {
+        if (closed || p.destroyed) return;
+        setDirectReady(false);
+        setStatus('Reconnecting to the room server…');
+        try {
+          p.reconnect();
+        } catch {
+          // handled by the error/retry path
         }
       });
-      peer.on('error', (err: { type?: string; message?: string }) => {
-        if (closed) return;
+      p.on('error', (err: { type?: string; message?: string }) => {
+        if (closed || peer !== p) return;
         const type = err?.type ?? '';
         if (type === 'peer-unavailable') return; // a guest vanished; not fatal
-        setReady(false);
+        setDirectReady(false);
         setStatus(
           type === 'unavailable-id'
             ? 'The room code is still held by an earlier session; retrying…'
             : `Connection problem (${type || err?.message || 'unknown'}); retrying…`,
         );
-        peer?.destroy();
-        retry = setTimeout(open, type === 'unavailable-id' ? 6000 : 4000);
+        p.destroy();
+        retry = setTimeout(open, type === 'unavailable-id' ? 6000 : 3000);
       });
     };
+    // Phones pause a page that is not on screen (e.g. while the host sends the
+    // code in a chat app) and drop its links. Check them whenever the page is
+    // back and every few seconds.
+    const wake = () => {
+      if (closed) return;
+      relay.wake();
+      if (retry) return;
+      if (!peer || peer.destroyed) open();
+      else if (peer.disconnected) {
+        setDirectReady(false);
+        setStatus('Reconnecting to the room server…');
+        try {
+          peer.reconnect();
+        } catch {
+          open();
+        }
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') wake();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', wake);
+    const watchdog = setInterval(() => {
+      wake();
+      const now = Date.now();
+      for (const g of [...guests.current]) if (now - g.seen > GUEST_SILENCE_LIMIT) drop(g);
+    }, 5000);
     open();
-    const unsub = ctrl.subscribe(() => {
-      for (const g of guests.current) sendState(g);
-    });
+    const unsub = ctrl.subscribe(broadcast);
     return () => {
       closed = true;
       unsub();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', wake);
+      clearInterval(watchdog);
       if (retry) clearTimeout(retry);
-      for (const g of guests.current) g.conn.close();
+      for (const g of guests.current) g.close();
       guests.current.clear();
+      relay.close();
       peer?.destroy();
-      setReady(false);
+      setDirectReady(false);
+      setRelayReady(false);
       setStatus('');
     };
   }, [ctrl, room]);
@@ -193,6 +289,7 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
     broadcast();
   }, [online]);
 
+  const ready = directReady || relayReady;
   return useMemo(
     () => ({
       status: ready ? `Room ${room} · ${online.size} friend${online.size === 1 ? '' : 's'} online` : status,
@@ -263,6 +360,7 @@ export function HostLobby({ ctrl, net, onPlay, onHome }: { ctrl: GameController;
           </button>
         </div>
         <p class={net.ready ? 'hint ok' : 'hint'}>{net.status || 'Opening the room…'}</p>
+        <p class="hint">After sending the code, come back to this screen: friends can only join while it is open.</p>
       </section>
       <section class="setup-section">
         <h2>Seats</h2>
@@ -298,7 +396,7 @@ export function HostLobby({ ctrl, net, onPlay, onHome }: { ctrl: GameController;
             {missing.length > 0 ? `Start (${missing.length} empty seat${missing.length === 1 ? '' : 's'} → computer)` : 'Start the game'}
           </button>
         )}
-        <p class="hint">Keep this tab open while you play: your browser runs the game for everyone.</p>
+        <p class="hint">Keep this screen open while you play: your phone runs the game for everyone.</p>
       </div>
     </main>
   );
@@ -357,41 +455,25 @@ type GuestState =
   | { kind: 'game'; snap: SeatSnapshot; seats: LobbySeat[]; last: { action: Action; at: number } | null; seat: number | null; note?: string };
 
 export function GuestScreen({ code, playerName, onHome, onRules }: { code: string; playerName: string; onHome(): void; onRules(): void }) {
-  const [st, setSt] = useState<GuestState>({ kind: 'connecting', msg: 'Connecting to the room…' });
+  const [st, setSt] = useState<GuestState>({ kind: 'connecting', msg: 'Looking for the room…' });
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
-  const conn = useRef<DataConnection | null>(null);
+  const conn = useRef<GuestConnector | null>(null);
   const seatRef = useRef<number | null>(null);
-  const [online, setOnline] = useState(false);
+  const [online, setOnline] = useState<Via | null>(null);
 
   useEffect(() => {
-    let peer: Peer | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
-    const me = clientId();
-
-    const schedule = (msg: string) => {
-      if (closed) return;
-      setOnline(false);
-      setSt((cur) => (cur.kind === 'connecting' ? { kind: 'connecting', msg } : { ...cur, note: msg }));
-      if (retry) clearTimeout(retry);
-      retry = setTimeout(connect, 3500);
-    };
-
-    const connect = () => {
-      if (closed) return;
-      peer?.destroy();
-      peer = new Peer({ debug: 0, ...brokerOptions() });
-      peer.on('open', () => {
-        const c = peer!.connect(hostPeerId(code), { reliable: true, serialization: 'json' });
-        conn.current = c;
-        c.on('open', () => {
-          setOnline(true);
-          c.send({ t: 'hello', v: PROTOCOL, name: playerName, client: me } satisfies GuestMessage);
-        });
-        c.on('data', (raw) => {
-          const msg = raw as HostMessage;
-          if (!msg || typeof msg !== 'object') return;
+    const say = (msg: string) => setSt((cur) => (cur.kind === 'connecting' ? { kind: 'connecting', msg } : { ...cur, note: msg }));
+    const g = new GuestConnector(
+      code,
+      { t: 'hello', v: PROTOCOL, name: playerName, client: clientId() },
+      {
+        status: say,
+        online: (via) => {
+          setOnline(via);
+          if (via) setSt((cur) => (cur.kind === 'connecting' ? cur : { ...cur, note: undefined }));
+        },
+        message: (msg) => {
           if (msg.t === 'welcome') {
             seatRef.current = msg.seat;
             if (msg.reason) setError(msg.reason);
@@ -402,27 +484,27 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
           } else if (msg.t === 'error') {
             setError(msg.message);
           }
-        });
-        c.on('close', () => schedule('Connection lost. Reconnecting…'));
-        c.on('error', () => schedule('Connection problem. Reconnecting…'));
-      });
-      peer.on('error', (err: { type?: string }) => {
-        if (err?.type === 'peer-unavailable') schedule(`Room ${code} is not open. Is the host's tab still open? Retrying…`);
-        else schedule(`Connection problem (${err?.type ?? 'unknown'}). Retrying…`);
-      });
+        },
+      },
+    );
+    conn.current = g;
+    // back on screen or back online: check the link straight away
+    const wake = () => g.wake();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') wake();
     };
-    connect();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', wake);
     return () => {
-      closed = true;
-      if (retry) clearTimeout(retry);
-      conn.current?.close();
-      peer?.destroy();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', wake);
+      g.close();
+      conn.current = null;
     };
   }, [code, playerName]);
 
   const send = (a: Action) => {
-    if (conn.current?.open) conn.current.send({ t: 'action', action: a } satisfies GuestMessage);
-    else setError('Not connected to the host right now.');
+    if (!conn.current?.send({ t: 'action', action: a })) setError('Not connected to the host right now.');
   };
 
   if (st.kind === 'connecting') {
@@ -487,7 +569,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         flash={flashOf(st.last?.action, st.last?.at ?? 0)}
         onMenu={() => setMenu(true)}
         onHome={onHome}
-        note={online ? `Room ${code}` : st.note ?? 'Offline'}
+        note={online ? `Room ${code}${online === 'relay' ? ' · via relay' : ''}` : st.note ?? 'Offline'}
       />
       {menu && (
         <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && setMenu(false)}>

@@ -1,0 +1,40 @@
+name: Online check
+
+# Plays the online join against the real outside services (PeerJS room
+# server, public relay brokers): on every push that touches the networking
+# code (checking that commit's build), weekly and on demand (checking the
+# live site too), so a service that stops working gets noticed.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+  push:
+    paths:
+      - 'web/src/net/**'
+      - 'scripts/online-check.mjs'
+      - '.github/workflows/online-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build this commit
+        run: npm run web:build
+      - name: Check this commit's build
+        run: |
+          npm run web:preview -- --port 4173 --strictPort &
+          for i in $(seq 1 60); do curl -sf http://localhost:4173/ >/dev/null && break; sleep 1; done
+          node scripts/online-check.mjs http://localhost:4173/
+      - name: Check the live site
+        if: github.event_name != 'push'
+        run: node scripts/online-check.mjs https://englader.github.io/Island-traders/

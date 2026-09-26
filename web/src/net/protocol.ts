@@ -1,6 +1,7 @@
 import type { Action, PlayerId } from 'engine';
 import type { SeatSnapshot } from '../game/controller';
 import type { Seat } from '../game/seats';
+import { loadJson, saveJson } from '../game/storage';
 
 /**
  * Online play: the host's browser runs the engine. Friends connect over
@@ -10,7 +11,8 @@ import type { Seat } from '../game/seats';
  * hidden cards or make an illegal move.
  */
 
-export const PROTOCOL = 1;
+/** Bumped when messages change; a host turns away guests on another version. */
+export const PROTOCOL = 2;
 
 /** Room codes avoid easily confused characters (0/O, 1/I). */
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -31,6 +33,39 @@ export function normalizeCode(code: string): string {
 /** The PeerJS id the host registers for a room. */
 export function hostPeerId(code: string): string {
   return `island-traders-room-${normalizeCode(code).toLowerCase()}`;
+}
+
+/**
+ * A secret the host's browser keeps per room. The room server hands a room
+ * code back to whoever shows the same token, so a host whose tab was reloaded
+ * or put to sleep gets the room back at once.
+ */
+export function roomToken(code: string): string {
+  const saved = loadJson<{ room: string; token: string }>('roomToken');
+  if (saved?.room === code && saved.token) return saved.token;
+  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  saveJson('roomToken', { room: code, token });
+  return token;
+}
+
+/**
+ * STUN servers tell each phone its public address so two phones can often
+ * link up directly. When they can't (common on mobile data), the game falls
+ * back to the relay in relay.ts.
+ */
+export const ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
+
+export function rtcConfig(): RTCConfiguration {
+  return { iceServers: ICE_SERVERS };
+}
+
+/**
+ * How a guest reaches the host: a direct link first and the relay if that
+ * doesn't connect quickly. `?link=direct` or `?link=relay` forces one (tests).
+ */
+export function linkMode(): 'both' | 'direct' | 'relay' {
+  const q = new URLSearchParams(location.search).get('link');
+  return q === 'direct' || q === 'relay' ? q : 'both';
 }
 
 export interface BrokerOptions {
@@ -71,7 +106,10 @@ export interface LobbySeat {
 
 export type GuestMessage =
   | { t: 'hello'; v: number; name: string; client: string }
-  | { t: 'action'; action: Action };
+  | { t: 'action'; action: Action }
+  /** heartbeat; the host answers with a pong */
+  | { t: 'ping' }
+  | { t: 'bye' };
 
 export type HostMessage =
   | { t: 'welcome'; seat: PlayerId | null; reason?: string }
@@ -82,4 +120,5 @@ export type HostMessage =
       seats: LobbySeat[];
       last: { action: Action; at: number } | null;
     }
-  | { t: 'error'; message: string };
+  | { t: 'error'; message: string }
+  | { t: 'pong' };

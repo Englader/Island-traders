@@ -39,5 +39,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
+    {
+      // local MQTT broker standing in for the public relay brokers
+      command: 'node scripts/mqtt-broker.mjs 9001',
+      url: 'http://127.0.0.1:9001/',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
   ],
 });
