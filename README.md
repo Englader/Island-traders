@@ -32,6 +32,9 @@ GitHub Actions)
   chart of every total rolled against fair-dice odds, for everyone or one
   player
 - Drawn resource icons that look the same on every device
+- Animations: new roads and ships pop into place, settlements and cities drop
+  onto the board, trades show the cards sliding between the two sides, and
+  development cards fly in and turn over when bought or played (tap to skip)
 - Dice rolls are animated: two 3D dice tumble in the middle of the screen,
   show the total, then fly into the header (about 2 s; tap to skip)
 - Online play with friends: the host opens a room and friends join with a

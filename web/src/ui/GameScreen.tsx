@@ -3,7 +3,8 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
-import { mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
+import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
+import { FxOverlay, fxFor, type FxEvent } from './Fx';
 import { DiceRoll, type RollInfo } from './DiceRoll';
 import { DiceStatsSheet } from './DiceStats';
 import { ResGlyph } from './icons';
@@ -33,6 +34,8 @@ export interface GameScreenProps {
   error: string | null;
   clearError(): void;
   flash: Flash | null;
+  /** The latest move and when it happened (for the trade and card animations). */
+  last?: { action: Action; at: number } | null;
   /** Local games with computer players: their pace, adjustable from the board. */
   speed?: BotSpeed;
   onSpeed?: (s: BotSpeed) => void;
@@ -387,6 +390,20 @@ export function GameScreen(props: GameScreenProps) {
   const seenRoll = useRef<number | null>(rollFlash?.key ?? null);
   const headerDice = useRef<HTMLDivElement>(null);
   const [rolling, setRolling] = useState<RollInfo | null>(null);
+  // Trades and development cards are shown in the middle of the screen too.
+  const prevView = useRef(view);
+  const seenFx = useRef(props.last?.at ?? 0);
+  const [fx, setFx] = useState<(FxEvent & { key: number }) | null>(null);
+  useEffect(() => {
+    const l = props.last;
+    if (l && l.at !== seenFx.current) {
+      seenFx.current = l.at;
+      const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const e = reduced ? null : fxFor(l.action, prevView.current, view, seat);
+      if (e) setFx({ ...e, key: l.at });
+    }
+    prevView.current = view;
+  }, [view]);
   useEffect(() => {
     if (!rollFlash || rollFlash.key === seenRoll.current) return;
     seenRoll.current = rollFlash.key;
@@ -435,6 +452,7 @@ export function GameScreen(props: GameScreenProps) {
           ) : null}
         </div>
       </header>
+      {fx && <FxOverlay fx={fx} view={view} colors={colors} seat={seat} ms={FX_TIME[props.speed ?? 'normal']} onDone={() => setFx(null)} />}
       {rolling && (
         <DiceRoll
           roll={rolling}

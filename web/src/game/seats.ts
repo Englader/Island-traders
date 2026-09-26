@@ -54,6 +54,10 @@ export const ROLL_TIMING: Record<BotSpeed, RollTiming> = {
   normal: { tumble: 1000, hold: 350, flight: 450 },
   fast: { tumble: 550, hold: 150, flight: 300 },
 };
+/** How long a trade or development card is shown in the middle of the screen, in ms. */
+export const FX_TIME: Record<BotSpeed, number> = { slow: 1800, normal: 1400, fast: 800 };
+const FX_ACTIONS = new Set<Action['type']>(['bankTrade', 'confirmTrade', 'acceptTrade', 'buyDevCard', 'playKnight', 'playRoadBuilding', 'playYearOfPlenty', 'playMonopoly']);
+
 export function rollDuration(speed: BotSpeed): number {
   const t = ROLL_TIMING[speed];
   return t.tumble + t.hold + t.flight;
@@ -68,6 +72,8 @@ export function botDelay(speed: BotSpeed, last: Action | null): number {
   if (!last) return base;
   // the dice animation, then a moment to see what the roll produced
   if (last.type === 'rollDice') return rollDuration(speed) + base * 0.8;
+  // a trade or a development card is shown first
+  if (FX_ACTIONS.has(last.type)) return FX_TIME[speed] + base * 0.6;
   if (last.type === 'endTurn') return base * 1.4;
   return base;
 }

@@ -567,6 +567,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         error={error}
         clearError={() => setError(null)}
         flash={flashOf(st.last?.action, st.last?.at ?? 0)}
+        last={st.last}
         onMenu={() => setMenu(true)}
         onHome={onHome}
         note={online ? `Room ${code}${online === 'relay' ? ' · via relay' : ''}` : st.note ?? 'Offline'}
