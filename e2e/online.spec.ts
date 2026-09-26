@@ -118,7 +118,8 @@ test('open trade: the active player asks what a friend would give for a card; th
   await expect(guest.locator('main')).toContainText('Waiting for');
   await playSetup(host, guest, 'Trader');
 
-  // play until the host or the friend may trade (rolling, and moving the robber after a 7)
+  // play until the host or the friend may trade with a card in hand (rolling, moving the
+  // robber after a 7, and passing turns while the hand is empty)
   let actor: Page | null = null;
   let other: Page | null = null;
   const deadline = Date.now() + 90_000;
@@ -140,9 +141,14 @@ test('open trade: the active player asks what a friend would give for a card; th
         await a.locator('.confirm-bar button.primary').first().click();
       }
       if (await a.getByRole('button', { name: /Trade/ }).first().isVisible()) {
-        actor = a;
-        other = b;
-        break;
+        // a second settlement by the desert or the sea, or the robber, can leave a hand empty
+        const hand = (await a.locator('.hand .rtile:not(.dev) .rtile-n').allTextContents()).map(Number);
+        if (hand.some((n) => n > 0)) {
+          actor = a;
+          other = b;
+          break;
+        }
+        await a.getByRole('button', { name: /End turn/ }).click();
       }
     }
     if (!actor) await host.waitForTimeout(250);
