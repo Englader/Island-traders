@@ -67,15 +67,15 @@ Plan: build A first, then add B if games need to survive disconnects.
 
 ## 4. Free hosting (decided: public repo + GitHub Pages)
 
-The repository is being renamed to `island-traders` and made public. GitHub
+The repository is `Englader/Island-traders` and is public. GitHub
 Pages is free for public repositories, so the site will live at
-`https://englader.github.io/island-traders/`.
+`https://englader.github.io/Island-traders/`.
 
 - One-time setting: **Settings → Pages → Source: GitHub Actions**.
 - Workflow `.github/workflows/pages.yml`, on every push to `main`: `npm ci`,
   then `npm test`, then the Vite build of `web/`, then `actions/upload-pages-artifact`
   and `actions/deploy-pages`.
-- Set Vite's `base` to `/island-traders/` so asset paths work under the
+- Set Vite's `base` to `/Island-traders/` (it must match the repository name exactly) so asset paths work under the
   repository path.
 - Branding: the game is called **Island Traders** everywhere users see it
   (site title, UI, README). "Catan" appears only as a factual reference to
