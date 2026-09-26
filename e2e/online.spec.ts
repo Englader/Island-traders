@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const BASE = '/?peer=localhost:9000/broker';
+const BASE = '/?peer=127.0.0.1:9000/broker';
 
 /** Places a starting piece if this page is asked to. */
 async function place(page: Page): Promise<boolean> {

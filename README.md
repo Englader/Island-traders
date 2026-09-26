@@ -16,11 +16,44 @@ The state is plain JSON: the seeded RNG, the hidden deck order and the fog stack
 all live inside it. That gives you replays, an authoritative server and bot
 self-play without extra work. Each player gets a redacted view of the state.
 
-## Quick start
+## Play in the browser
+
+**https://englader.github.io/Island-traders/** (deployed from `main` by
+GitHub Actions)
+
+- Base game (3–6 players) and the nine Seafarers scenarios
+- Pass-and-play on one device: a hand-over screen keeps hands hidden
+- Computer players (a heuristic bot that plans builds and trades with the bank)
+- Online play with friends: the host opens a room and friends join with a
+  5-letter code or an invite link
+- Phone-first layout; the game is saved in the browser after every move
+
+```bash
+npm run web:dev        # dev server with hot reload
+npm run web:build      # static site in web/dist (BASE_PATH=/Island-traders/ for Pages)
+npm run test:e2e       # Playwright tests on a phone viewport (builds and serves the site)
+```
+
+### Online play
+
+The host's browser runs the engine. Friends connect over WebRTC through
+[PeerJS](https://peerjs.com/): they send the moves they want to make, the host
+checks every move with `applyAction` and sends each friend only their own
+`viewFor` view plus their legal moves. Nobody can see hidden cards or make an
+illegal move. The host must keep the tab open; friends who drop out rejoin
+with the same code and get their seat back, and the host can hand an empty
+seat to a computer player.
+
+The free PeerJS cloud broker introduces the browsers. To use your own broker,
+run `node scripts/peer-broker.mjs` (or `npx peer`) and open the game with
+`?peer=host:port/path`, or build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
+`VITE_PEER_PATH` and `VITE_PEER_SECURE`.
+
+## Quick start (engine)
 
 ```bash
 npm install
-npm test                                  # 150+ tests: golden positions, scenarios, fuzzing
+npm test                                  # 180+ tests: golden positions, scenarios, bots, fuzzing
 npm run demo -- list                      # list scenarios
 npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board
 npm run build                             # emit dist/ (ESM + .d.ts)
@@ -48,7 +81,9 @@ src/
   rules/       legality queries, production, longest route, ship rules, mutation helpers
   engine/      createGame, applyAction (turn state machine), legal actions, player views
   scenarios/   base game + 9 Seafarers scenarios as data + rule hooks
-  bots/        weighted-random bot and a simulator (doubles as a fuzzer)
+  bots/        heuristic bot, weighted-random bot and simulators (fuzzing)
+web/           browser game: Vite + Preact, SVG board, pass-and-play, online (PeerJS)
+e2e/           Playwright tests for the browser game
 ```
 
 - **Board = graph.** Each hex has axial coordinates. A vertex is the set of 3
@@ -158,15 +193,20 @@ code changes.
 - **Purity and determinism:** inputs are never mutated, and the same seed and
   actions always produce the same state.
 
+- **Heuristic bots** finish a full game in every scenario and supported
+  player count, using only moves the engine accepts.
+- **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
+  against the computer that is reloaded and continued, a Seafarers board,
+  the pass-and-play hand-over, and an online game between two browsers
+  through a local PeerJS broker.
+
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 
 ## Roadmap
 
-The next steps are in [`docs/ROADMAP.md`](docs/ROADMAP.md):
-- check the rules against the official rulebooks
-- a browser game for one device
-- online play with friends (peer-to-peer first)
-- free hosting
+[`docs/ROADMAP.md`](docs/ROADMAP.md) records what was done (rule check
+against the official rulebooks, browser game, online play, GitHub Pages)
+and the next steps.
 
 ## Intellectual property
 

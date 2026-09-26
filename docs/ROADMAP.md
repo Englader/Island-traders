@@ -1,8 +1,9 @@
 # Roadmap
 
 The rules engine is done: all base and Seafarers rules, 10 scenarios, 5–6
-player modes, redacted views, legal-move enumeration and 154 tests. These are
-the next steps, in order.
+player modes, redacted views and legal-move enumeration, checked against the
+official rulebooks. The browser game, online play and hosting (sections 2–4)
+are done too. Section 5 lists what is next.
 
 ## 1. Check the rules against the official rulebooks (done)
 
@@ -25,66 +26,70 @@ already matched. Fixed:
 The beginner setup (Illustration A) was not added: it is a printed map, and
 published maps stay original.
 
-## 2. Browser game on one device
+## 2. Browser game on one device (done)
 
-The engine has no dependencies and runs in the browser as is.
+`web/` is a Vite + Preact app with an SVG board drawn from
+`hexCenter` / `vertexPoint`.
 
-- **Stack:** Vite + TypeScript in a `web/` folder, with an SVG board drawn
-  using `hexCenter`, `vertexPoint` and `edgeMidpoint` from `src/board/hex.ts`.
-- **Screens:**
-  - new game: scenario, seats (human or bot), options
-  - board: tap intersections and paths to build; legal spots are highlighted
-    from `legalSettlements` / `legalRoads` / `legalShips`
-  - player panel and action bar: roll, build, buy, trade, dev cards, end turn
-  - dialogs: discard, gold choice, robber/pirate and victim, trade
-    offer/accept, Year of Plenty, Monopoly, harbor placement, scenario
-    actions (wonders, fortress, cloth, rob)
-  - game log
-- **Pass-and-play:** render `viewFor(state, seat)` for the seat that must act.
-  Show a "pass the device to …" screen between seats so hands stay hidden.
-- **Bots:** replace the weighted-random bot with a heuristic one. It should
-  score settlement spots by pips and resource variety, and trade toward the
-  next build.
-- **Save and resume:** keep the JSON state in `localStorage`.
-- Make it phone friendly (large tap targets, portrait layout).
-- Add a Playwright smoke test that starts a game and plays a few turns.
+- **Screens:** home, new game (scenario, seats human or computer, options),
+  the board, pass-the-device, and game over.
+- **Board:** legal spots from `legalActions` are highlighted; a tap selects
+  and a confirm bar commits. Pinch/drag/wheel zoom. Wide Seafarers maps
+  rotate 90° on tall screens. Scenario markers: fog, tribe gifts (face up
+  except cards), cloth villages, fortresses, the fleet circuit, the strait.
+- **Actions and dialogs:** roll, build, trade (bank, and player offers with
+  counter-offers), development cards, move ship, scenario actions (wonders,
+  fortress attacks, gifted harbors), discard, gold, robber/pirate with a
+  victim choice, robbing anyone (Pirate Islands), the log.
+- **Pass-and-play:** with several humans on one device, a hand-over screen
+  hides each hand.
+- **Bots:** `src/bots/heuristicBot.ts` scores spots by pips, missing
+  resources, harbors and island bonuses; heads roads and ships for the best
+  reachable spot or scenario target; saves for the nearest build and trades
+  with the bank only to complete it; answers trade offers. Heuristic bots
+  finish games in every scenario (tested).
+- **Save and resume:** the whole game record is in `localStorage` after
+  every move.
+- **Tests:** Playwright on a phone viewport (`npm run test:e2e`).
 
-## 3. Playing online with friends
+## 3. Playing online with friends (done: peer-to-peer)
 
-The engine is already built for this: `applyAction` is pure, validates every
-move and is deterministic from its seed, and `viewFor` hides secret
-information per seat.
+Option A is built: the host's browser runs the engine and friends join with
+a room code over WebRTC via PeerJS. The host validates every move and sends
+each seat its `viewFor` view and legal moves. Seats survive reconnects; empty
+seats can go to computer players. The broker is configurable
+(`?peer=host:port/path`, `VITE_PEER_*`) and `scripts/peer-broker.mjs` runs one
+locally, which the online Playwright test uses.
 
 | Option | How | Cost | Trade-offs |
 |---|---|---|---|
-| **A. Peer-to-peer (recommended first)** | The host's browser runs the engine and friends join with a room code over WebRTC via [PeerJS](https://peerjs.com/). Friends send actions; the host checks them with `applyAction` and sends each seat its `viewFor`. | Free, and works on any static host. The PeerJS cloud handles signaling for free. | The host must keep the tab open. Some strict networks need a TURN relay, which isn't free at scale. The shared PeerJS server can be flaky; a self-hosted one is an option. |
-| B. Cloudflare Worker + one Durable Object per room | A WebSocket server holds the authoritative state; clients only ever receive their `viewFor`. | [Durable Objects are on the Workers Free plan](https://developers.cloudflare.com/changelog/2025-04-07-durable-objects-free-tier/) (about 3M requests a month). | Games survive the host leaving and players can reconnect. Needs a Cloudflare account and API token. |
-| C. Firebase / Supabase realtime | Shared database state. | Free tiers. | Hidden information (hands, deck) needs server functions, so it's a poor fit. |
+| **A. Peer-to-peer (built)** | Host browser + PeerJS | Free | The host must keep the tab open. Some strict networks need a TURN relay. The shared PeerJS broker can be flaky; a self-hosted one is an option. |
+| B. Cloudflare Worker + one Durable Object per room | A WebSocket server holds the authoritative state; clients only ever receive their `viewFor`. | [Durable Objects are on the Workers Free plan](https://developers.cloudflare.com/changelog/2025-04-07-durable-objects-free-tier/) | Games survive the host leaving. Needs a Cloudflare account. |
+| C. Firebase / Supabase realtime | Shared database state. | Free tiers. | Hidden information needs server functions, so it's a poor fit. |
 
-Plan: build A first, then add B if games need to survive disconnects.
+Next: B if games need to survive the host closing the tab.
 
-## 4. Free hosting (decided: public repo + GitHub Pages)
+## 4. Free hosting (done: public repo + GitHub Pages)
 
-The repository is `Englader/Island-traders` and is public. GitHub
-Pages is free for public repositories, so the site will live at
-`https://englader.github.io/Island-traders/`.
+The site is `https://englader.github.io/Island-traders/`.
 
-- One-time setting: **Settings → Pages → Source: GitHub Actions**.
-- Workflow `.github/workflows/pages.yml`, on every push to `main`: `npm ci`,
-  then `npm test`, then the Vite build of `web/`, then `actions/upload-pages-artifact`
-  and `actions/deploy-pages`.
-- Set Vite's `base` to `/Island-traders/` (it must match the repository name exactly) so asset paths work under the
-  repository path.
-- Branding: the game is called **Island Traders** everywhere users see it
-  (site title, UI, README). "Catan" appears only as a factual reference to
-  the rules it follows, with the not-affiliated notice. No official maps or
-  art.
-- Fallback if the repo goes private again: Cloudflare Pages (free, deploys
-  from private repos).
+- Setting: **Settings → Pages → Source: GitHub Actions**.
+- `.github/workflows/pages.yml` runs on every push to `main`: `npm ci`,
+  typecheck, `npm test`, the Vite build of `web/` with
+  `BASE_PATH=/Island-traders/`, then `actions/upload-pages-artifact` and
+  `actions/deploy-pages`.
+- `.github/workflows/ci.yml` runs the same checks plus the Playwright tests
+  on pull requests.
+- Branding: **Island Traders** everywhere users see it. "Catan" appears only
+  as a factual reference to the rules it follows, with the not-affiliated
+  notice. No official maps or art.
+- Fallback if the repo goes private again: Cloudflare Pages.
 
-## 5. Engine follow-ups
+## 5. Next steps
 
 - 5–6 player maps for the Seafarers scenarios (only the base game and New
   World support 5–6 players today).
-- Let bots make domestic trade offers.
+- Let bots make domestic trade offers (they only answer them now).
+- Online option B (a server that keeps games alive without the host).
+- Installable offline app (a service worker; the manifest is in place).
 - Official maps as `MapSpec` data if they are verified and licensed.
