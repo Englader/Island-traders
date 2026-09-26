@@ -207,6 +207,12 @@ export interface GameConfig {
   options?: Partial<GameOptions>;
 }
 
+export interface DiceRoll {
+  by: PlayerId;
+  dice: [number, number];
+  turn: number;
+}
+
 export interface GameState {
   version: 1;
   scenario: string;
@@ -219,6 +225,8 @@ export interface GameState {
   bank: ResourceCounts;
   /** Hidden draw pile, top of the deck is the last element. */
   devDeck: DevCardType[];
+  /** Every roll of the dice, in order (public; older saves may lack it). */
+  rolls?: DiceRoll[];
   longestRoute: { holder: PlayerId | null; lengths: number[] };
   largestArmy: { holder: PlayerId | null };
   turn: TurnState;

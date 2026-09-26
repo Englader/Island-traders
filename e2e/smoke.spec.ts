@@ -265,3 +265,46 @@ test('the computer level is picked for a new game, remembered, and can be change
   await page.getByRole('button', { name: /New game/ }).click();
   await expect(page.locator('.level-pick .seg button.on')).toHaveText('Hard');
 });
+
+test('the chosen map can be previewed before the game starts', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: /Four Islands/ }).click();
+  const thumb = page.getByRole('button', { name: 'Show the The Four Islands map' });
+  await expect(thumb).toBeVisible();
+  await expect(thumb.locator('svg.board')).toBeVisible();
+  await thumb.click();
+  const sheet = page.locator('.sheet[aria-label="The Four Islands"]');
+  await expect(sheet.locator('.map-big svg.board')).toBeVisible();
+  await expect(sheet.locator('.hint')).toContainText(/shuffled|same in every game/);
+});
+
+test('dice statistics count every roll, for everyone and per player', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'less' }).first().click();
+  await page.getByRole('button', { name: /Options/ }).click();
+  await page.getByRole('button', { name: 'fast' }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  const deadline = Date.now() + 120_000;
+  let rolls = 0;
+  while (Date.now() < deadline && rolls < 2) {
+    const did = await step(page);
+    if (did === 'roll') rolls++;
+    if (!did) await page.waitForTimeout(200);
+  }
+  await page.locator('.roll-overlay').click({ timeout: 1000 }).catch(() => {});
+  await page.getByRole('button', { name: 'Dice statistics' }).click();
+  const sheet = page.locator('.sheet[aria-label="Dice statistics"]');
+  const total = Number(await sheet.locator('.stat-tile .stat-value').first().textContent());
+  expect(total).toBeGreaterThanOrEqual(2);
+  // the bars add up to the number of rolls (the table shows each count)
+  const cells = await sheet.locator('.dice-table tbody tr td:nth-child(2)').allTextContents();
+  expect(cells.reduce((n, c) => n + Number(c.split(' ')[0]), 0)).toBe(total);
+  // one player's rolls: fewer (or as many) as everyone's
+  await sheet.locator('.dice-who .chip').nth(1).click();
+  const mine = Number(await sheet.locator('.stat-tile .stat-value').first().textContent());
+  expect(mine).toBeGreaterThanOrEqual(2);
+  expect(mine).toBeLessThanOrEqual(total);
+});

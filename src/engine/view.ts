@@ -3,6 +3,7 @@ import type {
   DevCardInHand,
   GameOptions,
   GameState,
+  DiceRoll,
   LogEntry,
   Phase,
   PieceSupply,
@@ -49,6 +50,8 @@ export interface GameView {
   players: PlayerPublicView[];
   ext: Record<string, unknown>;
   log: LogEntry[];
+  /** Every roll so far: who rolled and what (for the dice statistics). */
+  rolls: DiceRoll[];
 }
 
 /**
@@ -107,5 +110,6 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameView {
     }),
     ext,
     log: s.log.filter((e) => !e.visibleTo || (viewer !== null && e.visibleTo.includes(viewer))),
+    rolls: s.rolls ?? [],
   };
 }

@@ -1,8 +1,10 @@
 import { COSTS, listScenarios, type GameOptions, type ScenarioDef } from 'engine';
+import { Fragment } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, LEVEL_HINT, LEVEL_LABEL, PLAYER_COLORS, type BotLevel, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
+import { MapPreview } from './MapPreview';
 
 /** Builds for sandboxed previews (no WebSocket or WebRTC) set VITE_NO_ONLINE. */
 export const ONLINE = !import.meta.env.VITE_NO_ONLINE;
@@ -198,22 +200,24 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
         <h2>Scenario</h2>
         <div class="scenario-list">
           {scenarios.map((s) => (
-            <button
-              type="button"
-              key={s.id}
-              class={s.id === scenarioId ? 'scenario-card on' : 'scenario-card'}
-              onClick={() => {
-                setScenarioId(s.id);
-                setVp(null);
-                setCount(Math.min(Math.max(count, s.minPlayers), s.maxPlayers));
-              }}
-            >
-              <span class="scenario-title">{s.name}</span>
-              <span class="scenario-meta">
-                {s.expansion === 'seafarers' ? 'Seafarers' : 'Classic'} · {s.minPlayers}–{s.maxPlayers} players
-              </span>
-              {s.id === scenarioId && <span class="scenario-text">{s.description}</span>}
-            </button>
+            <Fragment key={s.id}>
+              <button
+                type="button"
+                class={s.id === scenarioId ? 'scenario-card on' : 'scenario-card'}
+                onClick={() => {
+                  setScenarioId(s.id);
+                  setVp(null);
+                  setCount(Math.min(Math.max(count, s.minPlayers), s.maxPlayers));
+                }}
+              >
+                <span class="scenario-title">{s.name}</span>
+                <span class="scenario-meta">
+                  {s.expansion === 'seafarers' ? 'Seafarers' : 'Classic'} · {s.minPlayers}–{s.maxPlayers} players
+                </span>
+                {s.id === scenarioId && <span class="scenario-text">{s.description}</span>}
+              </button>
+              {s.id === scenarioId && <MapPreview scenario={scenarioId} name={sc.name} players={n} options={{ tokenPlacement: tokens }} />}
+            </Fragment>
           ))}
         </div>
       </section>

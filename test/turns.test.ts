@@ -234,3 +234,15 @@ describe('legal action enumeration', () => {
     }
   });
 });
+
+describe('dice history', () => {
+  it('records every roll with who rolled it, and shows it to every player', () => {
+    let s = blank('base', 3);
+    s.phase = { kind: 'preRoll' };
+    s = act(s, { type: 'rollDice', player: 0 });
+    const [a, b] = s.turn.dice!;
+    expect(s.rolls).toEqual([{ by: 0, dice: [a, b], turn: s.turn.number }]);
+    expect(viewFor(s, 2).rolls).toEqual(s.rolls);
+    expect(viewFor(s, null).rolls).toHaveLength(1);
+  });
+});

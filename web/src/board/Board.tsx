@@ -17,6 +17,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { RESOURCE_INFO } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import type { Flash } from '../ui/flash';
+import { ResGlyph } from '../ui/icons';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 
@@ -511,9 +512,13 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                   <g key={`gift${e}`} class={`gift gift-${kind}`}>
                     <ellipse cx={m.x + 0.02} cy={m.y + 0.05} rx={0.16} ry={0.16 * TILT} class="token-shadow" />
                     <ellipse cx={m.x} cy={m.y} rx={0.16} ry={0.16 * TILT} class="gift-bg" />
-                    <T x={m.x} y={m.y} s={kind === 'vp' ? 0.2 : 0.15} cls="gift-icon">
-                      {res === 'generic' ? '3:1' : label}
-                    </T>
+                    {res && res !== 'generic' ? (
+                      <ResGlyph r={res} x={m.x} y={m.y} size={0.17} />
+                    ) : (
+                      <T x={m.x} y={m.y} s={kind === 'vp' ? 0.2 : 0.15} cls="gift-icon">
+                        {res === 'generic' ? '3:1' : label}
+                      </T>
+                    )}
                   </g>
                 );
               })}
@@ -706,9 +711,7 @@ function HarborText({ p, type }: { p: Pt; type: HarborType }) {
   }
   return (
     <>
-      <T x={p.x} y={p.y - 0.045} s={0.15} cls="harbor-icon">
-        {RESOURCE_INFO[type].icon}
-      </T>
+      <ResGlyph r={type} x={p.x} y={p.y - 0.06} size={0.2} />
       <T x={p.x} y={p.y + 0.1} s={0.1} cls="harbor-text">
         2:1
       </T>

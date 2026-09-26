@@ -5,6 +5,8 @@ import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../b
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
 import { mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { DiceRoll, type RollInfo } from './DiceRoll';
+import { DiceStatsSheet } from './DiceStats';
+import { ResGlyph } from './icons';
 import type { Flash } from './flash';
 import { Die, Sheet } from './common';
 import {
@@ -49,7 +51,7 @@ type Mode =
   | { kind: 'harbor' }
   | { kind: 'robber'; piece: 'robber' | 'pirate' };
 
-type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores';
+type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice';
 
 interface Pending {
   key: string;
@@ -206,6 +208,7 @@ export function GameScreen(props: GameScreenProps) {
   const { view, legal, seat, colors, kinds, send } = props;
   const [mode, setMode] = useState<Mode>(null);
   const [sheet, setSheet] = useState<SheetName>(null);
+  const [diceFor, setDiceFor] = useState<PlayerId | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const sc = getScenario(view.scenario);
   const ph = view.phase;
@@ -471,6 +474,18 @@ export function GameScreen(props: GameScreenProps) {
               <button type="button" class="log-chip" onClick={() => setSheet('log')} aria-label="Game log" title="Game log">
                 📜
               </button>
+              <button
+                type="button"
+                class="log-chip"
+                onClick={() => {
+                  setDiceFor(null);
+                  setSheet('dice');
+                }}
+                aria-label="Dice statistics"
+                title="Dice statistics"
+              >
+                📊
+              </button>
             </>
           }
         />
@@ -549,7 +564,20 @@ export function GameScreen(props: GameScreenProps) {
         />
       )}
       {sheet === 'log' && <LogSheet view={view} close={() => setSheet(null)} />}
-      {sheet === 'scores' && <ScoresSheet view={view} colors={colors} kinds={kinds} seat={seat} close={() => setSheet(null)} />}
+      {sheet === 'scores' && (
+        <ScoresSheet
+          view={view}
+          colors={colors}
+          kinds={kinds}
+          seat={seat}
+          close={() => setSheet(null)}
+          onDice={(p) => {
+            setDiceFor(p);
+            setSheet('dice');
+          }}
+        />
+      )}
+      {sheet === 'dice' && <DiceStatsSheet view={view} colors={colors} player={diceFor} close={() => setSheet(null)} />}
       {!sheet && forced}
       {gameOver && !sheet && <GameOverSheet view={view} colors={colors} onHome={props.onHome} onRematch={props.onRematch} />}
     </div>
@@ -612,12 +640,15 @@ function ScoresSheet({
   kinds,
   seat,
   close,
+  onDice,
 }: {
   view: GameView;
   colors: PlayerColor[];
   kinds: SeatKind[];
   seat: PlayerId | null;
   close(): void;
+  /** Opens the dice statistics, for one player or (null) everyone. */
+  onDice(p: PlayerId | null): void;
 }) {
   const ext = view.ext as Record<string, unknown>;
   const cloth = (ext.cloth as { cloth: number[] } | undefined)?.cloth;
@@ -626,6 +657,9 @@ function ScoresSheet({
   const sc = getScenario(view.scenario);
   return (
     <Sheet title="Players" onClose={close} wide>
+      <button type="button" class="wide dice-open" onClick={() => onDice(null)}>
+        📊 Dice statistics
+      </button>
       <div class="scores">
         {view.players.map((p) => (
           <div class="score-row" key={p.id} style={{ '--pc': colors[p.id].fill } as Record<string, string>}>
@@ -647,6 +681,9 @@ function ScoresSheet({
               {forts && <span>{forts[p.id].captured ? '🏰 fortress conquered' : `🏴 fortress ${forts[p.id].chits}/3`}</span>}
               {view.longestRoute.holder === p.id && <span class="badge">{sc.rules.ships ? 'Longest Trade Route' : 'Longest Road'}</span>}
               {view.largestArmy.holder === p.id && <span class="badge">Largest Army</span>}
+              <button type="button" class="small-btn dice-btn" onClick={() => onDice(p.id)} aria-label={`${p.name}'s dice rolls`}>
+                🎲 Rolls
+              </button>
             </div>
           </div>
         ))}
@@ -663,7 +700,9 @@ function Hand({ view, seat, onCards }: { view: GameView; seat: PlayerId; onCards
     <div class="hand">
       {RESOURCE_LIST.map((r) => (
         <div key={r} class={res[r] === 0 ? `rcard r-${r} empty` : `rcard r-${r}`} title={RESOURCE_INFO[r].label}>
-          <span class="rc-icon">{RESOURCE_INFO[r].icon}</span>
+          <span class="rc-icon">
+            <ResGlyph r={r} />
+          </span>
           <span class="rc-n">{res[r]}</span>
         </div>
       ))}

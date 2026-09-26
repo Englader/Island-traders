@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import type { PartialCounts, Resource } from 'engine';
 import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { ResGlyph } from './icons';
 
 export function Sheet({
   title,
@@ -62,7 +63,9 @@ export function ResIcon({ r, n }: { r: Resource; n?: number }) {
   const info = RESOURCE_INFO[r];
   return (
     <span class={`res res-${r}`} title={info.label}>
-      <span class="res-icon">{info.icon}</span>
+      <span class="res-icon">
+        <ResGlyph r={r} />
+      </span>
       {n !== undefined && <span class="res-n">{n}</span>}
     </span>
   );
@@ -71,7 +74,7 @@ export function ResIcon({ r, n }: { r: Resource; n?: number }) {
 export function Cost({ cost }: { cost: PartialCounts }) {
   return (
     <span class="cost">
-      {RESOURCE_LIST.flatMap((r) => Array.from({ length: cost[r] ?? 0 }, (_, i) => <span key={`${r}${i}`}>{RESOURCE_INFO[r].icon}</span>))}
+      {RESOURCE_LIST.flatMap((r) => Array.from({ length: cost[r] ?? 0 }, (_, i) => <ResGlyph key={`${r}${i}`} r={r} />))}
     </span>
   );
 }
