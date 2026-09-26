@@ -39,18 +39,36 @@ npm run test:e2e       # Playwright tests on a phone viewport (builds and serves
 
 ### Online play
 
-The host's browser runs the engine. Friends connect over WebRTC through
-[PeerJS](https://peerjs.com/): they send the moves they want to make, the host
-checks every move with `applyAction` and sends each friend only their own
-`viewFor` view plus their legal moves. Nobody can see hidden cards or make an
-illegal move. The host must keep the tab open; friends who drop out rejoin
-with the same code and get their seat back, and the host can hand an empty
-seat to a computer player.
+The host's browser runs the engine. Friends send the moves they want to
+make, the host checks every move with `applyAction` and sends each friend only
+their own `viewFor` view plus their legal moves. Nobody can see hidden cards
+or make an illegal move. The host must keep the game on screen; friends who
+drop out rejoin with the same code and get their seat back, and the host can
+hand an empty seat to a computer player.
+
+A friend's phone reaches the host in one of two ways:
+
+- **Direct**: a WebRTC link set up through [PeerJS](https://peerjs.com/).
+- **Relay**: if no direct link opens within a few seconds, which is common on
+  mobile data, messages go through a public MQTT broker over a secure
+  WebSocket (EMQX, HiveMQ or Mosquitto, whichever the phone reaches). Every
+  message is compressed and encrypted with a key derived from the room code,
+  and topic names are hashes, so the broker sees neither the code nor the
+  game. The client is `web/src/net/mqtt.ts`; the relay is `web/src/net/relay.ts`.
+
+Guests send a heartbeat, so a dropped link is noticed within seconds and the
+guest reconnects on its own. A host whose phone paused the page gets the same
+room code back when it returns.
 
 The free PeerJS cloud broker introduces the browsers. To use your own broker,
 run `node scripts/peer-broker.mjs` (or `npx peer`) and open the game with
 `?peer=host:port/path`, or build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
-`VITE_PEER_PATH` and `VITE_PEER_SECURE`.
+`VITE_PEER_PATH` and `VITE_PEER_SECURE`. `?mqtt=url,url` replaces the relay
+brokers, and `?link=direct` or `?link=relay` forces one way (for testing).
+
+The **Online check** workflow (`scripts/online-check.mjs`) plays a join
+against the real PeerJS server and each public broker. It runs on pushes that
+change the networking code, every week, and on demand.
 
 ## Quick start (engine)
 
@@ -200,8 +218,10 @@ code changes.
   player count, using only moves the engine accepts.
 - **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
   against the computer that is reloaded and continued, a Seafarers board,
-  the pass-and-play hand-over, and an online game between two browsers
-  through a local PeerJS broker.
+  the pass-and-play hand-over, and online games between two browsers through
+  a local PeerJS broker and a local relay broker (`scripts/mqtt-broker.mjs`):
+  a direct link, a relay-only link, and a friend who joins while the host is
+  away.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 

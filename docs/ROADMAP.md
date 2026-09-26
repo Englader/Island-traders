@@ -64,9 +64,17 @@ seats can go to computer players. The broker is configurable
 (`?peer=host:port/path`, `VITE_PEER_*`) and `scripts/peer-broker.mjs` runs one
 locally, which the online Playwright test uses.
 
+Friends on mobile data often couldn't join: the free TURN servers that relay
+WebRTC between phones behind strict NATs no longer work, and the guest waited
+forever. Online play now falls back to an encrypted relay through public MQTT
+brokers when no direct link opens within a few seconds. Guests retry with
+clear messages and send a heartbeat. A host whose page was paused (e.g. while
+sending the code in a chat app) gets the room back when it returns. The
+**Online check** workflow tests all of this against the real services.
+
 | Option | How | Cost | Trade-offs |
 |---|---|---|---|
-| **A. Peer-to-peer (built)** | Host browser + PeerJS | Free | The host must keep the tab open. Some strict networks need a TURN relay. The shared PeerJS broker can be flaky; a self-hosted one is an option. |
+| **A. Peer-to-peer (built)** | Host browser + PeerJS, public MQTT relay as fallback | Free | The host must keep the game on screen. Relies on free public services (PeerJS broker, MQTT brokers); the Online check workflow watches them. |
 | B. Cloudflare Worker + one Durable Object per room | A WebSocket server holds the authoritative state; clients only ever receive their `viewFor`. | [Durable Objects are on the Workers Free plan](https://developers.cloudflare.com/changelog/2025-04-07-durable-objects-free-tier/) | Games survive the host leaving. Needs a Cloudflare account. |
 | C. Firebase / Supabase realtime | Shared database state. | Free tiers. | Hidden information needs server functions, so it's a poor fit. |
 

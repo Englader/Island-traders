@@ -1,12 +1,18 @@
 name: Online check
 
-# Checks the outside services online play depends on (room server, relay
-# servers) and runs a host + guest join against the live site.
+# Plays the online join against the real outside services (PeerJS room
+# server, public relay brokers): on every push that touches the networking
+# code (checking that commit's build), weekly and on demand (checking the
+# live site too), so a service that stops working gets noticed.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
   push:
-    branches: [claude/island-traders-seafarers-rh48ru]
-    paths: [scripts/online-check.mjs, .github/workflows/online-check.yml]
+    paths:
+      - 'web/src/net/**'
+      - 'scripts/online-check.mjs'
+      - '.github/workflows/online-check.yml'
 
 permissions:
   contents: read
@@ -22,10 +28,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Local TURN server (checks the check)
+      - name: Build this commit
+        run: npm run web:build
+      - name: Check this commit's build
         run: |
-          sudo apt-get install -y coturn >/dev/null
-          ip=$(hostname -I | awk '{print $1}')
-          sudo turnserver -n -o --lt-cred-mech --user=test:test --realm=check --listening-port=3478 --listening-ip="$ip" --relay-ip="$ip" --no-tls --no-dtls --log-file=stdout >/dev/null
-          echo "LOCAL_TURN=$ip" >> "$GITHUB_ENV"
-      - run: node scripts/online-check.mjs
+          npm run web:preview -- --port 4173 --strictPort &
+          for i in $(seq 1 60); do curl -sf http://localhost:4173/ >/dev/null && break; sleep 1; done
+          node scripts/online-check.mjs http://localhost:4173/
+      - name: Check the live site
+        if: github.event_name != 'push'
+        run: node scripts/online-check.mjs https://englader.github.io/Island-traders/
