@@ -18,7 +18,7 @@ changed without touching the state machine.
 | Random tokens with no adjacent 6/8 (toggle), plus optional 2/12 and same-number rules | `placeRandomTokens`, options | `board.test.ts` |
 | 5–6 board: 30 hexes, 28 tokens, 11 harbors, 24 of each resource, 34 dev cards | `scenarios/base.ts` | `board.test.ts` |
 | Official maps (default, `layout: 'official'`): the beginners' set-ups and the Seafarers set-up diagrams | `scenarios/base.ts`, `scenarios/seafarers/officialMaps.ts` | `officialMaps.test.ts` |
-| Random maps (`layout: 'random'`): the variable set-up and shuffled Seafarers layouts | `ScenarioDef.map` | `board.test.ts`, simulations |
+| Random maps (`layout: 'random'`): the base game's variable set-up, and Seafarers maps generated in the style of the printed ones | `ScenarioDef.map`, `board/generator.ts` | `generator.test.ts`, `generatedGames.test.ts`, `board.test.ts`, simulations |
 
 **Verified caveats from the spec.** The standard graph has exactly 54 land
 intersections and 72 land paths. The A–R sequence
@@ -34,9 +34,12 @@ starts from.
 - Official maps keep the harbors where the rulebook prints them, with their
   printed types; harbors printed blank get shuffled types.
 - On random maps, base harbors sit on alternating sea hexes of the ring,
-  starting at a corner (the frame's harbor spots), and Seafarers maps place
-  harbors with a deterministic farthest-point spread over coastal paths of
-  producing land. Harbor types are shuffled per game.
+  starting at a corner (the frame's harbor spots). Generated Seafarers maps
+  keep the printed harbors (their number and types) and put them on coastal
+  paths of producing land in the areas the printed ones serve, spread by
+  farthest-point sampling from a random first spot: never two on one
+  intersection, a free intersection between them where the coast allows, and
+  never on a scenario spot. Harbor types are shuffled per game.
 - When the map author fixes number tokens, they are exempt from the adjacency
   rules. Only randomly placed tokens are constrained.
 
@@ -247,9 +250,33 @@ turns it back on a phone held upright.
   those are not pre-placed, the snake draft is played as usual.
 
 **Random maps** (`layout: 'random'`) are the base game's variable set-up and,
-for Seafarers, original layouts built to each scenario's structure with
-shuffled tiles and numbers; the component mix, harbor counts, start
-positions and rules follow the rulebook.
+for Seafarers, new maps generated in the style of the rulebook's
+(`board/generator.ts`; the README describes the steps). The printed map is the
+template: the frame, how many islands of what size and where, which tiles
+and numbers each area holds (gold only where the printed map has it), the
+harbors, the robber and pirate starts and the scenario's spots. Islands get
+new shapes and places; tiles, numbers and harbors are dealt anew with the
+red-number rule and a balance check; every map is checked before use (the
+starting placement fits, islands a sea hex apart, the scenario's spots where
+its rules look for them). *Engine choices* per scenario:
+
+- **Through the Desert:** the three deserts stay a straight line that cuts
+  the strip off from the home area; the strip keeps its printed tiles.
+- **The Forgotten Tribe:** the 18 gift spots are spread over the new tribe
+  islets' coasts and the gifts dealt onto them.
+- **Cloth Trade:** each isle keeps two villages on the corners facing the big
+  islands, with one of the printed pairs of numbers (9/10, 3/6, 8/11, 5/4).
+- **The Pirate Islands:** the fortress route, marked intersections, starting
+  pieces and fleet circuit stay as printed (mirrored with the map; the fleet
+  still sails clockwise); the tiles and numbers of the main island and of the
+  numbered pirate-island hexes are dealt anew, harbors placed anew.
+- **The Wonders:** the main island stays as printed with its strait and
+  wasteland (mirrored with the map); its tiles and numbers, apart from the
+  deserts, are dealt anew. The frame leaves the small islands exactly their
+  printed room, so they only move with the mirror; their tiles (and so the
+  gold) are dealt anew.
+- **New World:** an archipelago of 4–6 islands in the rulebook's frame, a sea
+  hex apart.
 
 | Scenario | VP | Rules implemented |
 |---|---|---|
@@ -261,7 +288,7 @@ positions and rules follow the rulebook.
 | 6 Cloth Trade | 14 | See below |
 | 7 The Pirate Islands | 10 + fortress | See below |
 | 8 The Wonders | see below | See below |
-| 9 New World | 12 | The map is dealt at random (official: the rulebook's frame; random layout: an archipelago whose islands never touch). **3–4 players: 23 land hexes, no desert and no gold, 9 harbors. 5–6 players: 42 land hexes incl. 3 deserts and 4 gold, 11 harbors.** Players place the harbor tokens before the starting placement, in turn order from the start player. Start on any island(s). +1 VP for your first settlement on each other island. **The robber and pirate start off the board** and enter when first moved |
+| 9 New World | 12 | The map is dealt at random (official: the rulebook's frame; random layout: an archipelago of 4–6 islands in the same frame, a sea hex apart). **3–4 players: 23 land hexes, no desert and no gold, 9 harbors. 5–6 players: 42 land hexes incl. 3 deserts and 4 gold, 11 harbors.** Players place the harbor tokens before the starting placement, in turn order from the start player. Start on any island(s). +1 VP for your first settlement on each other island. **The robber and pirate start off the board** and enter when first moved |
 
 **Cloth Trade**
 
@@ -325,7 +352,7 @@ positions and rules follow the rulebook.
 - **Winning.** 10 VP and your own fortress. There is no Longest Trade Route
   or Largest Army.
 - The fleet circuit is the one drawn on the rulebook's map (14 sea hexes
-  around the two desert islets); on the random map it is an *engine choice*.
+  around the two desert islets); generated maps keep it.
   The 5th edition
   says you *can* attack at the end of your turn; the attack is an action you
   choose (the 2025 edition makes it automatic).
@@ -351,7 +378,8 @@ positions and rules follow the rulebook.
 - There is no pirate. The robber starts on a desert.
 - Starting settlements may not go on the small islands, the wasteland, the
   strait intersections or the intersections next to them. All of these open
-  up after setup. On the rulebook's map the wasteland is the five
-  intersections marked around the deserts (brown squares) and the strait the
-  two marked with purple squares; the random map takes every intersection
-  next to a desert and every land intersection next to the strait's sea hex.
+  up after setup. The wasteland is the five intersections marked around the
+  deserts (brown squares) and the strait the two marked with purple squares;
+  generated maps keep them. (Games saved from the older random maps, which
+  had no marks, take every intersection next to a desert and every land
+  intersection next to the strait's sea hex.)

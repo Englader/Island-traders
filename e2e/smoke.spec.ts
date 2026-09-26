@@ -305,7 +305,7 @@ test('a random map: the preview is the board the game is played on, and 🎲 dea
   await page.getByRole('button', { name: /Options/ }).click();
   await page.getByRole('button', { name: 'fast' }).click();
   await page.locator('.map-row').getByRole('button', { name: 'Random' }).click();
-  await expect(page.locator('.map-note')).toHaveText('Random layout — tap 🎲 for another.');
+  await expect(page.locator('.map-note')).toHaveText('Shuffled tiles and numbers, as in the rulebook’s variable set-up — tap 🎲 for another.');
   const preview = page.locator('.map-thumb svg.board');
   const first = await tiles(preview);
   expect(first).toHaveLength(19); // the land hexes of the base island
@@ -320,6 +320,49 @@ test('a random map: the preview is the board the game is played on, and 🎲 dea
   await page.goto('/');
   await page.getByRole('button', { name: /New game/ }).click();
   await expect(page.locator('.map-row .seg button.on')).toHaveText('Random');
+});
+
+/** The islands of a previewed board: land tiles (fog aside) grouped by adjacency, as sorted hex lists. */
+async function islandsOf(board: ReturnType<Page['locator']>): Promise<string[]> {
+  const land = (await tiles(board)).filter((t) => !t.includes(' fog ')).map((t) => t.split(' ')[0]);
+  const left = new Set(land);
+  const out: string[] = [];
+  for (const start of land) {
+    if (!left.has(start)) continue;
+    left.delete(start);
+    const island = [start];
+    for (let i = 0; i < island.length; i++) {
+      const [q, r] = island[i].split(',').map(Number);
+      for (const [dq, dr] of [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]]) {
+        const n = `${q + dq},${r + dr}`;
+        if (left.delete(n)) island.push(n);
+      }
+    }
+    out.push(island.sort().join(' '));
+  }
+  return out.sort();
+}
+
+test('a random Seafarers map is a new map in the scenario’s style: 🎲 changes the islands, not how many there are', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: /Heading for New Shores/ }).click();
+  const preview = page.locator('.map-thumb svg.board');
+  await page.locator('.map-row').getByRole('button', { name: 'Official' }).click();
+  // the rulebook's map: a main island and three small ones
+  await expect.poll(async () => (await islandsOf(preview)).length).toBe(4);
+  await page.locator('.map-row').getByRole('button', { name: 'Random' }).click();
+  await expect(page.locator('.map-note')).toHaveText('A new map in the style of Heading for New Shores — tap 🎲 for another.');
+  const seen = [(await islandsOf(preview)).join(' | ')];
+  expect(await islandsOf(preview)).toHaveLength(4);
+  for (let i = 0; i < 2; i++) {
+    await page.getByRole('button', { name: '🎲 New map' }).click();
+    await expect.poll(async () => (await islandsOf(preview)).join(' | ')).not.toBe(seen[seen.length - 1]);
+    const islands = await islandsOf(preview);
+    expect(islands).toHaveLength(4);
+    seen.push(islands.join(' | '));
+  }
+  expect(new Set(seen).size).toBe(3);
 });
 
 test('dice statistics count every roll, for everyone and per player', async ({ page }) => {

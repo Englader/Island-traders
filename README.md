@@ -29,8 +29,10 @@ GitHub Actions)
   "what will you give for my brick?") that the others answer with
   counter-offers; the trade menu shows your cards
 - Official maps: every scenario starts on the set-up map printed in its
-  rulebook, or pick **Random** for a shuffled one. The new-game screen shows
-  the exact board you will play on; 🎲 deals another random map
+  rulebook, or pick **Random** for a new map generated in the scenario's
+  style: the same kind of islands in new shapes, with the gold fields,
+  numbers and harbors dealt anew. The new-game screen shows the exact board
+  you will play on; 🎲 deals another
 - Dice statistics: a bar chart of every total rolled against fair-dice odds,
   for everyone or one player
 - End-of-game results you can close to look at the final map (a Results
@@ -138,9 +140,9 @@ change the networking code, every week, and on demand.
 
 ```bash
 npm install
-npm test                                  # 290+ tests: golden positions, official maps, scenarios, bots, fuzzing
+npm test                                  # 360 tests: golden positions, official and generated maps, scenarios, bots, fuzzing
 npm run demo -- list                      # list scenarios
-npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board (add "random" for a random map)
+npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board (add "random" for a generated map)
 npm run build                             # emit dist/ (ESM + .d.ts)
 ```
 
@@ -162,7 +164,7 @@ const view = viewFor(state, 1);                  // what seat 1 may see (no hand
 ```
 src/
   core/        types, constants, seeded RNG (mulberry32), resource helpers
-  board/       axial hex math, topology (vertices/edges/adjacency), map format + generator
+  board/       axial hex math, topology (vertices/edges/adjacency), map format, map generator
   rules/       legality queries, production, longest route, ship rules, mutation helpers
   engine/      createGame, applyAction (turn state machine), legal actions, player views
   scenarios/   base game + 9 Seafarers scenarios as data + rule hooks
@@ -179,10 +181,11 @@ e2e/           Playwright tests for the browser game
 - **Edge types follow from terrain.** A road needs land on at least one side. A
   ship needs sea on at least one side. A coastal path takes either a road or a
   ship, never both.
-- **Scenario = data + hooks.** A `ScenarioDef` holds two maps, the
-  rulebook's (`officialMap`) and a random set-up (`map`), each as ASCII rows or
-  generated, with pools, harbors, printed scenario spots, robber and pirate
-  start. It also holds the VP target, setup rounds, allowed and forbidden
+- **Scenario = data + hooks.** A `ScenarioDef` holds two maps: the
+  rulebook's (`officialMap`, ASCII rows with pools, harbors, printed scenario
+  spots, robber and pirate start) and the random layout (`map`: the base
+  game's variable set-up, or for Seafarers `styledMap(printed map, style)`,
+  which generates new maps in the printed map's style). It also holds the VP target, setup rounds, allowed and forbidden
   zones, and island bonuses. `mapSpecFor` picks the map by `options.layout`.
   It can also add
   hooks: `afterSettlement`, `afterEdge` (fog, tribe gifts), `afterRoll` (cloth,
@@ -222,7 +225,8 @@ fixed spots: `harborAt('3,1', 'NE', 'grain')` puts a grain harbor on the
 north-east side of the hex at column 3, row 1; leave out the type and it is
 drawn from the shuffled pool. `marks` holds a map's printed scenario spots
 (villages, gift paths, fortresses...) as a hex plus a corner or side, for the
-scenario's `init` hook.
+scenario's `init` hook. A spec may instead be `procedural`: it builds the
+concrete spec from the game's RNG when the board is generated.
 
 ## Rules coverage
 
@@ -276,9 +280,55 @@ choice.
   the unexplored fog hexes, harbors printed blank, the Forgotten Tribe's
   harbor gifts and cards, and New World, which the rulebook deals at random
   into its frame.
-- **`'random'`**: the scenario's shuffled set-up. For the base game that is
-  the rulebook's variable set-up; for Seafarers, original layouts that
-  follow each scenario's structure, with shuffled tiles, numbers and harbors.
+- **`'random'`**: for the base game, the rulebook's variable set-up (the
+  19- or 30-hex island with shuffled tiles, the A–R spiral or random numbers).
+  For Seafarers, a new map generated in the style of the printed one
+  (`src/board/generator.ts`), described below.
+
+#### Generated maps
+
+The printed map is read as a template: its frame (kept, so the board fits the
+screen the same way), its islands (a home island of so many hexes, outer
+islands of so many, the fog area, the desert line), which tiles and numbers
+each area holds, its harbors, and where the robber and pirate start. A new
+map keeps all of that and draws the rest from the seed:
+
+1. The template may be mirrored left-right or top-bottom.
+2. Islands of one area trade a hex (their total stays). Each island grows from
+   a seed near its printed place, hex by hex, compact but irregular, keeping
+   to its own part of the map and at least one sea hex from every other
+   island (so ships are needed). No lakes.
+3. Each area's tiles are dealt onto its hexes (gold only where the printed map
+   has gold, and so on), avoiding clumps of one terrain.
+4. Each area's numbers are dealt by a small local search: never a 6 next to an
+   8 (the game option), no equal numbers side by side, no intersection worth
+   more than 11 pips, each island's average close to fair.
+5. The printed harbors go on the coasts of the areas they serve, spread by
+   farthest-point sampling, never two on one intersection and never on a
+   scenario spot.
+6. Scenario spots follow the map: the scenario places gifts and villages on
+   the new islands, or they stay with the parts of the map they belong to.
+
+Every candidate is checked: every player can make the starting placement in
+the starting area (with the distance rule, and a coastal spot each), islands
+stay apart, numbers and harbors match the template, marks lie where the
+scenario's hooks look for them, the map fits the frame. A failed candidate
+is redrawn from the next sub-seed, each round keeping a little closer to the
+printed shapes; after 60 the printed map is re-dealt instead (the tests never
+see that happen). Everything comes from the game's seed, so the preview, the
+game and every online guest get the same board.
+
+| Scenario | Generated | Kept as printed |
+|---|---|---|
+| Heading for New Shores | the main island and three small islands (shapes, sizes ±1, places), tiles (gold on the small islands), numbers, harbor spots | the frame; tile, number and harbor counts per area |
+| The Four Islands | four islands, their shapes and sizes, tiles, numbers, harbor spots | as above |
+| The Fog Islands | the two home islands and the unexplored area (12 hexes) | the face-down stack |
+| Through the Desert | the line of three deserts, the strip beyond it, the home area before it, the islets | the strip's own tiles and numbers |
+| The Forgotten Tribe | the main island, the tribe islets and their tiles, the 18 gift spots | (the frame leaves the islands little room to move) |
+| Cloth Trade | the two big islands, the four village isles, which isle gets which pair of village numbers | each isle's two villages face the big islands |
+| The Pirate Islands | mirrors; the main island's tiles and numbers, the numbered pirate-island hexes, harbor spots | the fortress route, marked intersections, starting pieces and fleet circuit (the rules depend on them) |
+| The Wonders | mirrors; the main island's tiles and numbers; the small islands' tiles (and so the gold) | the main island with its strait and desert wasteland (the wonders need them) |
+| New World | an archipelago of 4–6 islands in the rulebook's frame | the component mix |
 
 The rulebook draws the Seafarers boards with flat-topped hexes; the engine
 turns them a quarter turn, so the board looks exactly like the book when a
@@ -303,6 +353,12 @@ and the differences between printings.
   harbor, with the printed map (written down column by column as the book
   shows it) and with the rulebook's component lists. Different seeds give
   the same board except where the rulebook shuffles.
+- **Generated maps:** 300 seeds per Seafarers scenario and player count, each
+  compared with the printed map it imitates: the same frame, islands, tiles,
+  numbers and harbors per area, the red-number rule, harbors on coasts apart
+  from each other, robber and pirate starts, the scenario's spots, and (every
+  tenth seed) a whole starting placement played by the engine. Also:
+  determinism, variety between seeds, and bots finishing games on them.
 - **Simulations:** random bot games run in every scenario and every supported
   player count. Invariants are checked as they play:
   - resources and dev cards are conserved
@@ -324,7 +380,8 @@ and the differences between printings.
 - **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
   against the computer that is reloaded and continued, a Seafarers board,
   the pass-and-play hand-over, a random map whose preview (after a 🎲
-  reroll) is the board the game starts with, and online games between two
+  reroll) is the board the game starts with, a generated Seafarers map whose
+  rerolls change the islands but not how many there are, and online games between two
   browsers through a local PeerJS broker and a local relay broker
   (`scripts/mqtt-broker.mjs`): a direct link on the host's random map, a
   relay-only link, and a friend who joins while the host is away. The end
@@ -346,7 +403,7 @@ material of Catan GmbH. Island Traders is an independent, non-commercial fan
 project that implements game mechanics. It uses its own name and art, and
 mentions Catan only to say which rules it follows. The official-map option
 reproduces the rulebooks' set-up maps as game data (which terrain and number
-go where); the random maps are original. It is not
+go where); the random maps are generated by the engine. It is not
 affiliated with or endorsed by Catan GmbH. A commercial release, or one that
 uses the Catan name, art or rule text, needs a license from Catan GmbH
 (ip@catan.com).

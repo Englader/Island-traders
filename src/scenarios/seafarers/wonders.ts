@@ -1,12 +1,12 @@
-import { markVertex, type MapSpec } from '../../board/mapSpec.js';
-import { HARBORS_BASE, TOKENS_28 } from '../../core/constants.js';
+import { styledMap } from '../../board/generator.js';
+import { markVertex } from '../../board/mapSpec.js';
 import { hasAtLeast } from '../../core/resources.js';
 import type { Action, GameState, PartialCounts, PlayerId, VertexId } from '../../core/types.js';
 import { log, nameOf, payToBank } from '../../rules/helpers.js';
 import { longestRouteLength } from '../../rules/longestRoute.js';
 import { buildingsOf, isLandHex, topo, totalVP, vertexLandHexes } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
-import { seafarersSupply, withoutTokens } from './common.js';
+import { seafarersSupply } from './common.js';
 import { WONDERS_OF_CATAN } from './officialMaps.js';
 
 /**
@@ -21,9 +21,10 @@ import { WONDERS_OF_CATAN } from './officialMaps.js';
  * Map markings: the desert wasteland (Great Wall), the strait (Great Bridge)
  * and the intersections next to those strait sites. None of them, nor the
  * small islands, may take a starting settlement; they are open afterwards.
- * The rulebook's map marks five wasteland and two strait intersections; the
- * random set-up takes every intersection next to a desert, and every land
- * intersection next to a sea hex tagged as the strait.
+ * The map marks five wasteland and two strait intersections. (Games saved
+ * from older random maps have no marks: there the wasteland is every
+ * intersection next to a desert, and the strait every land intersection next
+ * to a sea hex tagged as the strait.)
  */
 export const WONDER_LEVELS = 4;
 
@@ -35,7 +36,7 @@ export interface WonderDef {
   eligible(state: GameState, p: PlayerId): boolean;
 }
 
-/** Intersections marked on the rulebook's map (set at the start of the game). */
+/** Intersections marked on the map (set at the start of the game). */
 interface WonderSites {
   strait: VertexId[];
   wasteland: VertexId[];
@@ -151,6 +152,13 @@ function buildError(state: GameState, p: PlayerId): string | null {
   return null;
 }
 
+const rules = seafarersRules({
+  pirate: false,
+  // 'west' and 'east': the home islands of older random maps, kept for saved games.
+  setupZones: ['main', 'west', 'east'],
+  islandBonus: { vp: 1, home: ['main', 'west', 'east'] },
+});
+
 export const theWonders: ScenarioDef = {
   id: 'seafarers-8-wonders',
   name: 'The Wonders',
@@ -161,42 +169,18 @@ export const theWonders: ScenarioDef = {
   maxPlayers: 4,
   victoryPoints: () => 10,
   officialMap: () => WONDERS_OF_CATAN,
-  map: (): MapSpec => ({
-    rows: [
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-      '~ ? ?@west ? ~ ? ?@east ? ~ ~ ~ ~',
-      '~ ? ? ? ~@strait ? ? ? ~ ~ ~ ~',
-      '~ ? d d ~@strait ? ? ? ~ $5 ~ ~',
-      '~ ? ? d ~ ? ? ? ~ ~ ~ ~',
-      '~ ~ ? ? ~ ? ~ ~ ~ ?b $11 ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-    ],
-    pools: {
-      default: {
-        terrains: { forest: 5, pasture: 5, fields: 5, hills: 5, mountains: 4 },
-        tokens: withoutTokens(TOKENS_28, [5, 9, 11]),
-      },
-      b: { terrains: { mountains: 1 }, tokens: [9] },
-    },
-    harbors: { spots: 'auto', pool: HARBORS_BASE, zones: ['west', 'east'] },
-    robber: 'desert',
-    pirate: null,
-  }),
+  // The main island keeps its printed shape, with the strait and the desert
+  // wasteland the wonders need; its other tiles and numbers are dealt anew, and
+  // the two small islands (with the gold) get new shapes and places.
+  map: (players) => styledMap(WONDERS_OF_CATAN, { players, rules, fixedZones: ['main'] }),
   ...seafarersSupply,
-  rules: seafarersRules({
-    pirate: false,
-    // 'main' on the rulebook's map; 'west' and 'east' on the random one.
-    setupZones: ['main', 'west', 'east'],
-    islandBonus: { vp: 1, home: ['main', 'west', 'east'] },
-  }),
+  rules,
   hooks: {
     init(state, map) {
-      if (map.marks?.strait) {
-        state.ext.wonderSites = {
-          strait: map.marks.strait.map(markVertex),
-          wasteland: (map.marks.wasteland ?? []).map(markVertex),
-        } satisfies WonderSites;
-      }
+      state.ext.wonderSites = {
+        strait: (map.marks?.strait ?? []).map(markVertex),
+        wasteland: (map.marks?.wasteland ?? []).map(markVertex),
+      } satisfies WonderSites;
       state.ext.wonders = {
         claimed: {},
         owned: state.players.map(() => null),

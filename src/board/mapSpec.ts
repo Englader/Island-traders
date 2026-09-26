@@ -116,8 +116,14 @@ export function markEdge(m: MapMark): EdgeId {
 export interface MapSpec {
   rows?: readonly string[];
   cells?: CellSpec[];
-  /** Random layouts (New World): produce the cells from the game's RNG. */
-  generate?: (rng: RngState) => CellSpec[];
+  /**
+   * Procedural maps: builds the concrete map (cells with their tiles and
+   * numbers, harbor spots, marks) from the game's RNG when the board is
+   * generated (see board/generator.ts).
+   */
+  procedural?: (rng: RngState, rules: TokenRules) => MapSpec;
+  /** On a map built by `procedural`: how many candidate maps it drew, and whether it fell back to the printed map. */
+  generated?: { attempts: number; fallback: boolean };
   pools: Record<string, PoolSpec>;
   /** Harbors fixed by the map, or null when players place them during the game. */
   harbors: HarborSpec | null;
@@ -234,7 +240,8 @@ export function tokensOk(hexes: Record<HexId, HexState>, rules: TokenRules, only
  * zones and harbors, and positions robber and pirate.
  */
 export function generateMap(spec: MapSpec, rng: RngState, rules: TokenRules, useSpiral: boolean): GeneratedMap {
-  const cells = spec.cells ?? (spec.generate ? spec.generate(rng) : parseRows(spec.rows ?? []));
+  if (spec.procedural) return generateMap(spec.procedural(rng, rules), rng, rules, useSpiral);
+  const cells = spec.cells ?? parseRows(spec.rows ?? []);
   const hexes: Record<HexId, HexState> = {};
 
   // 1. terrain
