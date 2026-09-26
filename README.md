@@ -33,6 +33,15 @@ GitHub Actions)
   style: the same kind of islands in new shapes, with the gold fields,
   numbers and harbors dealt anew. The new-game screen shows the exact board
   you will play on; 🎲 deals another
+- Ask before building: tapping a spot for a road, ship, settlement or city,
+  or buying a development card, brings up a "Yes or no?" dialog with the
+  piece, its cost in cards, what your hand keeps ("You'll have 0 wool, 2
+  grain and 3 ore left") and anything worth knowing (your last settlement
+  piece, a harbor at the spot, the cards left in the deck). The piece waits
+  on the board behind it; No goes back to picking a spot. Enter or Y says
+  yes, Esc or N no. Starting pieces and free roads ask the same way, without
+  a cost. Turned off in the menu, a card is bought with one tap and a spot is
+  confirmed in a bar under the board
 - Dice statistics: a bar chart of every total rolled against fair-dice odds,
   for everyone or one player
 - End-of-game results you can close to look at the final map (a Results

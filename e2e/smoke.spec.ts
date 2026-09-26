@@ -15,11 +15,14 @@ async function pickTarget(page: Page, kind: 'v' | 'e' | 'h'): Promise<boolean> {
   return false;
 }
 
-/** Confirms whatever is selected on the board (first choice if there are several). */
+/**
+ * Confirms whatever is selected on the board (first choice if there are several):
+ * in the "Ask before building" dialog for pieces, in the confirm bar for the robber.
+ */
 async function confirm(page: Page): Promise<void> {
-  const bar = page.locator('.confirm-bar');
-  await expect(bar).toBeVisible();
-  await bar.locator('button.primary').first().click();
+  const yes = page.locator('.confirm-dialog button.primary, .confirm-bar button.primary').first();
+  await expect(yes).toBeVisible();
+  await yes.click();
 }
 
 async function turnNumber(page: Page): Promise<number> {
@@ -43,6 +46,11 @@ async function pickCards(sheet: Locator, verb: 'Discard' | 'Take', title: RegExp
 
 /** Does the next sensible thing for the human seat; returns false when there is nothing to do. */
 async function step(page: Page): Promise<string> {
+  // a dialog left open (the page was busy when it came up) is answered first
+  if (await page.locator('.confirm-dialog').isVisible()) {
+    await confirm(page);
+    return 'confirm';
+  }
   const status = (await page.locator('.status-text').textContent()) ?? '';
   if (await page.locator('.sheet[aria-label^="Discard"]').isVisible()) {
     const sheet = page.locator('.sheet[aria-label^="Discard"]');
@@ -152,9 +160,9 @@ test('pass-and-play hides hands behind a hand-over screen', async ({ page }) => 
   // place settlement + road, then the device must go to someone else before they see anything
   // (pickTarget skips targets Playwright can't click, e.g. an upright path has no width)
   expect(await pickTarget(page, 'v')).toBe(true);
-  await page.locator('.confirm-bar button.primary').click();
+  await confirm(page);
   expect(await pickTarget(page, 'e')).toBe(true);
-  await page.locator('.confirm-bar button.primary').click();
+  await confirm(page);
   await expect(pass).toBeVisible({ timeout: 20_000 });
   expect(((await page.locator('.pass-name').textContent()) ?? '').trim()).not.toBe(first);
 });
@@ -168,7 +176,12 @@ test('a tap near a highlighted spot selects it', async ({ page }) => {
   const b = (await spot.boundingBox())!;
   // a finger landing 16px beside the dot still picks it
   await page.touchscreen.tap(b.x + b.width / 2 + 16, b.y + b.height / 2 + 4);
-  await expect(page.locator('.confirm-bar')).toBeVisible();
+  const dialog = page.getByRole('alertdialog', { name: 'Place your settlement here?' });
+  await expect(dialog).toBeVisible();
+  // the tap's own click, which lands on the dialog once it is up, doesn't answer it
+  await page.waitForTimeout(800);
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('[data-ghost]')).toHaveCount(1);
 });
 
 test.describe('phone held sideways', () => {

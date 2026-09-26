@@ -40,7 +40,8 @@ anew), instead of a fixed original layout with shuffled tiles.
 - **Screens:** home, new game (scenario, seats human or computer, options),
   the board, pass-the-device, and game over.
 - **Board:** legal spots from `legalActions` are highlighted; a tap selects
-  and a confirm bar commits. Pinch/drag/wheel zoom. Wide Seafarers maps
+  and a Yes/No dialog commits a piece ("Ask before building" in the menu;
+  turned off, or for the robber and harbors, a confirm bar). Pinch/drag/wheel zoom. Wide Seafarers maps
   rotate 90° on tall screens. Scenario markers: fog, tribe gifts (face up
   except cards), cloth villages, fortresses, the fleet circuit, the strait.
 - **Actions and dialogs:** roll, build, trade (bank, and player offers with

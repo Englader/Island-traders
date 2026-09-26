@@ -659,7 +659,12 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                 </g>
               ) : null,
             )}
-            {ghost && <GhostPiece ghost={ghost} g={g} colors={colors} />}
+            {ghost && (
+              // (data-ghost: the confirmation dialog keeps this spot in view)
+              <g data-ghost="">
+                <GhostPiece ghost={ghost} g={g} colors={colors} />
+              </g>
+            )}
       </>
     );
   }, [view, g, targets, ghost, flash, colors, accent]);

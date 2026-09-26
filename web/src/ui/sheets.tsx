@@ -46,7 +46,18 @@ function Dot({ color }: { color: PlayerColor }) {
 
 export type BuildPiece = 'road' | 'ship' | 'settlement' | 'city';
 
-export function BuildSheet({ view, legal, seat, send, close, choose }: SheetProps & { choose(p: BuildPiece): void }) {
+export function BuildSheet({
+  view,
+  legal,
+  seat,
+  close,
+  choose,
+  buyDev,
+}: SheetProps & {
+  choose(p: BuildPiece): void;
+  /** Buys a development card (after asking, if the menu says to), then closes the sheet. */
+  buyDev(): void;
+}) {
   const ships = getScenario(view.scenario).rules.ships;
   const me = view.players[seat];
   const items: Array<{ key: BuildPiece | 'dev'; label: string; cost: PartialCounts; ok: boolean; left?: number }> = [
@@ -65,12 +76,7 @@ export function BuildSheet({ view, legal, seat, send, close, choose }: SheetProp
             key={it.key}
             class="build-item"
             disabled={!it.ok}
-            onClick={() => {
-              if (it.key === 'dev') {
-                send({ type: 'buyDevCard', player: seat });
-                close();
-              } else choose(it.key);
-            }}
+            onClick={() => (it.key === 'dev' ? buyDev() : choose(it.key))}
           >
             <span class="build-name">{it.label}</span>
             <Cost cost={it.cost} />

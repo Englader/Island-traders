@@ -2,6 +2,7 @@ import { getScenario, type Action, type GameView, type PlayerId } from 'engine';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
+import { askFor } from '../game/ask';
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
@@ -14,6 +15,7 @@ import { ActionDeck, BUILD_KEYS, buildOrder, CheckIcon, EndIcon, notNowReason, S
 import { DockedLog, RichText, type LogPrefs } from './GameLog';
 import { landBox, roomForLog } from './boardRoom';
 import { EndGame } from './EndGame';
+import { ConfirmDialog, useAskBeforeBuilding } from './ConfirmDialog';
 import { DevCardView, ResourceCard } from './cards';
 import type { Flash } from './flash';
 import { Die, Sheet, useMedia } from './common';
@@ -82,9 +84,14 @@ function loadLogPrefs(): LogPrefs {
   return { open: p.open, w: px(p.w), h: px(p.h) };
 }
 
+/** A move picked but not made yet: waiting for the confirm bar or the "Ask before building" dialog. */
 interface Pending {
   key: string;
   actions: Action[];
+  /** Which of the actions the board shows as the ghost piece (the dialog's choice in view). */
+  preview?: number;
+  /** Runs once the move is made (e.g. closes the build sheet after buying a card). */
+  done?: () => void;
 }
 
 const BUILD_ACTION: Record<BuildPiece, Action['type']> = { road: 'buildRoad', ship: 'buildShip', settlement: 'buildSettlement', city: 'buildCity' };
@@ -250,6 +257,8 @@ export function GameScreen(props: GameScreenProps) {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [diceFor, setDiceFor] = useState<PlayerId | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  // "Ask before building" (the menu): builds, buys and placements are confirmed in a dialog
+  const askOn = useAskBeforeBuilding();
   const sc = getScenario(view.scenario);
   const ph = view.phase;
   const me = seat !== null ? view.players[seat] : null;
@@ -297,6 +306,12 @@ export function GameScreen(props: GameScreenProps) {
   useEffect(() => {
     if (mode && mode.kind !== 'robber' && spots.size === 0) setMode(null);
   }, [spots, mode]);
+  // A move that is no longer possible (the game has moved on) is not waiting for an answer any more.
+  useEffect(() => {
+    if (!pending) return;
+    const now = new Set(legal.map((a) => JSON.stringify(a)));
+    if (!pending.actions.some((a) => now.has(JSON.stringify(a)))) setPending(null);
+  }, [legal, pending]);
   useEffect(() => {
     if (!props.error) return;
     const id = setTimeout(props.clearError, 3500);
@@ -326,7 +341,27 @@ export function GameScreen(props: GameScreenProps) {
     setPending({ key, actions: acts });
   };
 
-  const ghost = pending && seat !== null ? ghostFor(pending.actions[0], seat) : null;
+  const ghost = pending && seat !== null ? ghostFor(pending.actions[pending.preview ?? 0] ?? pending.actions[0], seat) : null;
+  // builds, buys and placements ask first (the robber and harbors keep the confirm bar)
+  const ask = pending && seat !== null && askOn ? askFor(pending.actions, view, seat) : null;
+  /** Makes a move, or first asks when it is a build or a purchase and the menu says to ask. */
+  const askOrSend = (a: Action, key: string, done?: () => void) => {
+    if (askOn && seat !== null && askFor([a], view, seat)) {
+      setPending({ key, actions: [a], done });
+      return;
+    }
+    doSend(a);
+    done?.();
+  };
+  const buyDev = (done?: () => void) => {
+    const a = legal.find((x) => x.type === 'buyDevCard');
+    if (a) askOrSend(a, 'dev', done);
+  };
+  const confirmPending = (a: Action) => {
+    const done = pending?.done;
+    doSend(a);
+    done?.();
+  };
 
   // --- forced sheets ---------------------------------------------------------------
   // Under another sheet (the log, the scores) the choice waits, hidden, with what was picked so far.
@@ -573,7 +608,7 @@ export function GameScreen(props: GameScreenProps) {
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-      const covered = document.querySelector('.sheet-backdrop') !== null;
+      const covered = document.querySelector('.sheet-backdrop, .confirm-backdrop') !== null;
       if (e.key === 'Escape') {
         if (sheet) setSheet(null);
         else if (covered) return;
@@ -596,7 +631,7 @@ export function GameScreen(props: GameScreenProps) {
         const tile = document.querySelector<HTMLElement>('.bgrid .btile.ready') ?? document.querySelector<HTMLElement>('.bgrid .btile');
         if (!tile) return;
         tile.focus();
-      } else if (piece === 'dev' && has('buyDevCard')) doSend({ type: 'buyDevCard', player: seat! });
+      } else if (piece === 'dev' && has('buyDevCard')) buyDev();
       else if (piece && piece !== 'dev' && has(BUILD_ACTION[piece])) toggleBuild(piece);
       else return;
       e.preventDefault();
@@ -777,7 +812,7 @@ export function GameScreen(props: GameScreenProps) {
           </div>
         )}
         {dock && <DockedLog view={view} colors={colors} prefs={logPrefs} onPrefs={setLogPrefs} />}
-        {pending && (
+        {pending && !ask && (
           <div class="confirm-bar">
             <span>{pending.actions.length === 1 ? describeAction(pending.actions[0], view) : 'Choose:'}</span>
             <div class="confirm-buttons">
@@ -826,7 +861,7 @@ export function GameScreen(props: GameScreenProps) {
                 colors={colors}
                 building={buildMode}
                 onBuild={toggleBuild}
-                onBuyDev={() => doSend({ type: 'buyDevCard', player: seat! })}
+                onBuyDev={() => buyDev()}
                 primary={primary}
                 secondary={secondary}
                 status={status}
@@ -850,6 +885,7 @@ export function GameScreen(props: GameScreenProps) {
           colors={colors}
           send={doSend}
           close={() => setSheet(null)}
+          buyDev={() => buyDev(() => setSheet(null))}
           choose={(piece) => {
             setSheet(null);
             setMode({ kind: 'build', piece });
@@ -864,7 +900,7 @@ export function GameScreen(props: GameScreenProps) {
           legal={legal}
           seat={seat}
           colors={colors}
-          send={doSend}
+          send={(a) => askOrSend(a, 'scenario')}
           close={() => setSheet(null)}
           placeHarbor={() => setMode({ kind: 'harbor' })}
         />
@@ -886,6 +922,16 @@ export function GameScreen(props: GameScreenProps) {
       )}
       {sheet === 'dice' && <DiceStatsSheet view={view} colors={colors} player={diceFor} close={() => setSheet(null)} />}
       {forced}
+      {ask && seat !== null && (
+        <ConfirmDialog
+          key={pending?.key}
+          ask={ask}
+          color={colors[seat]}
+          onYes={(i) => confirmPending(ask.choices[i]?.action ?? ask.choices[0].action)}
+          onNo={() => setPending(null)}
+          onPreview={(i) => setPending((p) => (p && p.preview !== i ? { ...p, preview: i } : p))}
+        />
+      )}
       {gameOver && (
         <EndGame
           view={view}

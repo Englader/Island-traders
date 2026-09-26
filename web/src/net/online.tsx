@@ -8,6 +8,7 @@ import { PLAYER_COLORS } from '../game/seats';
 import { clientId, loadJson, saveJson } from '../game/storage';
 import { ChatWindow } from '../ui/ChatWindow';
 import { TimerSwitch } from '../ui/Clock';
+import { AskSwitch } from '../ui/ConfirmDialog';
 import { GameScreen } from '../ui/GameScreen';
 import { Logo } from '../ui/screens';
 import { ChatHub, mergeChat, type ChatMessage, type ChatPostResult } from './chat';
@@ -671,6 +672,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
                     : "The host's game has no timer."
                 }
               />
+              <AskSwitch />
               <button type="button" class="wide" onClick={() => setMenu(false)}>
                 Back to the game
               </button>
