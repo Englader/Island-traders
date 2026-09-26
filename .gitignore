@@ -5,3 +5,4 @@ coverage/
 web/dist/
 test-results/
 playwright-report/
+web/dist-artifact/

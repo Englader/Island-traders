@@ -6,7 +6,7 @@ import { loadJson } from './game/storage';
 import { Sheet } from './ui/common';
 import { GameScreen } from './ui/GameScreen';
 import { flashOf } from './ui/flash';
-import { HomeScreen, NewGameScreen, PassScreen, RulesSheet, type NewGameConfig } from './ui/screens';
+import { HomeScreen, NewGameScreen, ONLINE, PassScreen, RulesSheet, type NewGameConfig } from './ui/screens';
 import { GuestScreen, HostLobby, JoinScreen, useHostNetwork } from './net/online';
 
 type Route =
@@ -18,7 +18,7 @@ type Route =
   | { name: 'guest'; code: string; playerName: string };
 
 function initialRoute(): Route {
-  const m = /join=([A-Za-z0-9]+)/.exec(location.hash);
+  const m = ONLINE ? /join=([A-Za-z0-9]+)/.exec(location.hash) : null;
   if (m) return { name: 'join', code: m[1].toUpperCase() };
   return { name: 'home' };
 }

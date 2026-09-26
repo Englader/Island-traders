@@ -4,6 +4,9 @@ import { BOT_NAMES, PLAYER_COLORS, type BotSpeed, type Seat, type SeatKind } fro
 import { loadJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
 
+/** Builds for sandboxed previews (no WebSocket or WebRTC) set VITE_NO_ONLINE. */
+export const ONLINE = !import.meta.env.VITE_NO_ONLINE;
+
 export function Logo() {
   return (
     <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
@@ -49,13 +52,19 @@ export function HomeScreen({
             New game
             <span class="btn-sub">Pass-and-play and computer players</span>
           </button>
-          <button type="button" class="big" onClick={onHost}>
-            Host online game
-            <span class="btn-sub">Friends join with a room code</span>
-          </button>
-          <button type="button" class="big" onClick={onJoin}>
-            Join online game
-          </button>
+          {ONLINE ? (
+            <>
+              <button type="button" class="big" onClick={onHost}>
+                Host online game
+                <span class="btn-sub">Friends join with a room code</span>
+              </button>
+              <button type="button" class="big" onClick={onJoin}>
+                Join online game
+              </button>
+            </>
+          ) : (
+            <p class="hint">Online play with friends is available on the hosted version of the game.</p>
+          )}
           <button type="button" class="link" onClick={onRules}>
             How to play
           </button>
