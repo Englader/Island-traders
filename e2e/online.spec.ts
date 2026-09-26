@@ -49,11 +49,14 @@ async function playSetup(host: Page, guest: Page, name: string) {
   await expect(host.locator('svg.board')).toBeVisible();
   await expect(guest.locator('svg.board')).toBeVisible();
 
+  // The setup is over once turn 1 has begun. (Waiting for a Roll button instead
+  // stalled when the computer player went first and made a trade offer.)
+  const started = async () => /Turn [1-9]/.test((await host.locator('.hud .sub').textContent()) ?? '');
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     const a = await place(host);
     const b = await place(guest);
-    if ((await host.getByRole('button', { name: /Roll/ }).isVisible()) || (await guest.getByRole('button', { name: /Roll/ }).isVisible())) break;
+    if (await started()) break;
     if (!a && !b) await host.waitForTimeout(250);
   }
   // 3 players x 2 settlements, seen the same on both devices
