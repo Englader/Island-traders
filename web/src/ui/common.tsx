@@ -151,6 +151,17 @@ const PIP_LAYOUT: Record<number, Array<[number, number]>> = {
   ],
 };
 
+/** Just the pips of a die face (the rolling dice draw their own faces). */
+export function DiePips({ n }: { n: number }) {
+  return (
+    <svg class="die-pips" viewBox="0 0 1 1" aria-hidden="true">
+      {(PIP_LAYOUT[n] ?? []).map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r="0.09" class="die-pip" />
+      ))}
+    </svg>
+  );
+}
+
 export function Die({ n, red }: { n: number; red?: boolean }) {
   return (
     <svg class={red ? 'die red' : 'die'} viewBox="0 0 1 1" aria-label={`die ${n}`}>

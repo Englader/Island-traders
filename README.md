@@ -24,6 +24,9 @@ GitHub Actions)
 - Base game (3–6 players) and the nine Seafarers scenarios
 - Pass-and-play on one device: a hand-over screen keeps hands hidden
 - Computer players (a heuristic bot that plans builds and trades with the bank)
+  at an adjustable pace, with a feed of their moves
+- Dice rolls are animated: two 3D dice tumble in the middle of the screen,
+  show the total, then fly into the header (about 2 s; tap to skip)
 - Online play with friends: the host opens a room and friends join with a
   5-letter code or an invite link
 - Made for phones: tap-friendly board, portrait and sideways layouts, and

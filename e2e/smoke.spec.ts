@@ -205,3 +205,44 @@ test('after one visit the game starts offline; online play says it needs a conne
   await expect(page.locator('svg.board')).toBeVisible();
   await context.setOffline(false);
 });
+
+test('a roll plays the dice animation, then the dice sit in the header; a tap skips it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'less' }).first().click();
+  await page.getByRole('button', { name: /Options/ }).click();
+  await page.getByRole('button', { name: 'fast' }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+
+  // play the setup until it is our turn to roll
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline && !(await page.getByRole('button', { name: /Roll/ }).isVisible())) {
+    if (!(await step(page))) await page.waitForTimeout(200);
+  }
+  await page.getByRole('button', { name: /Roll/ }).click();
+
+  // the dice tumble in the middle of the screen, the header dice wait
+  const overlay = page.locator('.roll-overlay');
+  await expect(overlay).toBeVisible();
+  await expect(page.locator('.hud .dice')).toBeHidden();
+  const sum = Number(await page.locator('.roll-sum').textContent());
+  expect((await overlay.getAttribute('aria-label')) ?? '').toMatch(new RegExp(`: ${sum}$`));
+  expect(sum).toBeGreaterThanOrEqual(2);
+  expect(sum).toBeLessThanOrEqual(12);
+  // ...then fly into the header, showing the same roll
+  await expect(overlay).toHaveCount(0, { timeout: 4000 });
+  await expect(page.locator('.hud .dice')).toBeVisible();
+  await expect(page.locator('.hud .dice')).toHaveAttribute('aria-label', `rolled ${sum}`);
+
+  // a computer player's roll can be skipped with a tap (after a 7, move the robber first)
+  const end = page.getByRole('button', { name: /End turn/ });
+  while (Date.now() < deadline + 60_000 && !(await end.isVisible())) {
+    if (!(await step(page))) await page.waitForTimeout(200);
+  }
+  await end.click();
+  await expect(overlay).toBeVisible({ timeout: 30_000 });
+  await overlay.click();
+  await expect(overlay).toHaveCount(0, { timeout: 500 });
+  await expect(page.locator('.hud .dice')).toBeVisible();
+});
