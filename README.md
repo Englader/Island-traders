@@ -18,7 +18,7 @@ self-play without extra work. Each player gets a redacted view of the state.
 
 ```bash
 npm install
-npm test                                  # 140+ tests: golden positions, scenarios, fuzzing
+npm test                                  # 150+ tests: golden positions, scenarios, fuzzing
 npm run demo -- list                      # list scenarios
 npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board
 npm run build                             # emit dist/ (ESM + .d.ts)
@@ -112,13 +112,17 @@ In summary:
 | `base` | Base game | 10 | Official A–R spiral or random tokens. The 5–6 board has 30 hexes and 11 harbors |
 | `seafarers-1-new-shores` | Heading for New Shores | 14 | Start on the main island; +2 VP for the first settlement on each small island |
 | `seafarers-2-four-islands` | The Four Islands | 13 | Home islands are chosen at setup; +2 VP per foreign island |
-| `seafarers-3-fog-islands` | The Fog Islands | 12 | Hidden fog stack; roads and ships reveal hexes; the discoverer is paid |
+| `seafarers-3-fog-islands` | The Fog Islands | 12 | Hidden fog stack. Roads, ships and settlements reveal hexes; the discoverer is paid |
 | `seafarers-4-through-the-desert` | Through the Desert | 14 | Three deserts wall off a strip; +2 VP per foreign area |
-| `seafarers-5-forgotten-tribe` | The Forgotten Tribe | 13 | Tribe islands can't be settled; gift paths give VP, dev cards or harbors |
-| `seafarers-6-cloth-for-catan` | Cloth for Catan | 14 | 3 starting settlements; village cloth (2 = 1 VP); ends when villages run dry; no trade-route card |
-| `seafarers-7-pirate-islands` | The Pirate Islands | 10 + fortress | No robber; single unbranched route; warships; pirate fleet; fortress battles |
-| `seafarers-8-wonders` | The Wonders of Catan | 4 levels, or 10 + highest wonder | Wonder requirements and costs as data; no pirate |
-| `seafarers-9-new-world` | New World | 12 | Random archipelago; players place the harbors; +1 VP per foreign island; 3–6 players |
+| `seafarers-5-forgotten-tribe` | The Forgotten Tribe | 13 | 18 gift paths (8 VP chits, 4 dev cards, 6 harbors). Gifted harbors must be placed at once if possible |
+| `seafarers-6-cloth-for-catan` | Cloth for Catan | 14 | 3 starting settlements. 8 villages on intersections with 5 cloth each plus a supply of 10. The pirate steals cloth. Ends when fewer than 4 villages have cloth |
+| `seafarers-7-pirate-islands` | The Pirate Islands | 10 + fortress | Pre-placed pieces. Fleet moves and attacks by the lower die. A 7 lets the roller rob anyone. Single route via a marked intersection. Warships from knights; fortress battles |
+| `seafarers-8-wonders` | The Wonders of Catan | 4 levels, or 10 + most levels | Theater, Great Bridge, Monument, Great Wall and Cathedral with their card requirements and costs; a ship marks the claim |
+| `seafarers-9-new-world` | New World | 12 | Random archipelago; players place the harbors first; +1 VP per foreign island; 3–6 players |
+
+The rules for scenarios 5–9 come from rules summaries and the open-source
+JSettlers2 implementation. [`docs/rules.md`](docs/rules.md) lists the source
+for each rule.
 
 The maps are original layouts that follow each scenario's structure. They are
 not the printed maps. Official layouts can be added as `MapSpec` data with no

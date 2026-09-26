@@ -96,7 +96,7 @@ export const newWorld: ScenarioDef = {
   name: 'New World',
   expansion: 'seafarers',
   description:
-    'A random archipelago. Start anywhere; after the starting placement players place the harbors. Your first settlement on each other island earns 1 VP. 12 VP to win.',
+    'A random archipelago. Players first place the harbors, then start anywhere. Your first settlement on each other island earns 1 VP. 12 VP to win.',
   minPlayers: 3,
   maxPlayers: 6,
   victoryPoints: () => 12,

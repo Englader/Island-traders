@@ -133,6 +133,17 @@ export function withDice(s: GameState, d1: number, d2: number): GameState {
   throw new Error('no seed found');
 }
 
+/** Forces the next single die roll (e.g. a fortress battle). */
+export function withNextDie(s: GameState, d: number): GameState {
+  for (let seed = 1; seed < 1_000_000; seed++) {
+    if (rollDie({ s: seed }) === d) {
+      s.rng = { s: seed };
+      return s;
+    }
+  }
+  throw new Error('no seed found');
+}
+
 /** Marks a hex's terrain and token. */
 export function setHex(s: GameState, q: number, r: number, terrain: GameState['board']['hexes'][string]['terrain'], token: number | null = null): void {
   const h = s.board.hexes[H(q, r)];

@@ -130,5 +130,12 @@ export function createGame(config: GameConfig): GameState {
   };
   if (map.fogStack) state.ext.fog = map.fogStack;
   scenario.hooks.init?.(state);
+  // New World: players place the harbor tokens before the starting placement.
+  const pool = state.ext.harborPool as unknown[] | undefined;
+  if (scenario.rules.playersPlaceHarbors && pool && pool.length > 0) {
+    const queue = Array.from({ length: pool.length }, (_, i) => (firstPlayer + i) % n);
+    state.phase = { kind: 'harborPlacement', queue };
+    state.log.push({ turn: 0, msg: 'Players place the harbors' });
+  }
   return state;
 }

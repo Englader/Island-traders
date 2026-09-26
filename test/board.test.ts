@@ -164,10 +164,10 @@ describe('every scenario map', () => {
               used.add(v);
             }
           }
-          // producing land has a token (fog and unsettleable tribe islands aside)
+          // producing land has a token (islands that can never be settled aside)
           for (const h of Object.values(s.board.hexes)) {
             if (['hills', 'forest', 'pasture', 'fields', 'mountains', 'gold'].includes(h.terrain)) {
-              if (h.zone !== 'tribe') expect(h.token, `${sc.id} ${h.q},${h.r}`).not.toBeNull();
+              if (!sc.rules.forbiddenZones.includes(h.zone ?? '')) expect(h.token, `${sc.id} ${h.q},${h.r}`).not.toBeNull();
             }
             if (h.terrain === 'desert' || h.terrain === 'sea') expect(h.token).toBeNull();
           }

@@ -107,7 +107,12 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
       for (const m of legalRobberMoves(s, player)) {
         const victims = robberVictimsAt(s, player, m.piece, m.hex);
         if (victims.length === 0) out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex });
-        for (const v of victims) out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex, victim: v });
+        for (const v of victims) {
+          out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex, victim: v });
+          for (const take of sc.hooks.stealChoices?.(s, player, v, m.piece) ?? []) {
+            out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex, victim: v, take });
+          }
+        }
       }
       return out;
     }

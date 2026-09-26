@@ -28,18 +28,25 @@ function checkInvariants(s: GameState): void {
     }
     expect(sum, `${r} conserved`).toBe(sc.bankSize(n));
   }
-  // development cards are never created or destroyed
+  // development cards are never created or destroyed (Forgotten Tribe sets some aside as gifts)
   const deckTotal = Object.values(sc.devDeck(n)).reduce((a, b) => a + b, 0);
   const inPlay = s.players.reduce((a, p) => a + p.devCards.length + p.playedKnights + p.playedProgress.length, 0);
-  expect(s.devDeck.length + inPlay).toBe(deckTotal);
+  const setAside = ((s.ext.tribe as { giftCards?: unknown[] } | undefined)?.giftCards ?? []).length;
+  expect(s.devDeck.length + inPlay + setAside).toBe(deckTotal);
+  // Pirate Islands: an unconquered fortress is one of its owner's settlements.
+  const fortresses = (s.ext.pirateIslands as { fortresses: Array<{ captured: boolean }> } | undefined)?.fortresses;
+  // Wonders: a claimed wonder holds one of its owner's ships.
+  const wonders = (s.ext.wonders as { owned: Array<string | null> } | undefined)?.owned;
   // piece supply matches the board
   const t = topo(s);
   for (const p of s.players) {
     const pieces = Object.values(s.board.pieces).filter((x) => x.owner === p.id);
     const buildings = Object.values(s.board.buildings).filter((b) => b.owner === p.id);
     expect(p.supply.roads + pieces.filter((x) => x.type === 'road').length).toBe(PIECES_PER_PLAYER.roads);
-    expect(p.supply.ships + pieces.filter((x) => x.type === 'ship').length).toBe(sc.rules.ships ? PIECES_PER_PLAYER.ships : 0);
-    expect(p.supply.settlements + buildings.filter((b) => b.type === 'settlement').length).toBe(PIECES_PER_PLAYER.settlements);
+    const marker = wonders?.[p.id] ? 1 : 0;
+    const fortress = fortresses && !fortresses[p.id].captured ? 1 : 0;
+    expect(p.supply.ships + marker + pieces.filter((x) => x.type === 'ship').length).toBe(sc.rules.ships ? PIECES_PER_PLAYER.ships : 0);
+    expect(p.supply.settlements + fortress + buildings.filter((b) => b.type === 'settlement').length).toBe(PIECES_PER_PLAYER.settlements);
     expect(p.supply.cities + buildings.filter((b) => b.type === 'city').length).toBe(PIECES_PER_PLAYER.cities);
   }
   // distance rule and placement legality

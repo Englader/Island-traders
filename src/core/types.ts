@@ -139,7 +139,8 @@ export type Phase =
   | { kind: 'harborPlacement'; queue: PlayerId[] }
   | { kind: 'setup'; round: number; index: number; step: 'settlement' | 'edge'; vertex: VertexId | null }
   | { kind: 'preRoll' }
-  | { kind: 'discard'; pending: Record<string, number>; resume: Phase }
+  /** `lazy`: amounts are computed when the phase is reached (after a free pick on a 7). */
+  | { kind: 'discard'; pending: Record<string, number>; resume: Phase; lazy?: boolean }
   | { kind: 'robber'; reason: 'seven' | 'knight'; resume: Phase }
   | { kind: 'gold'; pending: Record<string, number>; resume: Phase }
   | { kind: 'main' }
@@ -228,7 +229,8 @@ export type Action =
   | { type: 'placeShip'; player: PlayerId; edge: EdgeId }
   | { type: 'rollDice'; player: PlayerId }
   | { type: 'discard'; player: PlayerId; cards: PartialCounts }
-  | { type: 'moveRobber'; player: PlayerId; piece: 'robber' | 'pirate'; hex: HexId; victim?: PlayerId }
+  /** `take` defaults to a random resource card; scenarios may offer more (Cloth: 'cloth'). */
+  | { type: 'moveRobber'; player: PlayerId; piece: 'robber' | 'pirate'; hex: HexId; victim?: PlayerId; take?: string }
   | { type: 'chooseGold'; player: PlayerId; resources: PartialCounts }
   | { type: 'buildRoad'; player: PlayerId; edge: EdgeId }
   | { type: 'buildShip'; player: PlayerId; edge: EdgeId }

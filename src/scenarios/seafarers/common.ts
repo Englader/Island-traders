@@ -27,16 +27,20 @@ interface FogStack {
 }
 
 /**
- * The Fog Islands: placing a road or ship that touches an unexplored hex turns
- * it over. Land gets a random number token and pays the discoverer one card of
- * its type (gold: one card of their choice).
+ * The Fog Islands: placing a road, ship or settlement that touches an
+ * unexplored hex turns it over. Land gets a random number token and pays the
+ * discoverer one card of its type (gold: one card of their choice).
  */
 export function revealFogAround(state: GameState, player: PlayerId, edge: EdgeId): void {
+  revealFogAt(state, player, topo(state).edgeVertices[edge]);
+}
+
+export function revealFogAt(state: GameState, player: PlayerId, vertices: readonly string[]): void {
   const fog = state.ext.fog as FogStack | undefined;
   if (!fog) return;
   const t = topo(state);
   const touched = new Set<string>();
-  for (const v of t.edgeVertices[edge]) {
+  for (const v of vertices) {
     for (const h of t.vertexHexes[v]) if (state.board.hexes[h].terrain === 'fog') touched.add(h);
   }
   for (const h of [...touched].sort()) {

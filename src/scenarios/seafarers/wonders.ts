@@ -1,19 +1,26 @@
 import type { MapSpec } from '../../board/mapSpec.js';
 import { HARBORS_BASE, TOKENS_28 } from '../../core/constants.js';
 import { hasAtLeast } from '../../core/resources.js';
-import type { Action, GameState, PartialCounts, PlayerId } from '../../core/types.js';
+import type { Action, GameState, PartialCounts, PlayerId, VertexId } from '../../core/types.js';
 import { log, nameOf, payToBank } from '../../rules/helpers.js';
-import { buildingsOf, publicVP, topo, vertexZones } from '../../rules/queries.js';
+import { longestRouteLength } from '../../rules/longestRoute.js';
+import { buildingsOf, isLandHex, topo, totalVP, vertexLandHexes } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply, withoutTokens } from './common.js';
 
 /**
- * The Wonders of Catan: claim a wonder once you meet its entry requirement,
- * then build its four levels (5 resources each). Finishing a wonder wins
- * outright; otherwise you need 10 VP and the strictly highest wonder level.
+ * The Wonders of Catan. Wonder requirements and per-level costs follow the
+ * wonder cards as encoded by JSettlers2 (Theater, Great Bridge, Monument,
+ * Great Wall, Cathedral). You claim a wonder by meeting its requirement and
+ * putting one of your unplaced ships on its card. Each of its 4 levels costs
+ * the 5 resources on the card, and you may build several levels in a turn.
+ * Win by finishing all 4 levels, or with 10 VP and more levels than anyone
+ * else.
  *
- * The spec does not list the wonders, so the five below (requirements and
- * costs) are this engine's definitions. They are data and easy to replace.
+ * Map markings: the desert wasteland (intersections next to a desert: Great
+ * Wall), the strait (intersections next to a strait sea hex: Great Bridge)
+ * and the intersections next to those strait sites. None of them, nor the
+ * small islands, may take a starting settlement; they are open afterwards.
  */
 export const WONDER_LEVELS = 4;
 
@@ -25,52 +32,63 @@ export interface WonderDef {
   eligible(state: GameState, p: PlayerId): boolean;
 }
 
+/** Intersections next to a desert hex (the wasteland). */
+export function wastelandVertices(state: GameState): VertexId[] {
+  return topo(state).vertexIds.filter((v) =>
+    topo(state).vertexHexes[v].some((h) => state.board.hexes[h].terrain === 'desert'),
+  );
+}
+
+/** Land intersections next to a sea hex marked as the strait. */
+export function straitVertices(state: GameState): VertexId[] {
+  return topo(state).vertexIds.filter(
+    (v) =>
+      vertexLandHexes(state, v).length > 0 &&
+      topo(state).vertexHexes[v].some((h) => state.board.hexes[h].zone === 'strait' && !isLandHex(state, h)),
+  );
+}
+
+function settlementIn(state: GameState, p: PlayerId, spots: VertexId[]): boolean {
+  return buildingsOf(state, p).settlements.some((v) => spots.includes(v));
+}
+
 export const WONDERS: WonderDef[] = [
   {
-    id: 'greatWall',
-    name: 'Great Wall',
-    requirement: 'a settlement or city next to a desert',
-    cost: { brick: 2, lumber: 1, grain: 1, ore: 1 },
-    eligible: (s, p) => {
-      const { settlements, cities } = buildingsOf(s, p);
-      return [...settlements, ...cities].some((v) =>
-        topo(s).vertexHexes[v].some((h) => s.board.hexes[h].terrain === 'desert'),
-      );
-    },
+    id: 'theater',
+    name: 'Theater',
+    requirement: '2 cities',
+    cost: { brick: 1, wool: 3, lumber: 1 },
+    eligible: (s, p) => buildingsOf(s, p).cities.length >= 2,
   },
   {
     id: 'greatBridge',
     name: 'Great Bridge',
-    requirement: 'buildings on two different islands',
-    cost: { brick: 1, lumber: 2, ore: 2 },
-    eligible: (s, p) => {
-      const { settlements, cities } = buildingsOf(s, p);
-      const zones = new Set<string>();
-      for (const v of [...settlements, ...cities]) for (const z of vertexZones(s, v)) zones.add(z);
-      return zones.size >= 2;
-    },
+    requirement: 'a settlement at the strait',
+    cost: { wool: 1, grain: 1, lumber: 3 },
+    eligible: (s, p) => settlementIn(s, p, straitVertices(s)),
   },
   {
-    id: 'lighthouse',
-    name: 'Lighthouse',
-    requirement: 'a settlement or city on a harbor',
-    cost: { lumber: 2, wool: 1, brick: 1, ore: 1 },
+    id: 'monument',
+    name: 'Monument',
+    requirement: 'a city at a harbor and a trade route of at least 5',
+    cost: { ore: 2, grain: 3 },
     eligible: (s, p) =>
-      s.board.harbors.some((h) => topo(s).edgeVertices[h.edge].some((v) => s.board.buildings[v]?.owner === p)),
+      buildingsOf(s, p).cities.some((v) => s.board.harbors.some((h) => topo(s).edgeVertices[h.edge].includes(v))) &&
+      longestRouteLength(s, p) >= 5,
   },
   {
-    id: 'colossus',
-    name: 'Colossus',
-    requirement: 'two cities',
-    cost: { ore: 2, grain: 1, wool: 1, brick: 1 },
-    eligible: (s, p) => buildingsOf(s, p).cities.length >= 2,
+    id: 'greatWall',
+    name: 'Great Wall',
+    requirement: 'a settlement at the desert wasteland',
+    cost: { brick: 3, grain: 1, lumber: 1 },
+    eligible: (s, p) => settlementIn(s, p, wastelandVertices(s)),
   },
   {
-    id: 'greatLibrary',
-    name: 'Great Library',
-    requirement: '6 public victory points',
-    cost: { grain: 2, wool: 2, ore: 1 },
-    eligible: (s, p) => publicVP(s, p) >= 6,
+    id: 'cathedral',
+    name: 'Cathedral',
+    requirement: 'a city and 6 victory points',
+    cost: { brick: 1, ore: 3, grain: 1 },
+    eligible: (s, p) => buildingsOf(s, p).cities.length >= 1 && totalVP(s, p) >= 6,
   },
 ];
 
@@ -100,6 +118,7 @@ function claimError(state: GameState, p: PlayerId, id: string): string | null {
   if (!w) return 'no such wonder';
   if (ws(state).owned[p]) return 'you already have a wonder';
   if (ws(state).claimed[id] !== undefined) return 'that wonder is taken';
+  if (state.players[p].supply.ships <= 0) return 'you need an unplaced ship to mark the wonder';
   if (!w.eligible(state, p)) return `requirement not met: ${w.requirement}`;
   return null;
 }
@@ -120,33 +139,33 @@ export const theWondersOfCatan: ScenarioDef = {
   name: 'The Wonders of Catan',
   expansion: 'seafarers',
   description:
-    'Meet a wonder\'s entry requirement to claim it, then build its four levels. Finish a wonder, or reach 10 VP with the highest wonder level, to win. No pirate.',
+    "Meet a wonder's requirement and mark it with a ship to claim it, then build its four levels. Finish a wonder, or reach 10 VP with more levels than anyone else, to win. No pirate.",
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 10,
   map: (): MapSpec => ({
     rows: [
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-      '~ ~ ? ? ? ? ~ ~ ?b ~ ~',
-      '~ ~ ? ? ? ? ? ~ ~ ?b ~',
-      '~ ? ? d@main ? ? ? ~ ~ ~ ~',
-      '~ ~ ? ? ? ? ? ~ ~ ?b ~',
-      '~ ~ ? ? ? ? ~ ~ ?b ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
+      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
+      '~ ? ?@west ? ~ ? ?@east ? ~ ~ ~ ~',
+      '~ ? ? ? ~@strait ? ? ? ~ ~ ~ ~',
+      '~ ? d d ~@strait ? ? ? ~ $5 ~ ~',
+      '~ ? ? d ~ ? ? ? ~ ~ ~ ~',
+      '~ ~ ? ? ~ ? ~ ~ ~ ?b $11 ~',
+      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
     ],
     pools: {
       default: {
-        terrains: { forest: 5, pasture: 5, fields: 5, hills: 4, mountains: 4 },
-        tokens: withoutTokens(TOKENS_28, [3, 5, 9, 11]),
+        terrains: { forest: 5, pasture: 5, fields: 5, hills: 5, mountains: 4 },
+        tokens: withoutTokens(TOKENS_28, [5, 9, 11]),
       },
-      b: { terrains: { gold: 2, hills: 1, mountains: 1 }, tokens: [3, 5, 9, 11] },
+      b: { terrains: { mountains: 1 }, tokens: [9] },
     },
-    harbors: { spots: 'auto', pool: HARBORS_BASE, zones: ['main'] },
+    harbors: { spots: 'auto', pool: HARBORS_BASE, zones: ['west', 'east'] },
     robber: 'desert',
     pirate: null,
   }),
   ...seafarersSupply,
-  rules: seafarersRules({ pirate: false }),
+  rules: seafarersRules({ pirate: false, setupZones: ['west', 'east'] }),
   hooks: {
     init(state) {
       state.ext.wonders = {
@@ -155,6 +174,14 @@ export const theWondersOfCatan: ScenarioDef = {
         levels: state.players.map(() => 0),
       } satisfies WondersState;
     },
+    settlementAllowed(state, _player, vertex, setup) {
+      if (!setup) return null;
+      const strait = straitVertices(state);
+      const nearStrait = strait.flatMap((v) => topo(state).vertexNeighbors[v]);
+      if (wastelandVertices(state).includes(vertex)) return 'the wasteland is not open for starting settlements';
+      if (strait.includes(vertex) || nearStrait.includes(vertex)) return 'the strait is not open for starting settlements';
+      return null;
+    },
     action(state, a) {
       if (a.name === 'claimWonder') {
         const id = String(a.args?.wonder ?? '');
@@ -162,7 +189,8 @@ export const theWondersOfCatan: ScenarioDef = {
         if (err) return err;
         ws(state).claimed[id] = a.player;
         ws(state).owned[a.player] = id;
-        log(state, `${nameOf(state, a.player)} claims the ${WONDERS.find((w) => w.id === id)!.name}`);
+        state.players[a.player].supply.ships--; // the ship marks the wonder card
+        log(state, `${nameOf(state, a.player)} starts the ${WONDERS.find((w) => w.id === id)!.name}`);
         return null;
       }
       if (a.name === 'buildWonder') {

@@ -297,9 +297,10 @@ export function robberVictimsAt(state: GameState, actor: PlayerId, piece: 'robbe
 
 export function legalRobberMoves(state: GameState, actor: PlayerId): Array<{ piece: 'robber' | 'pirate'; hex: HexId }> {
   const out: Array<{ piece: 'robber' | 'pirate'; hex: HexId }> = [];
+  const pirateOk = scenarioOf(state).hooks.canMovePirate?.(state, actor) ?? true;
   for (const hex of Object.keys(state.board.hexes)) {
     if (robberHexError(state, actor, hex) === null) out.push({ piece: 'robber', hex });
-    if (pirateHexError(state, hex) === null) out.push({ piece: 'pirate', hex });
+    if (pirateOk && pirateHexError(state, hex) === null) out.push({ piece: 'pirate', hex });
   }
   return out;
 }

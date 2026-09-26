@@ -55,8 +55,22 @@ export interface ScenarioHooks {
   init?(state: GameState): void;
   afterSettlement?(state: GameState, player: PlayerId, vertex: VertexId, setup: boolean): void;
   afterEdge?(state: GameState, player: PlayerId, edge: EdgeId, kind: 'road' | 'ship', setup: boolean): void;
+  /**
+   * Runs right after the dice are rolled, before production or the 7 (Pirate
+   * Islands fleet). Returns free resource choices owed; on a 7 they are picked
+   * before the discards.
+   */
+  beforeProduction?(state: GameState, dice: [number, number]): Record<number, number> | void;
   /** Runs after the dice are rolled, after normal production (or the 7 discard set-up). */
   afterRoll?(state: GameState, dice: [number, number]): void;
+  /** May this player move the pirate now? (Cloth: only after reaching a village.) */
+  canMovePirate?(state: GameState, player: PlayerId): boolean;
+  /** Non-resource things a thief may take instead of a card (Cloth: 'cloth'). */
+  stealChoices?(state: GameState, thief: PlayerId, victim: PlayerId, piece: 'robber' | 'pirate'): string[];
+  /** Performs a steal of one of the `stealChoices`. */
+  steal?(state: GameState, thief: PlayerId, victim: PlayerId, take: string): void;
+  /** Neutral intersections that end trade routes (Cloth villages): a route reaching one is closed. */
+  routeAnchors?(state: GameState): VertexId[];
   /** Replaces the knight's robber move; return the phase to enter. */
   onKnight?(state: GameState, player: PlayerId, resume: Phase): Phase | null;
   /** Extra constraint for ship placement (e.g. single unbranched route). */
@@ -71,7 +85,10 @@ export interface ScenarioHooks {
   instantWin?(state: GameState, player: PlayerId): string | null;
   /** Game-ending condition checked after every action (e.g. villages ran out of cloth). */
   checkEnd?(state: GameState): EndResult | null;
-  /** Handles `{type:'scenario'}` actions; returns an error string or null. */
+  /**
+   * Handles `{type:'scenario'}` actions; returns an error string or null.
+   * Setting `state.ext.forceEndTurn = true` ends the acting player's turn afterwards.
+   */
   action?(state: GameState, action: Extract<Action, { type: 'scenario' }>): string | null;
   /** Scenario actions currently legal for `player` (used by bots and UIs). */
   legalActions?(state: GameState, player: PlayerId): Action[];

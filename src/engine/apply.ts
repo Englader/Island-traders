@@ -137,7 +137,16 @@ function dispatch(s: GameState, a: Action): string | null {
     case 'scenario': {
       const handler = scenarioOf(s).hooks.action;
       if (!handler) return 'this scenario has no special actions';
-      return handler(s, a);
+      const err = handler(s, a);
+      if (err) return err;
+      if (s.ext.forceEndTurn) {
+        delete s.ext.forceEndTurn;
+        // A win earned by the action counts before the turn passes on.
+        checkVictory(s);
+        if (s.phase.kind === 'gameOver') return null;
+        return endTurn(s, { type: 'endTurn', player: a.player });
+      }
+      return null;
     }
     default:
       return `unknown action type "${(a as { type: string }).type}"`;
@@ -225,6 +234,10 @@ function settle(s: GameState): void {
         continue;
       }
     }
+    if (ph.kind === 'discard' && ph.lazy) {
+      s.phase = { kind: 'discard', pending: sevenDiscards(s), resume: ph.resume };
+      continue;
+    }
     if (ph.kind === 'discard' && Object.keys(ph.pending).length === 0) {
       s.phase = ph.resume;
       continue;
@@ -244,7 +257,7 @@ function settle(s: GameState): void {
     }
     if (ph.kind === 'harborPlacement' && !topo(s).edgeIds.some((e) => harborEdgeError(s, e, null) === null)) {
       log(s, 'No legal harbor spots remain');
-      startTurn(s, s.firstPlayer);
+      beginSetup(s);
       continue;
     }
     break;
@@ -341,16 +354,13 @@ function advanceSetup(s: GameState): void {
 }
 
 function finishSetup(s: GameState): void {
-  const pool = s.ext.harborPool as HarborType[] | undefined;
-  if (scenarioOf(s).rules.playersPlaceHarbors && pool && pool.length > 0) {
-    const n = s.players.length;
-    const queue = Array.from({ length: pool.length }, (_, i) => (s.firstPlayer + i) % n);
-    s.turn.actor = queue[0];
-    s.phase = { kind: 'harborPlacement', queue };
-    log(s, 'Players now place the harbors');
-    return;
-  }
   startTurn(s, s.firstPlayer);
+}
+
+/** Starts the snake draft (after any harbor placement by players). */
+export function beginSetup(s: GameState): void {
+  s.phase = { kind: 'setup', round: 0, index: 0, step: 'settlement', vertex: null };
+  s.turn.actor = currentSetupPlayer(s)!;
 }
 
 function placeEdgePiece(s: GameState, p: PlayerId, e: EdgeId, kind: 'road' | 'ship'): void {
@@ -393,18 +403,24 @@ function placeHarbor(s: GameState, a: A<'placeHarbor'>): string | null {
     log(s, `${nameOf(s, a.player)} places a ${type} harbor`);
     const queue = ph.queue.slice(1);
     if (queue.length === 0 || pool.length === 0) {
-      startTurn(s, s.firstPlayer);
+      beginSetup(s);
     } else {
       s.phase = { kind: 'harborPlacement', queue };
       s.turn.actor = queue[0];
     }
     return null;
   }
-  // Held harbor (e.g. a Forgotten Tribe gift): place during your own turn.
+  // Held harbor (e.g. a Forgotten Tribe gift): placed at once when received, or later on your own turn.
   const held = (s.ext.heldHarbors as Record<string, HarborType[]> | undefined)?.[a.player] ?? [];
   if (held.length === 0) return 'you have no harbor to place';
-  const e = mainPhaseError(s, a.player, ['active', 'paired']);
-  if (e) return e;
+  const ph = s.phase;
+  const mustPlaceNow = ph.kind === 'scenario' && ph.step === 'placeHarbor';
+  if (mustPlaceNow) {
+    if (ph.player !== a.player) return 'it is not your harbor to place';
+  } else {
+    const e = mainPhaseError(s, a.player, ['active', 'paired']);
+    if (e) return e;
+  }
   const idx = a.index ?? 0;
   if (!Number.isInteger(idx) || idx < 0 || idx >= held.length) return 'no such harbor';
   const err = harborEdgeError(s, a.edge, a.player);
@@ -412,6 +428,7 @@ function placeHarbor(s: GameState, a: A<'placeHarbor'>): string | null {
   const [type] = held.splice(idx, 1);
   s.board.harbors.push({ edge: a.edge, type });
   log(s, `${nameOf(s, a.player)} places a ${type} harbor`);
+  if (mustPlaceNow) s.phase = ph.resume;
   return null;
 }
 
@@ -432,21 +449,31 @@ function rollDice(s: GameState, a: A<'rollDice'>): string | null {
   s.turn.dice = dice;
   const sum = dice[0] + dice[1];
   log(s, `${nameOf(s, a.player)} rolls ${sum} (${dice[0]}+${dice[1]})`);
+  const owed = scenarioOf(s).hooks.beforeProduction?.(s, dice) ?? {};
   if (sum === 7) {
-    const pending: Record<string, number> = {};
-    for (const pl of s.players) {
-      const n = handSize(s, pl.id);
-      if (n > s.options.discardLimit) pending[pl.id] = Math.floor(n / 2);
-    }
     const after = robberPhaseOr(s, 'seven', { kind: 'main' });
-    s.phase = Object.keys(pending).length ? { kind: 'discard', pending, resume: after } : after;
+    // Discards are counted once any free picks from before the roll resolved.
+    s.phase = { kind: 'discard', pending: {}, resume: after, lazy: true };
+    addGoldChoice(s, owed);
   } else {
     s.phase = { kind: 'main' };
     const prod = produce(s, sum);
-    addGoldChoice(s, prod.gold);
+    const gold: Record<number, number> = { ...prod.gold };
+    for (const [p, n] of Object.entries(owed)) gold[Number(p)] = (gold[Number(p)] ?? 0) + n;
+    addGoldChoice(s, gold);
   }
   scenarioOf(s).hooks.afterRoll?.(s, dice);
   return null;
+}
+
+/** Players holding more than the limit discard half, rounded down. */
+function sevenDiscards(s: GameState): Record<string, number> {
+  const pending: Record<string, number> = {};
+  for (const pl of s.players) {
+    const n = handSize(s, pl.id);
+    if (n > s.options.discardLimit) pending[pl.id] = Math.floor(n / 2);
+  }
+  return pending;
 }
 
 function discard(s: GameState, a: A<'discard'>): string | null {
@@ -468,6 +495,10 @@ function moveRobber(s: GameState, a: A<'moveRobber'>): string | null {
   if (ph.kind !== 'robber') return 'the robber is not being moved now';
   if (!isActor(s, a.player)) return 'it is not your turn';
   if (a.piece !== 'robber' && a.piece !== 'pirate') return 'unknown piece';
+  const hooks = scenarioOf(s).hooks;
+  if (a.piece === 'pirate' && hooks.canMovePirate && !hooks.canMovePirate(s, a.player)) {
+    return 'you cannot move the pirate yet';
+  }
   const err = a.piece === 'robber' ? robberHexError(s, a.player, a.hex) : pirateHexError(s, a.hex);
   if (err) return err;
   const victims = robberVictimsAt(s, a.player, a.piece, a.hex);
@@ -477,10 +508,19 @@ function moveRobber(s: GameState, a: A<'moveRobber'>): string | null {
   } else if (a.victim !== undefined) {
     return 'nobody can be robbed there';
   }
+  const take = a.take ?? 'resource';
+  if (take !== 'resource') {
+    if (a.victim === undefined) return 'nobody to take from';
+    const choices = hooks.stealChoices?.(s, a.player, a.victim, a.piece) ?? [];
+    if (!choices.includes(take)) return `you cannot take ${take} from that player`;
+  }
   if (a.piece === 'robber') s.board.robber = a.hex;
   else s.board.pirate = a.hex;
   log(s, `${nameOf(s, a.player)} moves the ${a.piece}`);
-  if (a.victim !== undefined) stealRandom(s, a.player, a.victim);
+  if (a.victim !== undefined) {
+    if (take === 'resource') stealRandom(s, a.player, a.victim);
+    else hooks.steal!(s, a.player, a.victim, take);
+  }
   s.phase = ph.resume;
   return null;
 }

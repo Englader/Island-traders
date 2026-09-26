@@ -1,7 +1,7 @@
 import type { MapSpec } from '../../board/mapSpec.js';
 import { HARBORS_BASE, HARBORS_SEAFARERS, TERRAIN_BASE, TOKENS_28, TOKENS_BASE_SPIRAL } from '../../core/constants.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
-import { revealFogAround, seafarersSupply } from './common.js';
+import { revealFogAround, revealFogAt, seafarersSupply } from './common.js';
 
 /*
  * Maps below are original layouts that follow each scenario's structure (main
@@ -88,7 +88,7 @@ export const theFogIslands: ScenarioDef = {
   name: 'The Fog Islands',
   expansion: 'seafarers',
   description:
-    'The east is unexplored. A road or ship touching a fog hex reveals it; new land gets a random number and pays the discoverer 1 card. 12 VP to win.',
+    'The east is unexplored. A road, ship or settlement touching a fog hex reveals it; new land gets a random number and pays the discoverer 1 card. 12 VP to win.',
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 12,
@@ -121,6 +121,9 @@ export const theFogIslands: ScenarioDef = {
   hooks: {
     afterEdge(state, player, edge) {
       revealFogAround(state, player, edge);
+    },
+    afterSettlement(state, player, vertex) {
+      revealFogAt(state, player, [vertex]);
     },
   },
 };

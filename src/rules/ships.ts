@@ -16,14 +16,19 @@ function shipEdgesOf(state: GameState, p: PlayerId): Set<EdgeId> {
  * that part of the route ends). Opponent buildings are ignored, so a closed
  * route stays closed even if an opponent later settles along it.
  */
+function anchorsOf(state: GameState): Set<VertexId> {
+  return new Set(scenarioOf(state).hooks.routeAnchors?.(state) ?? []);
+}
+
 function buildingsReachable(state: GameState, p: PlayerId, ships: Set<EdgeId>, start: VertexId, skip: EdgeId): Set<VertexId> {
   const t = topo(state);
+  const anchors = anchorsOf(state);
   const found = new Set<VertexId>();
   const seen = new Set<VertexId>([start]);
   const stack = [start];
   while (stack.length) {
     const v = stack.pop()!;
-    if (ownsBuildingAt(state, p, v)) {
+    if (ownsBuildingAt(state, p, v) || anchors.has(v)) {
       found.add(v);
       continue;
     }
@@ -62,8 +67,9 @@ function connectedWithout(state: GameState, ships: Set<EdgeId>, from: VertexId, 
 
 /**
  * A route is closed when it links two different settlements/cities of the
- * owner; its ships can never move. A route that leaves and returns to the same
- * settlement counts as open.
+ * owner (or one of them and a scenario anchor such as a Cloth village); its
+ * ships can never move. A route that leaves and returns to the same settlement
+ * counts as open.
  */
 export function isShipOnClosedRoute(state: GameState, p: PlayerId, edge: EdgeId): boolean {
   const ships = shipEdgesOf(state, p);
@@ -83,8 +89,9 @@ export function isShipAtRouteEnd(state: GameState, p: PlayerId, edge: EdgeId): b
   const t = topo(state);
   const ships = shipEdgesOf(state, p);
   const [a, b] = t.edgeVertices[edge];
+  const anchors = anchorsOf(state);
   const freeEnd = (v: VertexId) =>
-    !ownsBuildingAt(state, p, v) && t.vertexEdges[v].every((e) => e === edge || !ships.has(e));
+    !ownsBuildingAt(state, p, v) && !anchors.has(v) && t.vertexEdges[v].every((e) => e === edge || !ships.has(e));
   if (freeEnd(a) || freeEnd(b)) return true;
   return connectedWithout(state, ships, a, b, edge);
 }
