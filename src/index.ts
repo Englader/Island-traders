@@ -19,4 +19,4 @@ export { getScenario, listScenarios, registerScenario, scenarioOf } from './scen
 export { baseRules, seafarersRules, DEFAULT_SETUP, type ScenarioDef, type ScenarioHooks, type ScenarioRules, type SetupRound } from './scenarios/types.js';
 export { BUILT_IN_SCENARIOS } from './scenarios/all.js';
 export { randomAction, simulate } from './bots/randomBot.js';
-export { heuristicAction, simulateHeuristic, spotValue, production, potentialField } from './bots/heuristicBot.js';
+export { BOT_LEVELS, botProfile, heuristicAction, simulateHeuristic, spotValue, production, potentialField, type BotLevel } from './bots/heuristicBot.js';

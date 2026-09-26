@@ -8,7 +8,7 @@ import {
   type GameView,
   type PlayerId,
 } from 'engine';
-import { botDelay, mustAct, type BotSpeed, type Seat } from './seats';
+import { botDelay, mustAct, type BotLevel, type BotSpeed, type Seat } from './seats';
 import { removeKey, saveJson } from './storage';
 
 export type GameMode = 'local' | 'host';
@@ -21,6 +21,8 @@ export interface GameRecord {
   seats: Seat[];
   state: GameState;
   botSpeed: BotSpeed;
+  /** How well the computer players play (older saves: medium). */
+  botLevel?: BotLevel;
   /** Online games: the room code friends join with. */
   room?: string;
   /** Online games: which browser (client id) holds which remote seat. */
@@ -154,6 +156,12 @@ export class GameController {
     this.emit();
   }
 
+  setBotLevel(level: BotLevel): void {
+    this.record = { ...this.record, botLevel: level };
+    this.save();
+    this.emit();
+  }
+
   setBotSpeed(speed: BotSpeed): void {
     this.record = { ...this.record, botSpeed: speed };
     this.save();
@@ -195,7 +203,11 @@ export class GameController {
   private scheduleBots(need: PlayerId[]): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    const bot = need.find((p) => this.seats[p].kind === 'bot');
+    // While players are answering a trade offer, the active player waits for
+    // them (a computer player that made the offer must not withdraw it early).
+    const s = this.state;
+    const answering = s.phase.kind === 'main' ? need.filter((p) => p !== s.turn.actor) : [];
+    const bot = (answering.length > 0 ? answering : need).find((p) => this.seats[p].kind === 'bot');
     if (bot === undefined || this.state.phase.kind === 'gameOver') return;
     this.timer = setTimeout(() => this.botStep(bot), botDelay(this.record.botSpeed, this.last?.action ?? null));
   }
@@ -208,7 +220,7 @@ export class GameController {
       this.botPart = s.turn.part;
       this.botSteps = 0;
     }
-    let a = heuristicAction(s, p);
+    let a = heuristicAction(s, p, this.record.botLevel ?? 'medium');
     // Safety valve: a bot never takes more than 60 moves in one part of a turn.
     if (++this.botSteps > 60 && s.phase.kind === 'main' && s.turn.actor === p) a = { type: 'endTurn', player: p };
     if (!a) {

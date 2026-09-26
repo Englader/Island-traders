@@ -1,4 +1,4 @@
-import type { Action, GameState, GameView, PlayerId } from 'engine';
+import type { Action, BotLevel, GameState, GameView, PlayerId } from 'engine';
 
 export type SeatKind = 'human' | 'bot' | 'remote';
 
@@ -33,6 +33,15 @@ export type BotSpeed = 'slow' | 'normal' | 'fast';
 export const BOT_DELAY: Record<BotSpeed, number> = { slow: 1900, normal: 1150, fast: 450 };
 
 export const SPEED_LABEL: Record<BotSpeed, string> = { slow: 'Slow', normal: 'Normal', fast: 'Fast' };
+
+export type { BotLevel } from 'engine';
+export const LEVEL_LABEL: Record<BotLevel, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+/** What each level does differently, in a line. */
+export const LEVEL_HINT: Record<BotLevel, string> = {
+  easy: 'Builds whatever it can, makes mistakes, and trades generously: good for learning.',
+  medium: 'Saves up for a goal, uses the bank and harbors, and trades fairly.',
+  hard: 'Plans ahead, keeps the robber on the leader, trades hard and never helps someone about to win.',
+};
 
 /** The dice animation, in ms: tumbling in the middle, resting, then flying to the header. */
 export interface RollTiming {

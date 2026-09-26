@@ -1,7 +1,7 @@
 import { createGame, getScenario } from 'engine';
 import { useEffect, useMemo, useReducer, useState } from 'preact/hooks';
 import { GameController, SAVE_KEY, newGameId, type GameRecord } from './game/controller';
-import { PLAYER_COLORS, mustAct, type BotSpeed } from './game/seats';
+import { LEVEL_LABEL, PLAYER_COLORS, mustAct, type BotLevel, type BotSpeed } from './game/seats';
 import { loadJson } from './game/storage';
 import { Sheet } from './ui/common';
 import { GameScreen } from './ui/GameScreen';
@@ -41,7 +41,7 @@ function recordFrom(config: NewGameConfig, mode: 'local' | 'host', room?: string
     seed: config.seed,
     options: config.options,
   });
-  return { v: 1, id: newGameId(), mode, seats: config.seats, state, botSpeed: config.botSpeed, room, savedAt: Date.now() };
+  return { v: 1, id: newGameId(), mode, seats: config.seats, state, botSpeed: config.botSpeed, botLevel: config.botLevel, room, savedAt: Date.now() };
 }
 
 export function App() {
@@ -192,8 +192,11 @@ export function App() {
       {menu && ctrl && (
         <GameMenu
           speed={ctrl.record.botSpeed}
+          level={ctrl.record.botLevel ?? 'medium'}
+          hasBots={ctrl.seats.some((s) => s.kind === 'bot')}
           room={ctrl.record.room}
           onSpeed={(s) => ctrl.setBotSpeed(s)}
+          onLevel={(l) => ctrl.setBotLevel(l)}
           onRules={() => {
             setMenu(false);
             setRules(true);
@@ -248,8 +251,11 @@ function useWakeLock(active: boolean): void {
 
 function GameMenu({
   speed,
+  level,
+  hasBots,
   room,
   onSpeed,
+  onLevel,
   onRules,
   onRoom,
   onClose,
@@ -257,8 +263,11 @@ function GameMenu({
   onAbandon,
 }: {
   speed: BotSpeed;
+  level: BotLevel;
+  hasBots: boolean;
   room?: string;
   onSpeed(s: BotSpeed): void;
+  onLevel(l: BotLevel): void;
   onRules(): void;
   onRoom?: () => void;
   onClose(): void;
@@ -284,6 +293,18 @@ function GameMenu({
             ))}
           </div>
         </div>
+        {hasBots && (
+          <div class="row">
+            <span>Computer level</span>
+            <div class="seg">
+              {(['easy', 'medium', 'hard'] as BotLevel[]).map((l) => (
+                <button type="button" key={l} class={level === l ? 'on' : ''} onClick={() => onLevel(l)}>
+                  {LEVEL_LABEL[l]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button type="button" class="wide" onClick={onClose}>
           Back to the game
         </button>

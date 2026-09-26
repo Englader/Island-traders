@@ -48,6 +48,113 @@ type Kind = Action['type'];
 
 const ROAD_DECAY = 0.7;
 
+/** How well a computer player plays. */
+export type BotLevel = 'easy' | 'medium' | 'hard';
+export const BOT_LEVELS: BotLevel[] = ['easy', 'medium', 'hard'];
+
+interface Profile {
+  /** Mistakes when choosing spots and robber targets: 0 always takes the best. */
+  noise: number;
+  /** Saves up for a goal and trades with the bank and harbors to reach it. */
+  plans: boolean;
+  /** Roads: the lowest value worth building one for (low = builds roads to nowhere). */
+  roadBar: number;
+  /** How hard the robber goes after whoever is ahead (0: anyone). */
+  robberFocus: number;
+  /** Plays development cards with a purpose (easy only plays a knight to free its own hex). */
+  devCards: boolean;
+  /** Takes another player's offer when it gains more than this (negative: happily loses a bit). */
+  acceptGain: number;
+  /** Won't trade with anyone this close to winning (VP short of the target); -1 never checks. */
+  leaderGuard: number;
+  /** Makes a counter-offer to an open offer when it gains more than this. */
+  counterGain: number;
+  /** Cards it may ask for beyond the ones it gives, in a counter-offer. */
+  counterExtra: number;
+  /** Trade offers it makes to other players per turn, when a card or two short of its goal. */
+  offersPerTurn: number;
+  /** Before ending its turn with more than 7 cards, trades some away so a 7 costs less. */
+  handGuard: boolean;
+  /** How far down its list of goals a development card comes (lower: buys more of them). */
+  devRank: number;
+}
+
+const PROFILES: Record<BotLevel, Profile> = {
+  easy: {
+    noise: 0.8,
+    plans: false,
+    roadBar: 0.2,
+    robberFocus: 0,
+    devCards: false,
+    acceptGain: -0.6,
+    leaderGuard: -1,
+    counterGain: -0.3,
+    counterExtra: 0,
+    offersPerTurn: 0,
+    handGuard: false,
+    devRank: 2.5,
+  },
+  medium: {
+    noise: 0.4,
+    plans: true,
+    roadBar: 1,
+    robberFocus: 1,
+    devCards: true,
+    acceptGain: 0.4,
+    leaderGuard: 2,
+    counterGain: 0.3,
+    counterExtra: 0,
+    offersPerTurn: 1,
+    handGuard: false,
+    devRank: 2.5,
+  },
+  hard: {
+    noise: 0,
+    plans: true,
+    roadBar: 1,
+    robberFocus: 3,
+    devCards: true,
+    acceptGain: 0.7,
+    leaderGuard: 3,
+    counterGain: 1,
+    counterExtra: 1,
+    offersPerTurn: 2,
+    handGuard: true,
+    devRank: 2.5,
+  },
+};
+
+export function botProfile(level: BotLevel): Readonly<Profile> {
+  return PROFILES[level] ?? PROFILES.medium;
+}
+
+/**
+ * A number in [0, 1) that depends on the game position, the player and a key:
+ * lets an easy bot make "random" mistakes while simulations stay repeatable.
+ */
+function wobble(s: GameState, p: PlayerId, key: string): number {
+  let h = (2166136261 ^ Math.imul(s.log.length + 1, 2654435761) ^ Math.imul(p + 1, 40503) ^ Math.imul(s.turn.part + 1, 69069)) >>> 0;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Like best(), but with the profile's noise added to every score. */
+function pickBest<T>(s: GameState, p: PlayerId, pr: Profile, items: T[], score: (x: T) => number, key: (x: T) => string): T | null {
+  if (pr.noise <= 0 || items.length < 2) return best(items, score);
+  const scored = items.map((x) => ({ x, v: score(x) }));
+  const vs = scored.map((o) => o.v);
+  const spread = Math.max(...vs) - Math.min(...vs) || 1;
+  return best(scored, (o) => o.v + pr.noise * spread * (wobble(s, p, key(o.x)) - 0.5))?.x ?? null;
+}
+
+/** Won't trade with someone this close to winning. */
+function nearWin(s: GameState, q: PlayerId, pr: Profile): boolean {
+  return pr.leaderGuard >= 0 && publicVP(s, q) >= s.victoryTarget - pr.leaderGuard;
+}
+
 /** Expected pips per resource from the player's buildings (gold spread over all five). */
 export function production(s: GameState, p: PlayerId): Record<Resource, number> {
   const out: Record<Resource, number> = { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0 };
@@ -256,12 +363,15 @@ function best<T>(items: T[], score: (x: T) => number): T | null {
   return out;
 }
 
-function leaderWeight(s: GameState, p: PlayerId): number {
+function leaderWeight(s: GameState, p: PlayerId, focus = 1, me?: PlayerId): number {
   const vp = publicVP(s, p);
-  return 1 + vp / Math.max(1, s.victoryTarget) * 2;
+  let w = 1 + (vp / Math.max(1, s.victoryTarget)) * 2 * focus;
+  // a focused robber goes after whoever leads the others
+  if (focus > 1 && me !== undefined && s.players.every((o) => o.id === me || o.id === p || publicVP(s, o.id) <= vp)) w *= 1.5;
+  return w;
 }
 
-function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>): number {
+function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>, pr: Profile = PROFILES.medium): number {
   const t = topo(s);
   let score = 0;
   if (a.piece === 'robber') {
@@ -270,7 +380,7 @@ function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'move
       const b = s.board.buildings[v];
       if (!b) continue;
       const w = (b.type === 'city' ? 2 : 1) * n;
-      score += b.owner === p ? -3 * w : w * leaderWeight(s, b.owner);
+      score += b.owner === p ? -3 * w : w * leaderWeight(s, b.owner, pr.robberFocus, p);
     }
   } else {
     for (const e of t.hexEdges[a.hex]) {
@@ -278,7 +388,7 @@ function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'move
       if (x && x.type === 'ship') score += x.owner === p ? -2 : 1;
     }
   }
-  if (a.victim !== undefined) score += handSize(s, a.victim) * 0.6 + publicVP(s, a.victim) * 0.4;
+  if (a.victim !== undefined) score += handSize(s, a.victim) * 0.6 + publicVP(s, a.victim) * 0.4 * pr.robberFocus;
   if (a.take === 'cloth') score += 1.5;
   return score;
 }
@@ -309,7 +419,7 @@ interface Plan {
  * whichever of city, road/ship toward a good spot, or development card is
  * fewest cards away. A claimed wonder always comes first.
  */
-function choosePlan(s: GameState, p: PlayerId, pot: Map<VertexId, number>): Plan | null {
+function choosePlan(s: GameState, p: PlayerId, pot: Map<VertexId, number>, pr: Profile = PROFILES.medium): Plan | null {
   const pl = s.players[p];
   const wc = wonderCost(s, p);
   if (wc) return { cost: wc, action: { type: 'scenario', player: p, name: 'buildWonder' } };
@@ -342,16 +452,16 @@ function choosePlan(s: GameState, p: PlayerId, pot: Map<VertexId, number>): Plan
       rank: 1,
     });
   }
-  if (s.devDeck.length > 0) options.push({ cost: COSTS.devCard, action: { type: 'buyDevCard', player: p }, rank: 2.5 });
+  if (s.devDeck.length > 0) options.push({ cost: COSTS.devCard, action: { type: 'buyDevCard', player: p }, rank: pr.devRank });
   const have = pl.resources;
   return best(options, (o) => -(total(missing(have, o.cost)) + o.rank * 0.4));
 }
 
-function setupAction(s: GameState, p: PlayerId, acts: Action[]): Action | null {
+function setupAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
   const settle = byType(acts, 'placeSettlement');
   if (settle.length > 0) {
     const prod = production(s, p);
-    return best(settle, (a) => spotValue(s, p, a.vertex, prod));
+    return pickBest(s, p, pr, settle, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   }
   const pot = potentialField(s, p);
   const edges = [...byType(acts, 'placeRoad'), ...byType(acts, 'placeShip')];
@@ -399,23 +509,23 @@ function goldAction(s: GameState, p: PlayerId): Action | null {
   return { type: 'chooseGold', player: p, resources: pick };
 }
 
-function respondToTrades(s: GameState, p: PlayerId, acts: Action[]): Action | null {
+function respondToTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
   for (const t of s.turn.trades) {
     if (!t.to.includes(p) || t.accepted.includes(p) || t.rejected.includes(p)) continue;
     const accept = acts.find((a) => a.type === 'acceptTrade' && a.tradeId === t.id);
     const reject = acts.find((a) => a.type === 'rejectTrade' && a.tradeId === t.id);
     const target = s.players[p].supply.settlements > 0 ? COSTS.settlement : COSTS.city;
     const wants = resourceWants(s, p, target);
-    const proposerClose = totalVPPublic(s, t.from) >= s.victoryTarget - 2;
+    const proposerClose = nearWin(s, t.from, pr);
     if (t.open) {
-      const counter = proposerClose ? null : counterOffer(s, p, t, wants);
+      const counter = proposerClose ? null : counterOffer(s, p, t, wants, pr);
       if (counter) return counter;
       if (reject) return reject;
       continue;
     }
     let gain = 0;
     for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
-    if (accept && gain > 0.4 && !proposerClose) return accept;
+    if (accept && gain > pr.acceptGain && !proposerClose) return accept;
     if (reject) return reject;
   }
   return null;
@@ -427,7 +537,7 @@ function respondToTrades(s: GameState, p: PlayerId, acts: Action[]): Action | nu
  * X?" it pays with what it needs least, if it wants X. It prefers asking for
  * something the proposer actually holds, so the offer can be taken.
  */
-function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Resource, number>): Action | null {
+function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Resource, number>, pr: Profile): Action | null {
   const mine = s.players[p].resources;
   const theirs = s.players[t.from].resources;
   if (t.open === 'give') {
@@ -438,7 +548,7 @@ function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Re
     // ask card by card for what it values most, up to one card more than it gives
     const ask: PartialCounts = {};
     let value = 0;
-    for (let k = 0; k < n + 1 && value - cost <= 0.3; k++) {
+    for (let k = 0; k < n + 1 + pr.counterExtra && value - cost <= pr.counterGain; k++) {
       const r = best(
         RESOURCES.filter((x) => !(t.get[x] ?? 0)),
         (x) => wants[x] - (ask[x] ?? 0) * 0.4 + (theirs[x] > (ask[x] ?? 0) ? 0.5 : -2),
@@ -447,7 +557,7 @@ function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Re
       ask[r] = (ask[r] ?? 0) + 1;
       value += wants[r];
     }
-    if (value - cost <= 0.3 || total(ask) === 0) return null;
+    if (value - cost <= pr.counterGain || total(ask) === 0) return null;
     return { type: 'proposeTrade', player: p, give: { ...t.get }, get: ask, to: [t.from], replyTo: t.id };
   }
   const n = total(t.give);
@@ -458,7 +568,7 @@ function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Re
     RESOURCES.filter((r) => !(t.give[r] ?? 0) && mine[r] >= n),
     (r) => -wants[r] + mine[r] * 0.05,
   );
-  if (!pay || value - wants[pay] * n <= 0.3) return null;
+  if (!pay || value - wants[pay] * n <= pr.counterGain) return null;
   return { type: 'proposeTrade', player: p, give: { [pay]: n }, get: { ...t.give }, to: [t.from], replyTo: t.id };
 }
 
@@ -466,12 +576,13 @@ function totalVPPublic(s: GameState, p: PlayerId): number {
   return publicVP(s, p);
 }
 
-function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | null): Action | null {
+function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | null, pr: Profile): Action | null {
   const knight = acts.find((a) => a.type === 'playKnight');
   if (knight) {
     const t = topo(s);
     const blocked =
       s.board.robber !== null && t.hexVertices[s.board.robber].some((v) => s.board.buildings[v]?.owner === p);
+    if (!pr.devCards) return blocked ? knight : null;
     const army = s.largestArmy.holder;
     const mine = s.players[p].playedKnights + 1;
     const armyGain =
@@ -481,7 +592,10 @@ function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | n
       s.ext.pirateIslands !== undefined &&
       Object.values(s.board.pieces).some((x) => x.owner === p && x.type === 'ship' && !x.warship);
     if (blocked || armyGain || warship) return knight;
+    // A focused player keeps the robber on the leader and races for Largest Army.
+    if (pr.robberFocus > 1 && scenarioOf(s).rules.largestArmy && s.ext.pirateIslands === undefined) return knight;
   }
+  if (!pr.devCards) return null;
   if (s.phase.kind !== 'main') return null;
   const rb = acts.find((a) => a.type === 'playRoadBuilding');
   if (rb && s.players[p].supply.roads + s.players[p].supply.ships >= 2) {
@@ -562,29 +676,89 @@ function wonderCost(s: GameState, p: PlayerId): PartialCounts | null {
   return costs[w.owned[p]!] ?? null;
 }
 
-function mainAction(s: GameState, p: PlayerId, acts: Action[]): Action | null {
+/**
+ * The active player's trade business: settle its own offer once everyone has
+ * answered, and take or turn down counter-offers. `null` means "wait for the
+ * answers"; `undefined` means there is nothing to do.
+ */
+function actorTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null | undefined {
+  for (const t of s.turn.trades) {
+    if (t.from !== p) continue;
+    if (t.accepted.length > 0) {
+      const partner = best(t.accepted, (q) => -publicVP(s, q))!;
+      return { type: 'confirmTrade', player: p, tradeId: t.id, partner };
+    }
+    if (t.to.some((q) => !t.rejected.includes(q))) return null;
+    return { type: 'cancelTrade', player: p, tradeId: t.id };
+  }
+  for (const t of s.turn.trades) {
+    if (t.from === p || !t.to.includes(p)) continue;
+    const plan = choosePlan(s, p, potentialField(s, p));
+    const wants = resourceWants(s, p, plan?.cost ?? null);
+    let gain = 0;
+    for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
+    const accept = acts.find((a) => a.type === 'acceptTrade' && a.tradeId === t.id);
+    if (accept && gain > pr.acceptGain && !nearWin(s, t.from, pr)) return accept;
+    return { type: 'rejectTrade', player: p, tradeId: t.id };
+  }
+  return undefined;
+}
+
+/**
+ * Offers another player a card for the one or two it is missing for its goal:
+ * one spare card for one needed card, and on a second try (hard) two for one.
+ */
+function offerToPlayers(s: GameState, p: PlayerId, plan: Plan, pr: Profile): Action | null {
+  const made = s.turn.offers ?? 0;
+  if (made >= pr.offersPerTurn || s.turn.role !== 'active') return null;
+  if (s.options.tradeBuildMode === 'separate' && s.turn.buildingStarted) return null;
+  const have = s.players[p].resources;
+  const need = missing(have, plan.cost);
+  if (total(need) < 1 || total(need) > 2) return null;
+  const want = RESOURCES.find((r) => (need[r] ?? 0) > 0)!;
+  const spare = minus(have, plan.cost);
+  const wants = resourceWants(s, p, plan.cost);
+  const pool = RESOURCES.filter((r) => r !== want && spare[r] >= 1).sort((x, y) => wants[x] - wants[y] || spare[y] - spare[x]);
+  if (pool.length === 0) return null;
+  const give: PartialCounts = { [pool[0]]: 1 };
+  if (made >= 1) {
+    const second = pool.find((r) => spare[r] >= (r === pool[0] ? 2 : 1));
+    if (!second) return null;
+    give[second] = (give[second] ?? 0) + 1;
+  }
+  const to = s.players.map((x) => x.id).filter((q) => q !== p && !nearWin(s, q, pr));
+  if (to.length === 0) return null;
+  return { type: 'proposeTrade', player: p, give, get: { [want]: 1 }, to };
+}
+
+function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
   const pl = s.players[p];
   // A harbor that must or may be placed.
   const harbors = byType(acts, 'placeHarbor');
   if (harbors.length > 0) return best(harbors, (a) => harborScore(s, p, a.edge));
 
-  const pot = potentialField(s, p);
-  const plan = choosePlan(s, p, pot);
+  const deal = actorTrades(s, p, acts, pr);
+  if (deal !== undefined) return deal;
 
-  const dev = devCardAction(s, p, acts, plan);
+  const pot = potentialField(s, p);
+  const plan = pr.plans ? choosePlan(s, p, pot, pr) : null;
+
+  const dev = devCardAction(s, p, acts, plan, pr);
   if (dev) return dev;
 
   // Immediate builds, best first.
   const prod = production(s, p);
   const city = byType(acts, 'buildCity');
-  if (city.length > 0) return best(city, (a) => spotValue(s, p, a.vertex, prod));
+  if (city.length > 0) return pickBest(s, p, pr, city, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   const settle = byType(acts, 'buildSettlement');
-  if (settle.length > 0) return best(settle, (a) => spotValue(s, p, a.vertex, prod));
+  if (settle.length > 0) return pickBest(s, p, pr, settle, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   const scen = scenarioMainAction(s, p, acts);
   if (scen) return scen;
 
   if (plan) {
     if (applyAction(s, plan.action).ok) return plan.action;
+    const offer = offerToPlayers(s, p, plan, pr);
+    if (offer && applyAction(s, offer).ok) return offer;
     const trades = tradePlan(s, p, plan.cost);
     if (trades && trades.length > 0) {
       const t = trades[0];
@@ -597,8 +771,8 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[]): Action | null {
   const routeShip = routeToFortressOpen(s, p) ? byType(acts, 'buildShip')[0] : undefined;
   if (routeShip && spare(COSTS.ship)) return routeShip;
   const edges = [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')];
-  const edge = best(edges, (a) => edgeScore(s, p, a.edge, pot));
-  if (edge && edgeScore(s, p, edge.edge, pot) > 1 && spare(edge.type === 'buildRoad' ? COSTS.road : COSTS.ship)) return edge;
+  const edge = pickBest(s, p, pr, edges, (a) => edgeScore(s, p, a.edge, pot), (a) => a.edge);
+  if (edge && edgeScore(s, p, edge.edge, pot) > pr.roadBar && spare(edge.type === 'buildRoad' ? COSTS.road : COSTS.ship)) return edge;
   const buy = acts.find((a) => a.type === 'buyDevCard');
   if (buy && spare(COSTS.devCard)) return buy;
   // Too many cards: trade the biggest pile into something useful.
@@ -610,7 +784,7 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[]): Action | null {
       return wants[g] - wants[give];
     };
     const t = best(byType(acts, 'bankTrade'), gain);
-    if (t && gain(t) > 0) return t;
+    if (t && (gain(t) > 0 || (pr.handGuard && gain(t) > -1.5 && total(pl.resources) - total(t.give) + 1 <= 7))) return t;
   }
   return acts.find((a) => a.type === 'endTurn') ?? null;
 }
@@ -634,7 +808,8 @@ function harborScore(s: GameState, p: PlayerId, e: EdgeId): number {
  * The heuristic bot's move for `player`, or null if it has nothing to do.
  * Deterministic for a given state.
  */
-export function heuristicAction(s: GameState, p: PlayerId): Action | null {
+export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'medium'): Action | null {
+  const pr = botProfile(level);
   const acts = legalActions(s, p);
   if (acts.length === 0) return null;
   const ph = s.phase;
@@ -642,13 +817,15 @@ export function heuristicAction(s: GameState, p: PlayerId): Action | null {
     case 'harborPlacement':
       return best(byType(acts, 'placeHarbor'), (a) => harborScore(s, p, a.edge));
     case 'setup':
-      return setupAction(s, p, acts);
+      return setupAction(s, p, acts, pr);
     case 'discard':
       return discardAction(s, p);
     case 'gold':
       return goldAction(s, p);
     case 'robber':
-      return best(byType(acts, 'moveRobber'), (a) => robberScore(s, p, a)) ?? acts[0];
+      return (
+        pickBest(s, p, pr, byType(acts, 'moveRobber'), (a) => robberScore(s, p, a, pr), (a) => `${a.hex}:${a.victim ?? ''}`) ?? acts[0]
+      );
     case 'roadBuilding': {
       const pot = potentialField(s, p);
       const edges = [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')];
@@ -670,7 +847,7 @@ export function heuristicAction(s: GameState, p: PlayerId): Action | null {
       return acts[0];
     }
     case 'preRoll': {
-      const dev = devCardAction(s, p, acts, null);
+      const dev = devCardAction(s, p, acts, null, pr);
       if (dev) return dev;
       return acts.find((a) => a.type === 'rollDice') ?? acts[0];
     }
@@ -683,8 +860,8 @@ export function heuristicAction(s: GameState, p: PlayerId): Action | null {
       return acts.find((a) => a.type === 'endTurn') ?? acts[0];
     }
     case 'main': {
-      if (s.turn.actor !== p) return respondToTrades(s, p, acts);
-      return mainAction(s, p, acts);
+      if (s.turn.actor !== p) return respondToTrades(s, p, acts, pr);
+      return mainAction(s, p, acts, pr);
     }
     default:
       return acts[0];
@@ -695,7 +872,13 @@ export function heuristicAction(s: GameState, p: PlayerId): Action | null {
  * Plays heuristic bots until the game ends or `maxSteps` is reached (used by
  * tests). Throws if a chosen move is rejected or nobody can act.
  */
-export function simulateHeuristic(initial: GameState, maxSteps = 5000): { state: GameState; steps: number } {
+/** Plays a whole game with computer players only; `levels` sets each seat's level (default medium). */
+export function simulateHeuristic(
+  initial: GameState,
+  maxSteps = 5000,
+  levels: BotLevel | BotLevel[] = 'medium',
+): { state: GameState; steps: number } {
+  const levelOf = (p: PlayerId): BotLevel => (Array.isArray(levels) ? (levels[p] ?? 'medium') : levels);
   let s = initial;
   let steps = 0;
   let partSteps = 0;
@@ -703,7 +886,7 @@ export function simulateHeuristic(initial: GameState, maxSteps = 5000): { state:
   while (s.phase.kind !== 'gameOver' && steps < maxSteps) {
     let acted = false;
     for (const p of playersToAct(s)) {
-      let a = heuristicAction(s, p);
+      let a = heuristicAction(s, p, levelOf(p));
       if (!a) continue;
       if (s.turn.part !== part) {
         part = s.turn.part;

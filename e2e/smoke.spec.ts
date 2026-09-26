@@ -52,7 +52,7 @@ async function step(page: Page): Promise<string> {
     return 'gold';
   }
   if (await page.locator('.sheet[aria-label="Trade offer"]').isVisible()) {
-    await page.locator('.sheet[aria-label="Trade offer"] button', { hasText: 'Decline' }).first().click();
+    await page.locator('.sheet[aria-label="Trade offer"] button', { hasText: 'No thanks' }).first().click();
     return 'decline';
   }
   if (/Place settlement/.test(status)) {
@@ -245,4 +245,23 @@ test('a roll plays the dice animation, then the dice sit in the header; a tap sk
   await overlay.click();
   await expect(overlay).toHaveCount(0, { timeout: 500 });
   await expect(page.locator('.hud .dice')).toBeVisible();
+});
+
+test('the computer level is picked for a new game, remembered, and can be changed from the menu', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await expect(page.locator('.level-pick .seg button.on')).toHaveText('Medium');
+  await page.getByRole('button', { name: 'Hard' }).click();
+  await expect(page.locator('.level-pick .hint')).toContainText('robber on the leader');
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  await page.getByRole('button', { name: 'Menu' }).click();
+  const sheet = page.locator('.sheet[aria-label="Menu"]');
+  await expect(sheet.locator('.seg button.on', { hasText: 'Hard' })).toBeVisible();
+  await sheet.getByRole('button', { name: 'Easy' }).click();
+  await expect(sheet.locator('.seg button.on', { hasText: 'Easy' })).toBeVisible();
+  // the next new game starts from the level chosen last time
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await expect(page.locator('.level-pick .seg button.on')).toHaveText('Hard');
 });

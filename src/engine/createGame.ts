@@ -122,6 +122,7 @@ export function createGame(config: GameConfig): GameState {
       buildingStarted: false,
       trades: [],
       nextTradeId: 1,
+      offers: 0,
     },
     phase: { kind: 'setup', round: 0, index: 0, step: 'settlement', vertex: null },
     firstPlayer,

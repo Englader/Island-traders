@@ -143,6 +143,8 @@ export interface TurnState {
   buildingStarted: boolean;
   trades: TradeOffer[];
   nextTradeId: number;
+  /** Trade offers the actor has made in this part of the turn (computer players limit themselves). */
+  offers?: number;
 }
 
 export type Phase =

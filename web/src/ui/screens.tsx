@@ -1,6 +1,6 @@
 import { COSTS, listScenarios, type GameOptions, type ScenarioDef } from 'engine';
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { BOT_NAMES, PLAYER_COLORS, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
+import { BOT_NAMES, LEVEL_HINT, LEVEL_LABEL, PLAYER_COLORS, type BotLevel, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
 
@@ -127,6 +127,7 @@ export interface NewGameConfig {
   seats: Seat[];
   options: Partial<GameOptions>;
   botSpeed: BotSpeed;
+  botLevel: BotLevel;
   seed: string;
 }
 
@@ -157,6 +158,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
   const [fiveSix, setFiveSix] = useState<'paired' | 'specialBuild'>('paired');
   const [tokens, setTokens] = useState<'spiral' | 'random'>('spiral');
   const [speed, setSpeed] = useState<BotSpeed>('normal');
+  const [level, setLevel] = useState<BotLevel>(() => loadJson<BotLevel>('botLevel') ?? 'medium');
   const [showOptions, setShowOptions] = useState(false);
 
   const n = Math.min(Math.max(count, sc.minPlayers), sc.maxPlayers);
@@ -266,6 +268,21 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
             </div>
           ))}
         </div>
+        {activeSeats.some((s) => s.kind === 'bot') && (
+          <div class="level-pick">
+            <div class="row">
+              <span>Computer players</span>
+              <div class="seg">
+                {(['easy', 'medium', 'hard'] as BotLevel[]).map((l) => (
+                  <button type="button" key={l} class={level === l ? 'on' : ''} onClick={() => setLevel(l)}>
+                    {LEVEL_LABEL[l]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p class="hint">{LEVEL_HINT[level]}</p>
+          </div>
+        )}
         {!online && humans > 1 && <p class="hint">Several humans share this device: it asks you to pass it on so hands stay hidden.</p>}
         {online && <p class="hint">"Friend" seats are filled by people who join with your room code. "Here" seats are played on this device.</p>}
       </section>
@@ -325,6 +342,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
           disabled={!valid}
           onClick={() => {
             if (activeSeats[0]?.kind === 'human' && activeSeats[0].name.trim()) saveJson('playerName', activeSeats[0].name.trim());
+            saveJson('botLevel', level);
             onStart({
               scenario: scenarioId,
               seats: activeSeats.map((s, i) => ({ ...s, name: s.name.trim() || `Player ${i + 1}` })),
@@ -336,6 +354,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
                 tokenPlacement: tokens,
               },
               botSpeed: speed,
+              botLevel: level,
               seed: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             });
           }}
