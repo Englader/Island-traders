@@ -195,6 +195,14 @@ export function App() {
             setMenu(false);
             setRules(true);
           }}
+          onRoom={
+            ctrl.record.mode === 'host'
+              ? () => {
+                  setMenu(false);
+                  setRoute({ name: 'lobby' });
+                }
+              : undefined
+          }
           onClose={() => setMenu(false)}
           onQuit={goHome}
           onAbandon={() => {
@@ -212,6 +220,7 @@ function GameMenu({
   room,
   onSpeed,
   onRules,
+  onRoom,
   onClose,
   onQuit,
   onAbandon,
@@ -220,6 +229,7 @@ function GameMenu({
   room?: string;
   onSpeed(s: BotSpeed): void;
   onRules(): void;
+  onRoom?: () => void;
   onClose(): void;
   onQuit(): void;
   onAbandon(): void;
@@ -246,6 +256,11 @@ function GameMenu({
         <button type="button" class="wide" onClick={onClose}>
           Back to the game
         </button>
+        {onRoom && (
+          <button type="button" class="wide" onClick={onRoom}>
+            Room and players
+          </button>
+        )}
         <button type="button" class="wide" onClick={onRules}>
           How to play
         </button>
