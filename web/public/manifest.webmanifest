@@ -1,0 +1,9 @@
+{
+  "name": "Island Traders",
+  "short_name": "Island Traders",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4efe3",
+  "theme_color": "#1d5f8a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

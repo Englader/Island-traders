@@ -6,13 +6,18 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json",
     "test": "vitest run",
-    "demo": "vite-node scripts/demo.ts --"
+    "demo": "vite-node scripts/demo.ts --",
+    "web:dev": "vite --config web/vite.config.ts",
+    "web:build": "vite build --config web/vite.config.ts",
+    "web:preview": "vite preview --config web/vite.config.ts",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "^22.0.0",
+    "peer": "1.0.2",
     "peerjs": "1.5.5",
     "preact": "10.29.8",
     "typescript": "5.9.3",
