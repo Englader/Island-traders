@@ -182,3 +182,26 @@ test.describe('phone held sideways', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(844);
   });
 });
+
+test('after one visit the game starts offline; online play says it needs a connection', async ({ page, context }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /New game/ })).toBeVisible();
+  // wait until the service worker has stored the game
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    for (let i = 0; i < 50; i++) {
+      const keys = await (await caches.open('island-traders-v1')).keys();
+      if (keys.some((r) => r.url.includes('/assets/') && r.url.endsWith('.js'))) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error('the game was not stored for offline use');
+  });
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Host online game/ })).toBeDisabled();
+  await expect(page.locator('.home')).toContainText("You're offline");
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: /^Start/ }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  await context.setOffline(false);
+});

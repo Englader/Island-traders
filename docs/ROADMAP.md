@@ -51,8 +51,9 @@ published maps stay original.
 - **Save and resume:** the whole game record is in `localStorage` after
   every move.
 - **Phones:** taps snap to the nearest highlighted spot; a sideways layout;
-  installable to the home screen with a service worker, so games against
-  the computer work offline; the screen stays awake during a game.
+  installable to the home screen with a service worker that stores the game
+  on the first visit, so games against the computer and pass-and-play work
+  offline; the screen stays awake during a game.
 - **Tests:** Playwright on a phone viewport (`npm run test:e2e`).
 
 ## 3. Playing online with friends (done: peer-to-peer)

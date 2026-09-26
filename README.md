@@ -27,8 +27,11 @@ GitHub Actions)
 - Online play with friends: the host opens a room and friends join with a
   5-letter code or an invite link
 - Made for phones: tap-friendly board, portrait and sideways layouts, and
-  "Add to Home Screen" for full-screen play (games against the computer
-  also work offline)
+  "Add to Home Screen" for full-screen play
+- Plays offline: after one visit with a connection, games on the device
+  (against the computer and pass-and-play) start without internet. A service
+  worker (`web/public/sw.js`) stores the game when it installs. Online play
+  still needs a connection, and the home screen says so when there is none.
 - The game is saved in the browser after every move
 
 ```bash
