@@ -27,6 +27,11 @@ Official maps (later): every scenario now starts on its rulebook's set-up
 map by default, including the base game's beginners' set-ups; the shuffled
 set-ups stay available as the random layout.
 
+Generated maps (later still): the random layout of every Seafarers scenario
+is now a new map generated in the style of its printed one (the same frame,
+the same kind of islands in new shapes, tiles, numbers and harbors dealt
+anew), instead of a fixed original layout with shuffled tiles.
+
 ## 2. Browser game on one device (done)
 
 `web/` is a Vite + Preact app with an SVG board drawn from

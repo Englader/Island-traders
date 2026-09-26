@@ -111,7 +111,11 @@ export interface ScenarioDef {
    * 'official'), or null when the rulebook has none; `map` is used then.
    */
   officialMap?(players: number, options: GameOptions): MapSpec | null;
-  /** The random set-up (layout 'random'): shuffled tiles, numbers and harbors. */
+  /**
+   * The random layout ('random'): for the base game the rulebook's variable
+   * set-up; for Seafarers a new map in the style of the printed one (see
+   * `styledMap` in board/generator.ts).
+   */
   map(players: number, options: GameOptions): MapSpec;
   bankSize(players: number): number;
   devDeck(players: number): Record<DevCardType, number>;

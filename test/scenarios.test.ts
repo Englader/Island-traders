@@ -18,7 +18,7 @@ import {
   type VertexId,
 } from '../src/index.js';
 import { WONDERS, straitVertices, wastelandVertices } from '../src/scenarios/seafarers/wonders.js';
-import { C, act, blank, fail, give, put, road, ship, trail, withDice, withNextDie } from './helpers.js';
+import { act, blank, fail, give, put, road, ship, withDice, withNextDie } from './helpers.js';
 
 const SETTLEMENT = { brick: 1, lumber: 1, wool: 1, grain: 1 };
 
@@ -35,6 +35,15 @@ function coastalVertexIn(s: GameState, zone: string, avoid: VertexId[] = []): Ve
       !avoid.some((a) => a === v || t.vertexNeighbors[a].includes(v))
     );
   })!;
+}
+
+/** Land zones of the board, largest first (ties by name). */
+function landZones(s: GameState, exclude: string[] = []): string[] {
+  const size: Record<string, number> = {};
+  for (const h of Object.values(s.board.hexes)) {
+    if (h.zone && isLandHex(s, `${h.q},${h.r}`) && !exclude.includes(h.zone)) size[h.zone] = (size[h.zone] ?? 0) + 1;
+  }
+  return Object.keys(size).sort((a, b) => size[b] - size[a] || (a < b ? -1 : 1));
 }
 
 /** A sea/coast edge at `v` for a ship. */
@@ -130,30 +139,43 @@ describe('harbors and robber start positions (rulebook component lists)', () => 
 });
 
 describe('3 The Fog Islands', () => {
+  /** A path for a ship whose ends touch two fog hexes, fed by a ship at one end. */
   function fogSetup() {
     const s = blank('seafarers-3-fog-islands', 3);
-    // sea hexes (3,3) and (4,3) lie between fog hexes (4,2) and (3,4)
-    expect(s.board.hexes['4,2'].terrain).toBe('fog');
-    expect(s.board.hexes['3,4'].terrain).toBe('fog');
     const t = topo(s);
-    const buildEdge = '3,3|4,3';
-    const [va] = t.edgeVertices[buildEdge];
-    const feeder = t.vertexEdges[va].find((e) => e !== buildEdge && t.edgeHexes[e].includes('3,3'))!;
+    const fogAt = (v: string) => t.vertexHexes[v].filter((h) => s.board.hexes[h].terrain === 'fog');
+    const shipOk = (e: string) => t.edgeHexes[e].some((h) => s.board.hexes[h].terrain === 'sea');
+    let found: { buildEdge: string; feeder: string; fog: string[] } | null = null;
+    for (const e of t.edgeIds) {
+      if (!shipOk(e)) continue;
+      const [va, vb] = t.edgeVertices[e];
+      const fog = [...new Set([...fogAt(va), ...fogAt(vb)])].sort();
+      if (fog.length !== 2) continue;
+      // the feeder ship is placed directly (placing it reveals nothing)
+      const feeder = t.vertexEdges[va].find((x) => x !== e && shipOk(x));
+      if (feeder) {
+        found = { buildEdge: e, feeder, fog };
+        break;
+      }
+    }
+    expect(found).not.toBeNull();
+    const { buildEdge, feeder, fog } = found!;
     ship(s, feeder, 0);
     give(s, 0, { lumber: 1, wool: 1 });
-    return { s, buildEdge };
+    return { s, buildEdge, fog };
   }
 
   it('a ship touching fog reveals it; land gets a number and pays the discoverer', () => {
-    let { s, buildEdge } = fogSetup();
+    let { s, buildEdge, fog: [first, second] } = fogSetup();
     const fog = s.ext.fog as { terrains: string[]; tokens: number[] };
     fog.terrains.push('sea', 'forest');
     fog.tokens.push(5);
     s.ext.fog = fog;
-    // any fog touched by the feeder ship was placed directly (no reveal); reveal happens on build
+    // any fog touched by the feeder ship was placed directly (no reveal); reveal happens on build,
+    // in hex order, each taking the top of the stack
     s = act(s, { type: 'buildShip', player: 0, edge: buildEdge });
-    expect(s.board.hexes['3,4']).toMatchObject({ terrain: 'forest', token: 5 });
-    expect(s.board.hexes['4,2']).toMatchObject({ terrain: 'sea', token: null });
+    expect(s.board.hexes[first]).toMatchObject({ terrain: 'forest', token: 5 });
+    expect(s.board.hexes[second]).toMatchObject({ terrain: 'sea', token: null });
     expect(s.players[0].resources.lumber).toBe(1);
   });
 
@@ -250,7 +272,7 @@ describe('5 The Forgotten Tribe', () => {
   it('a harbor gift must be placed at once next to your coastal settlement when possible', () => {
     let { s, edge } = tribe('harbor');
     s.board.harbors = [];
-    const home = coastalVertexIn(s, 'main');
+    const home = coastalVertexIn(s, landZones(s, ['tribe'])[0]);
     put(s, home, 0);
     s = act(s, { type: 'buildShip', player: 0, edge });
     expect(s.phase).toMatchObject({ kind: 'scenario', step: 'placeHarbor', player: 0 });
@@ -269,7 +291,7 @@ describe('5 The Forgotten Tribe', () => {
     expect(s.phase.kind).toBe('main');
     expect((s.ext.heldHarbors as Record<string, string[]>)[0]).toHaveLength(1);
     s.board.harbors = [];
-    const home = coastalVertexIn(s, 'main');
+    const home = coastalVertexIn(s, landZones(s, ['tribe'])[0]);
     put(s, home, 0);
     const spot = legalActions(s, 0).find((a) => a.type === 'placeHarbor')!;
     s = act(s, spot);
@@ -309,11 +331,13 @@ describe('5 The Forgotten Tribe', () => {
   it('the robber may only move to hexes with a number: never the desert or the tribe islands', () => {
     const s = blank('seafarers-5-forgotten-tribe', 3);
     s.phase = { kind: 'robber', reason: 'knight', resume: { kind: 'main' } };
-    const desert = Object.keys(s.board.hexes).find((h) => s.board.hexes[h].terrain === 'desert')!;
+    // the rulebook's deserts all lie on tribe islands: take a main-island hex without a number
+    const main = landZones(s, ['tribe'])[0];
+    const [numbered, bare] = Object.keys(s.board.hexes).filter((h) => s.board.hexes[h].zone === main);
+    s.board.hexes[bare].token = null;
     const tribeHex = Object.keys(s.board.hexes).find((h) => s.board.hexes[h].zone === 'tribe')!;
-    const numbered = Object.keys(s.board.hexes).find((h) => s.board.hexes[h].token !== null)!;
     s.board.robber = numbered;
-    fail(s, { type: 'moveRobber', player: 0, piece: 'robber', hex: desert }, /number/);
+    fail(s, { type: 'moveRobber', player: 0, piece: 'robber', hex: bare }, /number/);
     fail(s, { type: 'moveRobber', player: 0, piece: 'robber', hex: tribeHex });
     const robberMoves = legalActions(s, 0).filter((a) => a.type === 'moveRobber' && a.piece === 'robber');
     expect(robberMoves.length).toBeGreaterThan(0);
@@ -325,15 +349,21 @@ describe('6 Cloth Trade', () => {
   type Cloth = { villages: Record<string, { token: number; cloth: number; traders: number[] }>; general: number; cloth: number[] };
   const clothOf = (s: GameState) => s.ext.cloth as Cloth;
 
-  /** A village and a sea path leading to it: [feeder, arrival]. */
+  /** A village and a path for ships leading to it that reaches no other village: [feeder, arrival]. */
   function approach(s: GameState, token: number) {
     const t = topo(s);
-    const village = Object.keys(clothOf(s).villages).find((v) => clothOf(s).villages[v].token === token)!;
-    const arrival = t.vertexEdges[village].find((e) => t.edgeHexes[e].every((h) => s.board.hexes[h].terrain === 'sea'))!;
-    const far = t.edgeVertices[arrival].find((x) => x !== village)!;
-    const feeder = t.vertexEdges[far].find((e) => e !== arrival && t.edgeHexes[e].every((h) => s.board.hexes[h].terrain === 'sea'))!;
+    const villages = clothOf(s).villages;
+    const village = Object.keys(villages).find((v) => villages[v].token === token)!;
+    const shipOk = (e: string) => t.edgeHexes[e].some((h) => s.board.hexes[h].terrain === 'sea');
+    const other = (e: string, v: string) => t.edgeVertices[e].find((x) => x !== v)!;
+    const arrival = t.vertexEdges[village].find((e) => shipOk(e) && !villages[other(e, village)])!;
+    const far = other(arrival, village);
+    const feeder = t.vertexEdges[far].find((e) => e !== arrival && shipOk(e) && !villages[other(e, far)])!;
     return { village, arrival, feeder };
   }
+
+  /** The two big islands (the rulebook leaves them untagged). */
+  const bigIslands = (s: GameState) => landZones(s, ['isle']);
 
   it('8 villages on intersections with distinct numbers, 5 cloth each, plus a general supply of 10', () => {
     const s = blank('seafarers-6-cloth-trade', 3);
@@ -394,8 +424,8 @@ describe('6 Cloth Trade', () => {
     const s = blank('seafarers-6-cloth-trade', 3);
     const t = topo(s);
     const { village } = approach(s, 8);
-    // breadth-first ship path from a west-island coast to the village
-    const start = coastalVertexIn(s, 'west');
+    // breadth-first ship path from a big island's coast to the village
+    const start = coastalVertexIn(s, bigIslands(s)[0]);
     const prev = new Map<string, [string, string]>();
     const queue = [start];
     const seen = new Set([start]);
@@ -436,7 +466,9 @@ describe('6 Cloth Trade', () => {
   it('settlements on the village islands are forbidden and there is no Longest Trade Route', () => {
     const s = blank('seafarers-6-cloth-trade', 3);
     expect(s.longestRoute.holder).toBeNull();
-    const v = coastalVertexIn(s, 'isle', Object.keys(clothOf(s).villages));
+    const v = topo(s).vertexIds.find(
+      (x) => vertexZones(s, x).includes('isle') && !clothOf(s).villages[x] && topo(s).vertexHexes[x].some((h) => s.board.hexes[h].terrain === 'sea'),
+    )!;
     ship(s, shipEdgeAt(s, v), 0);
     give(s, 0, SETTLEMENT);
     fail(s, { type: 'buildSettlement', player: 0, vertex: v }, /may not be settled/);
@@ -446,8 +478,8 @@ describe('6 Cloth Trade', () => {
     let s = blank('seafarers-6-cloth-trade', 3);
     const ids = Object.keys(clothOf(s).villages);
     for (const id of ids.slice(0, 4)) clothOf(s).villages[id].cloth = 0;
-    put(s, coastalVertexIn(s, 'east'), 2, 'city');
-    put(s, coastalVertexIn(s, 'west'), 1, 'city');
+    put(s, coastalVertexIn(s, bigIslands(s)[1]), 2, 'city');
+    put(s, coastalVertexIn(s, bigIslands(s)[0]), 1, 'city');
     clothOf(s).cloth[1] = 1;
     give(s, 0, { ore: 8 });
     s = act(s, { type: 'bankTrade', player: 0, give: { ore: 4 }, get: { wool: 1 } });
@@ -465,6 +497,38 @@ describe('7 The Pirate Islands', () => {
     fortresses: Array<{ hex: string; vertex: string; waypoint: string; chits: number; captured: boolean }>;
   };
   const pi = (s: GameState) => s.ext.pirateIslands as PI;
+
+  /** A shortest path for ships from one intersection to another. */
+  function shipPath(s: GameState, from: string, to: string): string[] {
+    const t = topo(s);
+    const prev = new Map<string, [string, string]>();
+    const queue = [from];
+    const seen = new Set([from]);
+    while (queue.length && !seen.has(to)) {
+      const v = queue.shift()!;
+      for (const e of t.vertexEdges[v]) {
+        if (!t.edgeHexes[e].some((h) => s.board.hexes[h].terrain === 'sea')) continue;
+        const w = t.edgeVertices[e].find((x) => x !== v)!;
+        if (seen.has(w)) continue;
+        seen.add(w);
+        prev.set(w, [v, e]);
+        queue.push(w);
+      }
+    }
+    const path: string[] = [];
+    for (let v = to; v !== from; v = prev.get(v)![0]) path.unshift(prev.get(v)![1]);
+    return path;
+  }
+
+  /** Sets the fleet so a roll with a lower die of `lower` takes it next to player p's pre-placed settlement. */
+  function fleetToward(s: GameState, p: number, lower: number): number {
+    const home = Object.keys(s.board.buildings).find((v) => s.board.buildings[v].owner === p)!;
+    const st = pi(s);
+    const target = st.circuit.findIndex((h) => topo(s).hexVertices[h].includes(home));
+    expect(target).toBeGreaterThanOrEqual(0);
+    st.fleetIndex = (target - lower + st.circuit.length) % st.circuit.length;
+    return target;
+  }
 
   it('each player starts with a pre-placed settlement and ship; the fortress is one of their settlements', () => {
     const s = createGame({ scenario: 'seafarers-7-pirate-islands', players: 3, seed: 1 });
@@ -488,16 +552,18 @@ describe('7 The Pirate Islands', () => {
 
   it('the fleet sails by the lower die and attacks alone-standing settlements with that strength', () => {
     let s = blank('seafarers-7-pirate-islands', 3);
-    // player 2's pre-placed settlement lies next to circuit[2]
+    // the fleet sails 2 to a hex next to player 2's pre-placed settlement
+    const target = fleetToward(s, 2, 2);
     give(s, 2, { ore: 1, wool: 1 });
     s.phase = { kind: 'preRoll' };
     s = act(withDice(s, 2, 4), { type: 'rollDice', player: 0 });
-    expect(s.board.pirate).toBe(pi(s).circuit[2]);
+    expect(s.board.pirate).toBe(pi(s).circuit[target]);
     expect(Object.values(s.players[2].resources).reduce((a, b) => a + b, 0)).toBe(1);
   });
 
   it('a stronger player fleet earns a free resource; every player next to the fleet is attacked', () => {
     let s = blank('seafarers-7-pirate-islands', 3);
+    const target = fleetToward(s, 2, 2);
     const p2ship = Object.keys(s.board.pieces).find((e) => s.board.pieces[e].owner === 2)!;
     s.board.pieces[p2ship].warship = true;
     s.board.pieces[p2ship] = { ...s.board.pieces[p2ship] };
@@ -509,10 +575,12 @@ describe('7 The Pirate Islands', () => {
     s = act(withDice(s, 2, 4), { type: 'rollDice', player: 0 });
     expect(s.phase).toMatchObject({ kind: 'gold', pending: { 2: 1 } });
     // a second player next to the fleet is attacked too: without warships they lose a card
-    const other = t.hexVertices[pi(base).circuit[2]].find(
+    const other = t.hexVertices[pi(base).circuit[target]].find(
       (v) => !base.board.buildings[v] && t.vertexHexes[v].some((h) => base.board.hexes[h].zone === 'main'),
     )!;
     put(base, other, 1);
+    // no production for them, so only the raid changes their hand
+    for (const [v, b] of Object.entries(base.board.buildings)) if (b.owner === 1) for (const h of t.vertexHexes[v]) base.board.hexes[h].token = null;
     give(base, 1, { brick: 1, wool: 1 });
     base.phase = { kind: 'preRoll' };
     const n = act(withDice(base, 2, 4), { type: 'rollDice', player: 0 });
@@ -553,10 +621,9 @@ describe('7 The Pirate Islands', () => {
       const pre = Object.keys(s.board.pieces).find((e) => s.board.pieces[e].owner === 0)!;
       delete s.board.pieces[pre];
       s.players[0].supply.ships++;
-      // three ships around sea hex (2,1): from the marked intersection to the fortress
-      const route = trail(s, [C(2, 1, 5), C(2, 1, 0), C(2, 1, 1), C(2, 1, 2)]);
-      expect(C(2, 1, 5)).toBe(f.waypoint);
-      expect(C(2, 1, 2)).toBe(f.vertex);
+      // ships from the marked intersection to the fortress
+      const route = shipPath(s, f.waypoint, f.vertex);
+      expect(route.length).toBeGreaterThanOrEqual(3);
       ship(s, route, 0);
       return { s, route, f };
     };
@@ -568,9 +635,9 @@ describe('7 The Pirate Islands', () => {
     }
     // defeat: 0 warships vs a 3
     {
-      const { s } = setup();
+      const { s, route } = setup();
       const n = act(withNextDie(s, 3), { type: 'scenario', player: 0, name: 'attackFortress' });
-      expect(Object.values(n.board.pieces).filter((x) => x.owner === 0)).toHaveLength(1);
+      expect(Object.values(n.board.pieces).filter((x) => x.owner === 0)).toHaveLength(route.length - 2);
       expect(n.turn.current).toBe(1);
     }
     // tie: 1 warship vs a 1
@@ -578,7 +645,7 @@ describe('7 The Pirate Islands', () => {
       const { s, route } = setup();
       s.board.pieces[route[0]].warship = true;
       const n = act(withNextDie(s, 1), { type: 'scenario', player: 0, name: 'attackFortress' });
-      expect(Object.values(n.board.pieces).filter((x) => x.owner === 0)).toHaveLength(2);
+      expect(Object.values(n.board.pieces).filter((x) => x.owner === 0)).toHaveLength(route.length - 1);
     }
     // three victories conquer the fortress, which becomes the player's settlement
     {
@@ -604,7 +671,7 @@ describe('7 The Pirate Islands', () => {
     expect(act(s, { type: 'bankTrade', player: 0, give: { ore: 4 }, get: { wool: 1 } }).phase.kind).toBe('main');
     const f = pi(s).fortresses[0];
     f.chits = 1;
-    ship(s, trail(s, [C(2, 1, 5), C(2, 1, 0), C(2, 1, 1), C(2, 1, 2)]), 0);
+    ship(s, shipPath(s, f.waypoint, f.vertex), 0);
     for (const x of Object.values(s.board.pieces)) if (x.owner === 0) x.warship = true;
     const n = act(withNextDie(s, 1), { type: 'scenario', player: 0, name: 'attackFortress' });
     expect(n.phase).toMatchObject({ kind: 'gameOver', winner: 0 });
@@ -670,7 +737,7 @@ describe('8 The Wonders', () => {
     let s = blank('seafarers-8-wonders', 3);
     const theater = WONDERS.find((w) => w.id === 'theater')!;
     fail(s, { type: 'scenario', player: 0, name: 'claimWonder', args: { wonder: 'theater' } }, /requirement/);
-    const vs = topo(s).vertexIds.filter((v) => topo(s).vertexHexes[v].every((h) => s.board.hexes[h].zone === 'east'));
+    const vs = topo(s).vertexIds.filter((v) => topo(s).vertexHexes[v].every((h) => s.board.hexes[h].zone === 'main'));
     put(s, vs[0], 0, 'city');
     put(s, vs.find((v) => !topo(s).vertexNeighbors[vs[0]].includes(v) && v !== vs[0])!, 0, 'city');
     s = act(s, { type: 'scenario', player: 0, name: 'claimWonder', args: { wonder: 'theater' } });
@@ -686,16 +753,18 @@ describe('8 The Wonders', () => {
 
   it('Great Wall needs a settlement at the wasteland and Great Bridge one at the strait; neither is open at setup', () => {
     const s = blank('seafarers-8-wonders', 3);
-    const wall = wastelandVertices(s).find((v) => vertexZones(s, v).includes('west'))!;
+    const wall = wastelandVertices(s)[0];
     const bridge = straitVertices(s)[0];
     expect(wall).toBeDefined();
     expect(bridge).toBeDefined();
-    const g = createGame({ scenario: 'seafarers-8-wonders', players: 3, seed: 2, options: { layout: 'random' } });
-    const legal = legalSetupSettlements(g, currentSetupPlayer(g)!);
-    expect(legal).not.toContain(wall);
-    expect(legal).not.toContain(bridge);
-    for (const n of topo(g).vertexNeighbors[bridge]) expect(legal).not.toContain(n);
-    for (const v of legal) expect(vertexZones(g, v).every((z) => z === 'west' || z === 'east')).toBe(true);
+    // closed at setup, on the rulebook's map and on generated ones
+    for (const g of [s, createGame({ scenario: 'seafarers-8-wonders', players: 3, seed: 2, options: { layout: 'random' } })]) {
+      const legal = legalSetupSettlements(g, 0);
+      const closed = [...wastelandVertices(g), ...straitVertices(g), ...straitVertices(g).flatMap((v) => topo(g).vertexNeighbors[v])];
+      expect(closed.length).toBeGreaterThan(7);
+      for (const v of closed) expect(legal).not.toContain(v);
+      for (const v of legal) expect(vertexZones(g, v)).toEqual(['main']);
+    }
     const wallDef = WONDERS.find((w) => w.id === 'greatWall')!;
     const bridgeDef = WONDERS.find((w) => w.id === 'greatBridge')!;
     expect(wallDef.eligible(s, 0)).toBe(false);
@@ -739,7 +808,7 @@ describe('8 The Wonders', () => {
     expect(islands.length).toBeGreaterThanOrEqual(2);
     s = settleWithShip(s, 0, coastalVertexIn(s, islands[0]));
     expect(s.players[0].bonusVP).toBe(1);
-    s = settleWithShip(s, 0, coastalVertexIn(s, 'east', Object.keys(s.board.buildings)));
+    s = settleWithShip(s, 0, coastalVertexIn(s, 'main', Object.keys(s.board.buildings)));
     expect(s.players[0].bonusVP).toBe(1);
   });
 

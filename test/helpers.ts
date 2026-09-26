@@ -48,8 +48,10 @@ export function ringVertices(q: number, r: number): VertexId[] {
 
 /**
  * A game with setup skipped: player 0's turn 1, dice already rolled (main
- * phase), empty board, empty hands. Rule tests use the random layout's
- * boards (their coordinates are written against them) unless told otherwise.
+ * phase), empty board, empty hands. Rule tests use fixed boards unless told
+ * otherwise: the base game's variable set-up (the island centred on hex 0,0,
+ * which base-game coordinates are written against) and the Seafarers
+ * scenarios' rulebook maps.
  */
 export function blank(
   scenario = 'base',
@@ -57,7 +59,8 @@ export function blank(
   options: Partial<GameOptions> = {},
   seed: string | number = 'test',
 ): GameState {
-  const s = createGame({ scenario, players, seed, options: { firstPlayer: 0, layout: 'random', ...options } });
+  const layout = scenario === 'base' ? 'random' : 'official';
+  const s = createGame({ scenario, players, seed, options: { firstPlayer: 0, layout, ...options } });
   s.turn.number = 1;
   s.turn.part = 1;
   s.turn.current = 0;

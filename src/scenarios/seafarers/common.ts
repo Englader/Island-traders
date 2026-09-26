@@ -1,35 +1,14 @@
 import { isProducing } from '../../board/mapSpec.js';
-import { BANK_5_6, BANK_BASE, DEV_DECK_5_6, DEV_DECK_BASE, HARBORS_BASE, TERRAIN_RESOURCE } from '../../core/constants.js';
-import type { EdgeId, GameState, HarborType, PlayerId, Terrain } from '../../core/types.js';
+import { BANK_5_6, BANK_BASE, DEV_DECK_5_6, DEV_DECK_BASE, TERRAIN_RESOURCE } from '../../core/constants.js';
+import type { EdgeId, GameState, PlayerId, Terrain } from '../../core/types.js';
 import { addGoldChoice, log, nameOf, payFromBank } from '../../rules/helpers.js';
 import { topo } from '../../rules/queries.js';
 import type { ScenarioDef } from '../types.js';
-
-/** Multiset difference: `all` minus one occurrence of each item of `remove`. */
-export function withoutTokens(all: readonly number[], remove: readonly number[]): number[] {
-  const out = [...all];
-  for (const t of remove) {
-    const i = out.indexOf(t);
-    if (i < 0) throw new Error(`token ${t} not available`);
-    out.splice(i, 1);
-  }
-  return out;
-}
 
 export const seafarersSupply: Pick<ScenarioDef, 'bankSize' | 'devDeck'> = {
   bankSize: (n) => (n >= 5 ? BANK_5_6 : BANK_BASE),
   devDeck: (n) => (n >= 5 ? DEV_DECK_5_6 : DEV_DECK_BASE),
 };
-
-/**
- * Harbor tokens of scenarios 1-4: the five special 2:1 harbors plus four
- * generic 3:1 harbors, or three generic ones with 3 players.
- */
-export function seafarersHarbors(players: number): HarborType[] {
-  const pool = [...HARBORS_BASE];
-  if (players <= 3) pool.splice(pool.indexOf('generic'), 1);
-  return pool;
-}
 
 interface FogStack {
   terrains: Terrain[];

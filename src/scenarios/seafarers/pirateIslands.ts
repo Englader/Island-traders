@@ -1,6 +1,6 @@
-import { cornerVertex, offsetId, parseHexId, sideEdge } from '../../board/hex.js';
-import { markEdge, markHex, markVertex, type MapSpec } from '../../board/mapSpec.js';
-import { BANK_BASE, DEV_DECK_BASE, TOKENS_28 } from '../../core/constants.js';
+import { styledMap } from '../../board/generator.js';
+import { markEdge, markHex, markVertex } from '../../board/mapSpec.js';
+import { BANK_BASE, DEV_DECK_BASE } from '../../core/constants.js';
 import { rollDie } from '../../core/rng.js';
 import type { Action, DevCardType, EdgeId, GameState, HexId, Phase, PlayerId, VertexId } from '../../core/types.js';
 import { discardRandom, log, nameOf, stealRandom } from '../../rules/helpers.js';
@@ -35,16 +35,6 @@ import { PIRATE_ISLANDS } from './officialMaps.js';
  */
 export const FORTRESS_STRENGTH = 3;
 
-/** Random set-up, per seat (odd-r offsets): fortress islet, marked intersection islet, main-island start hex. */
-const SEATS = [
-  { fort: '1,1', way: '3,1', start: '7,1' },
-  { fort: '1,7', way: '3,7', start: '7,7' },
-  { fort: '1,3', way: '3,3', start: '7,3' },
-  { fort: '1,5', way: '3,5', start: '7,5' },
-];
-/** Random set-up: clockwise circuit around the two desert islets (odd-r offsets). */
-const CIRCUIT = ['5,2', '6,2', '6,3', '7,4', '6,5', '6,6', '5,6', '4,5', '4,4', '4,3', '4,2'];
-
 interface Fortress {
   hex: HexId;
   vertex: VertexId;
@@ -64,11 +54,6 @@ interface PirateIslandsState {
 function pi(state: GameState): PirateIslandsState {
   return state.ext.pirateIslands as PirateIslandsState;
 }
-
-const off = (o: string) => {
-  const [c, r] = o.split(',').map(Number);
-  return offsetId(c, r);
-};
 
 export function warships(state: GameState, p: PlayerId): number {
   return Object.values(state.board.pieces).filter((x) => x.owner === p && x.type === 'ship' && x.warship).length;
@@ -185,6 +170,17 @@ function beforeMain(phase: Phase, inject: (resume: Phase) => Phase): Phase {
   return phase;
 }
 
+const rules = seafarersRules({
+  robber: false,
+  pirate: false,
+  longestRoute: false,
+  largestArmy: false,
+  setupZones: ['main'],
+  // 'fort': the fortress islands of older random maps, kept for saved games.
+  forbiddenZones: ['fort', 'desert'],
+  robberForbiddenZones: ['fort', 'desert'],
+});
+
 export const thePirateIslands: ScenarioDef = {
   id: 'seafarers-7-pirate-islands',
   name: 'The Pirate Islands',
@@ -195,59 +191,28 @@ export const thePirateIslands: ScenarioDef = {
   maxPlayers: 4,
   victoryPoints: () => 10,
   officialMap: () => PIRATE_ISLANDS,
-  map: (): MapSpec => ({
-    rows: [
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-      '~ h#@fort ~ p#@way ~ ~ ~ f#@main g# m# ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ p# h# f# ~',
-      '~ m#@fort ~ g#@way ~ d@desert ~ p# h# g# ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ m# f# p# ~',
-      '~ f#@fort ~ h#@way ~ d@desert ~ g# m# f# ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ h# p# g# ~',
-      '~ p#@fort ~ m#@way ~ ~ ~ f# g# ~ ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-    ],
-    pools: { default: { terrains: {}, tokens: TOKENS_28 } },
-    harbors: { spots: 'auto', pool: ['generic', 'generic', 'generic', 'brick', 'lumber', 'wool', 'grain', 'ore'], zones: ['main'] },
-    robber: 'offboard',
-    pirate: 'offboard',
-  }),
+  // The fortress route, the marked intersections, the starting pieces and the
+  // fleet's circuit all depend on the printed geometry: a new map keeps it
+  // (mirrored at random) and deals the tiles and numbers of the main island and
+  // the numbered pirate-island hexes anew, with new harbor spots.
+  map: (players) => styledMap(PIRATE_ISLANDS, { players, rules, fixedZones: ['main', 'way', 'desert'] }),
   bankSize: () => BANK_BASE,
   devDeck: (players): Record<DevCardType, number> =>
     players >= 4
       ? { ...DEV_DECK_BASE, knight: DEV_DECK_BASE.knight + DEV_DECK_BASE.victoryPoint, victoryPoint: 0 }
       : { ...DEV_DECK_BASE, victoryPoint: 0 },
-  rules: seafarersRules({
-    robber: false,
-    pirate: false,
-    longestRoute: false,
-    largestArmy: false,
-    setupZones: ['main'],
-    forbiddenZones: ['fort', 'desert'],
-    robberForbiddenZones: ['fort', 'desert'],
-  }),
+  rules,
   hooks: {
     init(state, map) {
-      const m = map.marks;
+      const m = map.marks!;
       // Per seat: fortress hex and intersection, marked intersection, pre-placed settlement and ship.
-      const seats = m?.fortress
-        ? m.fortress.map((f, i) => ({
-            hex: markHex(f),
-            vertex: markVertex(f),
-            waypoint: markVertex(m.waypoint[i]),
-            home: markVertex(m.start[i]),
-            ship: markEdge(m.startShip[i]),
-          }))
-        : SEATS.map((seat) => {
-            const start = parseHexId(off(seat.start));
-            return {
-              hex: off(seat.fort),
-              vertex: cornerVertex(parseHexId(off(seat.fort)), 0),
-              waypoint: cornerVertex(parseHexId(off(seat.way)), 3),
-              home: cornerVertex(start, 2),
-              ship: sideEdge(start, 3),
-            };
-          });
+      const seats = m.fortress.map((f, i) => ({
+        hex: markHex(f),
+        vertex: markVertex(f),
+        waypoint: markVertex(m.waypoint[i]),
+        home: markVertex(m.start[i]),
+        ship: markEdge(m.startShip[i]),
+      }));
       const fortresses: Fortress[] = state.players.map((pl, i) => {
         const seat = seats[i];
         // The fortress is one of the player's own settlements, stacked on 3 chits.
@@ -259,7 +224,7 @@ export const thePirateIslands: ScenarioDef = {
         pl.supply.ships--;
         return { hex: seat.hex, vertex: seat.vertex, waypoint: seat.waypoint, chits: FORTRESS_STRENGTH, captured: false };
       });
-      const circuit = m?.circuit ? m.circuit.map(markHex) : CIRCUIT.map(off);
+      const circuit = m.circuit.map(markHex);
       state.ext.pirateIslands = { circuit, fleetIndex: 0, fortresses } satisfies PirateIslandsState;
       state.ext.blockedVertices = fortresses.map((f) => f.vertex);
       state.board.pirate = circuit[0];

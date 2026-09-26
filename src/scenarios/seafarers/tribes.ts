@@ -1,16 +1,23 @@
-import { cornerVertex, parseHexId, sideEdge } from '../../board/hex.js';
-import { markEdge, markVertex, type MapSpec } from '../../board/mapSpec.js';
-import { HARBORS_BASE, TERRAIN_BASE, TOKENS_28, TOKENS_BASE_SPIRAL } from '../../core/constants.js';
-import { shuffle } from '../../core/rng.js';
-import type { Action, DevCardType, EdgeId, GameState, HarborType, PlayerId, VertexId } from '../../core/types.js';
+import { spreadEdges, styledMap, type DraftMap } from '../../board/generator.js';
+import { DIR_NAMES, axialToOffset, edgeKey, neighborId, parseHexId } from '../../board/hex.js';
+import { markEdge, markVertex, type MapMark } from '../../board/mapSpec.js';
+import { nextInt, shuffle } from '../../core/rng.js';
+import type { Action, DevCardType, EdgeId, GameState, HarborType, HexId, PlayerId, RngState, VertexId } from '../../core/types.js';
 import { harborEdgeError } from '../../engine/apply.js';
 import { log, nameOf } from '../../rules/helpers.js';
 import { topo, totalVP } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
-import { seafarersSupply, withoutTokens } from './common.js';
+import { seafarersSupply } from './common.js';
 import { CLOTH_FOR_CATAN, FORGOTTEN_TRIBE } from './officialMaps.js';
 
+const offsetOf = (id: HexId) => {
+  const { col, row } = axialToOffset(parseHexId(id));
+  return `${col},${row}`;
+};
+
 // 5 ---------------------------------------------------------------------------
+
+const tribeRules = seafarersRules({ forbiddenZones: ['tribe'], robberForbiddenZones: ['tribe'], robberNeedsToken: true });
 
 type Gift = 'vp' | 'devCard' | 'harbor';
 
@@ -40,6 +47,31 @@ function legalHarborEdges(state: GameState, p: PlayerId): EdgeId[] {
   return topo(state).edgeIds.filter((e) => harborEdgeError(state, e, p) === null);
 }
 
+/**
+ * Gift spots on a new map: 18 coastal paths of the tribe islands, spread
+ * around them (no two on one intersection where the coasts allow), with the
+ * gifts dealt onto them at random.
+ */
+function giftSpots(map: DraftMap, rng: RngState): Record<string, MapMark[]> | null {
+  const t = map.topology;
+  const coasts: Array<{ land: HexId; dir: number }> = [];
+  for (const [id, h] of Object.entries(map.hexes).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (h.zone !== 'tribe') continue;
+    for (let d = 0; d < 6; d++) if (map.hexes[neighborId(id, d)]?.terrain === 'sea') coasts.push({ land: id, dir: d });
+  }
+  const picked = spreadEdges(
+    t,
+    coasts.map((c) => edgeKey(c.land, neighborId(c.land, c.dir))),
+    TRIBE_GIFTS.length,
+    rng,
+  );
+  if (!picked) return null;
+  const gifts = shuffle(rng, [...TRIBE_GIFTS]);
+  const out: Record<Gift, MapMark[]> = { vp: [], devCard: [], harbor: [] };
+  picked.forEach((i, k) => out[gifts[k]].push({ at: offsetOf(coasts[i].land), side: DIR_NAMES[coasts[i].dir] }));
+  return out;
+}
+
 export const theForgottenTribe: ScenarioDef = {
   id: 'seafarers-5-forgotten-tribe',
   name: 'The Forgotten Tribe',
@@ -50,42 +82,14 @@ export const theForgottenTribe: ScenarioDef = {
   maxPlayers: 4,
   victoryPoints: () => 13,
   officialMap: () => FORGOTTEN_TRIBE,
-  map: (): MapSpec => ({
-    rows: [
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-      '~ ~ ? ? ? ~ ~ p@tribe ~ f@tribe ~ ~',
-      '~ ~ ? ? ? ? ~ ~ ~ ~ ~ ~',
-      '~ ? ? ?@main ? ? ~ ~ g@tribe ~ h@tribe ~',
-      '~ ~ ? ? ? ? ~ ~ ~ ~ ~ ~',
-      '~ ~ ? ? ? ~ ~ m@tribe ~ p@tribe ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-    ],
-    pools: { default: { terrains: TERRAIN_BASE, tokens: TOKENS_BASE_SPIRAL } },
-    // No harbors on the map: all six are gifts of the tribe.
-    harbors: null,
-    robber: 'desert',
-    pirate: 'offboard',
-  }),
+  map: (players) => styledMap(FORGOTTEN_TRIBE, { players, rules: tribeRules, marks: giftSpots }),
   ...seafarersSupply,
-  rules: seafarersRules({ forbiddenZones: ['tribe'], robberForbiddenZones: ['tribe'], robberNeedsToken: true }),
+  rules: tribeRules,
   hooks: {
     init(state, map) {
+      // The map marks where each kind of gift lies; the harbor types and cards are random.
       const giftAt: Record<EdgeId, Gift> = {};
-      if (map.marks?.vp) {
-        // The rulebook's map marks where each kind of gift lies; the harbor types and cards are random.
-        for (const g of ['vp', 'devCard', 'harbor'] as const) for (const m of map.marks[g] ?? []) giftAt[markEdge(m)] = g;
-      } else {
-        const tribeHexes = Object.keys(state.board.hexes)
-          .filter((h) => state.board.hexes[h].zone === 'tribe')
-          .sort();
-        const spots: EdgeId[] = [];
-        for (const h of tribeHexes) {
-          const a = parseHexId(h);
-          spots.push(sideEdge(a, 2), sideEdge(a, 3), sideEdge(a, 4)); // the three coasts facing the main island
-        }
-        const gifts = shuffle(state.rng, [...TRIBE_GIFTS]);
-        spots.forEach((e, i) => (giftAt[e] = gifts[i % gifts.length]));
-      }
+      for (const g of ['vp', 'devCard', 'harbor'] as const) for (const m of map.marks?.[g] ?? []) giftAt[markEdge(m)] = g;
       // The top development cards are set aside, face down, for the gift spots.
       const giftCards: DevCardType[] = [];
       for (const g of Object.values(giftAt)) {
@@ -171,13 +175,39 @@ function clothOf(state: GameState): ClothState {
   return state.ext.cloth as ClothState;
 }
 
-/** Random set-up villages (intersections on the small islands) with their numbers: left and right end of each islet. */
-const VILLAGE_TOKENS = [
-  [4, 10],
-  [5, 9],
-  [6, 8],
-  [3, 11],
-];
+/** The village numbers come in pairs, one pair per tribe island (as printed: 9/10, 3/6, 8/11, 5/4). */
+const VILLAGE_PAIRS: number[][] = [...new Set(CLOTH_FOR_CATAN.marks!.village.map((m) => m.at))].map((at) =>
+  CLOTH_FOR_CATAN.marks!.village.filter((m) => m.at === at).map((m) => m.value!),
+);
+
+const clothRules = seafarersRules({
+  longestRoute: false,
+  forbiddenZones: ['isle'],
+  robberForbiddenZones: ['isle'],
+  setupRounds: [
+    { order: 'forward', collect: false },
+    { order: 'reverse', collect: false },
+    { order: 'forward', collect: true },
+  ],
+});
+
+/**
+ * Villages on a new map: each tribe island keeps two, on its top and bottom
+ * corners (facing the two big islands), with a printed pair of numbers dealt
+ * at random. (The islands lie a sea hex apart, so no two villages share an
+ * intersection; as on the printed map, two may be the two ends of a path.)
+ */
+function villageSpots(map: DraftMap, rng: RngState): Record<string, MapMark[]> | null {
+  const isles = map.bodies.filter((b) => b.zone === 'isle').map((b) => b.cells[0]);
+  const pairs = shuffle(rng, VILLAGE_PAIRS.map((p) => [...p]));
+  if (isles.length !== pairs.length) return null;
+  const village: MapMark[] = [];
+  isles.forEach((id, i) => {
+    const [a, b] = nextInt(rng, 2) ? pairs[i] : [pairs[i][1], pairs[i][0]];
+    village.push({ at: offsetOf(id), corner: 'N', value: a }, { at: offsetOf(id), corner: 'S', value: b });
+  });
+  return { village };
+}
 
 function hasTrade(state: GameState, p: PlayerId): boolean {
   return Object.values(clothOf(state).villages).some((v) => v.traders.includes(p));
@@ -203,62 +233,14 @@ export const clothTrade: ScenarioDef = {
   maxPlayers: 4,
   victoryPoints: () => 14,
   officialMap: () => CLOTH_FOR_CATAN,
-  map: (): MapSpec => ({
-    rows: [
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-      '~ ~ ~ ~ ~ p@isle g ~ ~ ~ ~ ~ ~',
-      '~ ?@west ? ~ ~ ~ ~ ~ ~ ?@east ? ~ ~',
-      '~ ? ? ~ ~ f@isle m ~ ~ ? ? ~ ~',
-      '~ ? ? ? ~ ~ ~ ~ ~ ? ? ? ~',
-      '~ ? ? ~ ~ h@isle p ~ ~ ? ? ~ ~',
-      '~ ? ? ~ ~ ~ ~ ~ ~ ? ? ~ ~',
-      '~ ~ ~ ~ ~ g@isle f ~ ~ ~ ~ ~ ~',
-      '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
-    ],
-    pools: {
-      default: {
-        terrains: { forest: 5, pasture: 4, fields: 4, hills: 4, mountains: 4, desert: 1 },
-        tokens: withoutTokens(TOKENS_28, [2, 12]),
-      },
-    },
-    harbors: { spots: 'auto', pool: HARBORS_BASE, zones: ['west', 'east'] },
-    robber: 'desert',
-    pirate: 'offboard',
-  }),
+  map: (players) => styledMap(CLOTH_FOR_CATAN, { players, rules: clothRules, marks: villageSpots }),
   ...seafarersSupply,
-  rules: seafarersRules({
-    longestRoute: false,
-    forbiddenZones: ['isle'],
-    robberForbiddenZones: ['isle'],
-    setupRounds: [
-      { order: 'forward', collect: false },
-      { order: 'reverse', collect: false },
-      { order: 'forward', collect: true },
-    ],
-  }),
+  rules: clothRules,
   hooks: {
     init(state, map) {
+      // The map's villages: number tokens on marked intersections.
       const villages: Record<VertexId, Village> = {};
-      if (map.marks?.village) {
-        // The rulebook's villages: number tokens on marked intersections.
-        for (const m of map.marks.village) villages[markVertex(m)] = { token: m.value ?? 0, cloth: CLOTH_PER_VILLAGE, traders: [] };
-      } else {
-        const islets: string[][] = [];
-        for (const [h, hex] of Object.entries(state.board.hexes)) {
-          if (hex.zone !== 'isle') continue;
-          const row = islets.find((x) => state.board.hexes[x[0]].r === hex.r);
-          if (row) row.push(h);
-          else islets.push([h]);
-        }
-        islets.sort((a, b) => state.board.hexes[a[0]].r - state.board.hexes[b[0]].r);
-        islets.forEach((pair, i) => {
-          pair.sort((a, b) => state.board.hexes[a].q - state.board.hexes[b].q);
-          const left = cornerVertex(parseHexId(pair[0]), 3);
-          const right = cornerVertex(parseHexId(pair[pair.length - 1]), 0);
-          villages[left] = { token: VILLAGE_TOKENS[i % 4][0], cloth: CLOTH_PER_VILLAGE, traders: [] };
-          villages[right] = { token: VILLAGE_TOKENS[i % 4][1], cloth: CLOTH_PER_VILLAGE, traders: [] };
-        });
-      }
+      for (const m of map.marks?.village ?? []) villages[markVertex(m)] = { token: m.value ?? 0, cloth: CLOTH_PER_VILLAGE, traders: [] };
       state.ext.cloth = { villages, general: CLOTH_GENERAL_SUPPLY, cloth: state.players.map(() => 0) } satisfies ClothState;
     },
     afterEdge(state, player, edge, kind) {

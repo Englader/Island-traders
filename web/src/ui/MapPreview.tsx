@@ -27,6 +27,12 @@ function variation(a: GameView, b: GameView): 'map' | 'harbors' | 'nothing' {
 
 const noPick = () => {};
 
+/** The random layout: the base game's variable set-up, or a new map in the scenario's style. */
+function generatedNote(scenario: string, name: string): string {
+  if (scenario === 'base') return 'Shuffled tiles and numbers, as in the rulebook’s variable set-up — tap 🎲 for another.';
+  return `A new map in the style of ${name} — tap 🎲 for another.`;
+}
+
 /**
  * The map the game will be played on: a small picture on the new-game
  * screen, built from the same seed and options as the game, that opens a
@@ -62,7 +68,7 @@ export function MapPreview({
   const printed = options.layout !== 'random' && hasOfficialMap(getScenario(scenario), players, { ...DEFAULT_OPTIONS, ...options });
   const hidden = Object.values(view.board.hexes).some((h) => h.terrain === 'fog');
   let note: string;
-  if (!printed) note = varies === 'nothing' ? 'This map is the same in every game.' : 'Random layout — tap 🎲 for another.';
+  if (!printed) note = varies === 'nothing' ? 'This map is the same in every game.' : generatedNote(scenario, name);
   else if (varies === 'map') note = 'The rulebook deals this map at random — tap 🎲 for another.';
   else if (varies === 'harbors') note = 'Official map from the rulebook. Its harbors are shuffled — tap 🎲 for another.';
   else note = 'Official map from the rulebook.';

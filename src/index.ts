@@ -6,6 +6,7 @@ export * from './board/hex.js';
 export { buildTopology, edgeBetween, getTopologyFor, type Topology } from './board/topology.js';
 export { renderAscii } from './board/ascii.js';
 export * from './board/mapSpec.js';
+export { spreadEdges, styledMap, type DraftMap, type MapStyle, type StyleRules } from './board/generator.js';
 export { createGame, DEFAULT_OPTIONS } from './engine/createGame.js';
 export { applyAction, checkVictory, cloneState, currentSetupPlayer, harborEdgeError, setupOrder } from './engine/apply.js';
 export { legalActions, playersToAct } from './engine/legal.js';

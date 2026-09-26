@@ -24,9 +24,9 @@ export function listScenarios(): ScenarioDef[] {
 
 /**
  * The map a new game is built from, by `options.layout`: the rulebook's
- * printed map ('official', falling back to the random set-up where the
- * rulebook has none) or the scenario's random set-up ('random'). Other kinds
- * of board (e.g. generated ones) plug in here as further layouts.
+ * printed map ('official', falling back to the random layout where the
+ * rulebook has none) or the random layout ('random': the base game's variable
+ * set-up, or a new map generated in the scenario's style).
  */
 export function mapSpecFor(def: ScenarioDef, players: number, options: GameOptions): MapSpec {
   if (options.layout !== 'random') {

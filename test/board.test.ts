@@ -167,7 +167,7 @@ describe('every scenario map', () => {
               }
             }
             // producing land has a token (islands that can never be settled aside); the
-            // rulebook's Pirate Islands map leaves the two western hills without a number
+            // Pirate Islands leave the two western hills without a number (generated maps keep them)
             let unnumbered = 0;
             for (const h of Object.values(s.board.hexes)) {
               if (['hills', 'forest', 'pasture', 'fields', 'mountains', 'gold'].includes(h.terrain)) {
@@ -175,7 +175,7 @@ describe('every scenario map', () => {
               }
               if (h.terrain === 'desert' || h.terrain === 'sea') expect(h.token).toBeNull();
             }
-            const expected = layout === 'official' && sc.id === 'seafarers-7-pirate-islands' ? 2 : 0;
+            const expected = sc.id === 'seafarers-7-pirate-islands' ? 2 : 0;
             expect(unnumbered, `${layout} ${sc.id} ${n}`).toBe(expected);
             // Seafarers component limits: at most 30 land hexes and 2 gold fields
             if (sc.expansion === 'seafarers' && n <= 4) {
