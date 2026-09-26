@@ -4,25 +4,25 @@ import { BANK_BASE, DEV_DECK_BASE, TOKENS_28 } from '../../core/constants.js';
 import { rollDie } from '../../core/rng.js';
 import type { Action, DevCardType, EdgeId, GameState, HexId, Phase, PlayerId, VertexId } from '../../core/types.js';
 import { discardRandom, log, nameOf, stealRandom } from '../../rules/helpers.js';
-import { buildingsOf, handSize, topo, vertexZones } from '../../rules/queries.js';
+import { buildingsOf, edgeAllowsShip, handSize, topo, vertexZones } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 
 /**
- * The Pirate Islands (rules from published summaries of the 5th-edition
- * scenario and JSettlers2's implementation of it):
+ * The Pirate Islands (5th-edition Seafarers rulebook, scenario 7):
  *
  * - Fixed map, no robber. Each player starts with a pre-placed coastal
  *   settlement and ship on the main (east) island, then places two more
  *   settlements in the usual snake draft.
  * - Every roll, before production or the 7, the pirate fleet sails clockwise
  *   around the two desert islets by the lower die. That die is also its
- *   strength. If exactly one player has buildings next to it, it attacks:
+ *   strength. It attacks every player with a building next to its hex:
  *   weaker fleet -> the player takes a resource of choice; tie -> nothing;
  *   stronger -> the player discards 1 random card plus 1 per city.
  * - On a 7 players discard as usual, then the roller may rob any player.
  * - One unbranched shipping route per player, from a coastal building on the
  *   main island, via the marked intersection of their colour to their
- *   pirate fortress.
+ *   pirate fortress, by a shortest path (it may not veer off to block
+ *   others) and never beyond the fortress.
  * - A knight (in 4-player games also a VP card) turns the rearmost normal
  *   ship of the route into a warship. 3 players: VP cards are removed.
  * - Fortress battle (ends your turn): roll one die. More warships -> remove a
@@ -109,6 +109,34 @@ export function routeInOrder(state: GameState, p: PlayerId): EdgeId[] {
   return order;
 }
 
+/**
+ * Ship-path distances (in ships) from `target` to every intersection, over
+ * sea and coastal paths not taken by another player's piece, never passing
+ * through an opponent's building.
+ */
+function shipDistances(state: GameState, p: PlayerId, target: VertexId, ignore: EdgeId | null): Map<VertexId, number> {
+  const t = topo(state);
+  const dist = new Map<VertexId, number>([[target, 0]]);
+  const queue: VertexId[] = [target];
+  while (queue.length > 0) {
+    const v = queue.shift()!;
+    const d = dist.get(v)!;
+    const b = state.board.buildings[v];
+    if (v !== target && b && b.owner !== p) continue;
+    for (const e of t.vertexEdges[v]) {
+      if (!edgeAllowsShip(state, e)) continue;
+      const piece = e === ignore ? undefined : state.board.pieces[e];
+      if (piece && (piece.owner !== p || piece.type !== 'ship')) continue;
+      const [x, y] = t.edgeVertices[e];
+      const w = x === v ? y : x;
+      if (dist.has(w)) continue;
+      dist.set(w, d + 1);
+      queue.push(w);
+    }
+  }
+  return dist;
+}
+
 function touches(state: GameState, p: PlayerId, v: VertexId): EdgeId | null {
   return (
     topo(state).vertexEdges[v].find((e) => {
@@ -178,7 +206,7 @@ export const thePirateIslands: ScenarioDef = {
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
     ],
     pools: { default: { terrains: {}, tokens: TOKENS_28 } },
-    harbors: { spots: 'auto', pool: ['generic', 'generic', 'generic', 'lumber', 'grain', 'ore'], zones: ['main'] },
+    harbors: { spots: 'auto', pool: ['generic', 'generic', 'generic', 'brick', 'lumber', 'wool', 'grain', 'ore'], zones: ['main'] },
     robber: 'offboard',
     pirate: 'offboard',
   }),
@@ -234,25 +262,29 @@ export const thePirateIslands: ScenarioDef = {
         const b = state.board.buildings[v];
         if (b) owners.add(b.owner);
       }
-      if (owners.size !== 1) {
-        log(state, `The pirate fleet sails ${lower}${owners.size > 1 ? ' but several players are nearby: no attack' : ''}`);
+      if (owners.size === 0) {
+        log(state, `The pirate fleet sails ${lower}`);
         return {};
       }
-      const [p] = [...owners];
-      const defense = warships(state, p);
-      if (defense > lower) {
-        log(state, `The pirate fleet (${lower}) attacks ${nameOf(state, p)} and is beaten by ${defense} warships`);
-        return { [p]: 1 };
+      // Every player with a building next to the fleet is attacked, in seat order from the roller.
+      const n = state.players.length;
+      const victims = [...owners].sort((a, b) => ((a - state.turn.current + n) % n) - ((b - state.turn.current + n) % n));
+      const owed: Record<number, number> = {};
+      for (const p of victims) {
+        const defense = warships(state, p);
+        if (defense > lower) {
+          log(state, `The pirate fleet (${lower}) attacks ${nameOf(state, p)} and is beaten by ${defense} warships`);
+          owed[p] = 1;
+        } else if (defense === lower) {
+          log(state, `The pirate fleet (${lower}) attacks ${nameOf(state, p)}: a draw`);
+        } else {
+          const loss = 1 + buildingsOf(state, p).cities.length;
+          let lost = 0;
+          for (let i = 0; i < loss; i++) if (discardRandom(state, p)) lost++;
+          log(state, `The pirate fleet (${lower}) raids ${nameOf(state, p)}, who loses ${lost} card(s)`);
+        }
       }
-      if (defense === lower) {
-        log(state, `The pirate fleet (${lower}) attacks ${nameOf(state, p)}: a draw`);
-        return {};
-      }
-      const loss = 1 + buildingsOf(state, p).cities.length;
-      let lost = 0;
-      for (let i = 0; i < loss; i++) if (discardRandom(state, p)) lost++;
-      log(state, `The pirate fleet (${lower}) raids ${nameOf(state, p)}, who loses ${lost} card(s)`);
-      return {};
+      return owed;
     },
     afterRoll(state, dice) {
       if (dice[0] + dice[1] !== 7) return;
@@ -273,15 +305,31 @@ export const thePirateIslands: ScenarioDef = {
       const mine = shipsOf(state, player, movingFrom);
       const t = topo(state);
       const [a, b] = t.edgeVertices[edge];
+      const f = pi(state).fortresses[player];
+      let near: VertexId;
       if (mine.length === 0) {
-        const fromMain = [a, b].some(
+        const home = [a, b].find(
           (v) => state.board.buildings[v]?.owner === player && vertexZones(state, v).includes('main'),
         );
-        return fromMain ? null : 'your shipping route must start at a coastal building on the main island';
+        if (!home) return 'your shipping route must start at a coastal building on the main island';
+        near = home;
+      } else {
+        const at = (v: VertexId) => mine.filter((e) => t.edgeVertices[e].includes(v)).length;
+        if (at(a) === 0 && at(b) === 0) return 'you may only extend your single shipping route';
+        if (at(a) >= 2 || at(b) >= 2) return 'your shipping route may not branch';
+        if (mine.some((e) => t.edgeVertices[e].includes(f.vertex))) return 'your route ends at your pirate fortress';
+        near = at(a) > 0 ? a : b;
       }
-      const at = (v: VertexId) => mine.filter((e) => t.edgeVertices[e].includes(v)).length;
-      if (at(a) === 0 && at(b) === 0) return 'you may only extend your single shipping route';
-      if (at(a) >= 2 || at(b) >= 2) return 'your shipping route may not branch';
+      // The route takes a shortest path: first to the marked intersection, then to the fortress.
+      const reachedWaypoint = mine.some((e) => t.edgeVertices[e].includes(f.waypoint));
+      const target = reachedWaypoint ? f.vertex : f.waypoint;
+      const dist = shipDistances(state, player, target, movingFrom);
+      const far = near === a ? b : a;
+      const dNear = dist.get(near);
+      const dFar = dist.get(far);
+      if (dNear === undefined || dFar === undefined || dFar !== dNear - 1) {
+        return `your shipping route must take the shortest way to ${reachedWaypoint ? 'your fortress' : 'your marked intersection'}`;
+      }
       return null;
     },
     settlementAllowed(state, player, vertex) {

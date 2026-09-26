@@ -4,28 +4,26 @@ The rules engine is done: all base and Seafarers rules, 10 scenarios, 5–6
 player modes, redacted views, legal-move enumeration and 154 tests. These are
 the next steps, in order.
 
-## 1. Check the rules against the official rulebooks
+## 1. Check the rules against the official rulebooks (done)
 
-This needs network access. The environment must allow these hosts:
+Scenarios 1–9 were compared with the 5th-edition Seafarers rulebook, the 2025
+Seafarers rulebook (for ambiguities), the Seafarers 5-6 and CATAN 5-6 rules,
+the base rules and the catan.com FAQs. [`rules.md`](rules.md) lists what
+changed and which choices remain. The VP targets (14/13/12/14/13/14/10/10/12)
+already matched. Fixed:
 
-- `www.catan.com` (5th-edition Seafarers and base rulebook PDFs, FAQs)
-- `www.ultraboardgames.com`
-- `boardgamegeek.com`
-- optionally `www.catan.de` (German rulebooks)
+- Pirate Islands: the fleet attacks every adjacent player; routes must take a
+  shortest path and stop at the fortress; 8 harbors.
+- Forgotten Tribe: the 6 harbors are all gifts (5 special + 1 generic) and
+  lie face up; the robber only moves to numbered hexes.
+- Wonders: +1 VP for the first settlement on each small island.
+- New World: the rulebook's component mix (no desert or gold for 3–4
+  players, 42 land hexes for 5–6), 9/11 harbors, robber and pirate off-board.
+- Four Islands / Fog Islands: no desert, the robber starts on a 12. Fog is
+  revealed by roads and ships only. Harbor counts per player count.
 
-Tasks:
-
-- Read the 5th-edition Seafarers rulebook. Compare scenarios 1–9 with
-  [`rules.md`](rules.md), which marks every rule taken from secondary
-  sources and every remaining engine choice:
-  - VP targets: the spec and this engine use 14/13/12/14/13/14/10/10/12.
-    JSettlers2 uses 13 for New Shores, 12 for Four Islands and 12 for Through
-    the Desert.
-  - Pirate Islands dotted ship lines, Cloth tie-breaks, New World island
-    bonus value (1 or 2 VP), and gold yield during setup.
-- Base game: add the beginner setup (Illustration A) as a fixed map.
-- Keep the maps original for anything published. The printed maps are Catan
-  GmbH's copyrighted material.
+The beginner setup (Illustration A) was not added: it is a printed map, and
+published maps stay original.
 
 ## 2. Browser game on one device
 

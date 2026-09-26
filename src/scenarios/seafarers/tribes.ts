@@ -14,12 +14,12 @@ import { seafarersSupply, withoutTokens } from './common.js';
 type Gift = 'vp' | 'devCard' | 'harbor';
 
 interface TribeState {
-  /** Face-down gifts on marked coastal paths of the tribe islands. */
+  /** Gifts on marked coastal paths of the tribe islands. */
   gifts: Record<EdgeId, Gift>;
-  /** Development cards set aside from the deck for the gift spots. */
+  /** Harbor type lying on each harbor gift spot (face up). */
+  harborAt: Record<EdgeId, HarborType>;
+  /** Development cards set aside from the deck for the gift spots (face down). */
   giftCards: DevCardType[];
-  /** Harbor tokens handed out with harbor gifts, drawn in order. */
-  giftHarbors: HarborType[];
 }
 
 /** 8 VP chits (1 VP each), 4 development cards and 6 harbors. */
@@ -28,6 +28,12 @@ export const TRIBE_GIFTS: Gift[] = [
   ...Array<Gift>(4).fill('devCard'),
   ...Array<Gift>(6).fill('harbor'),
 ];
+
+/** The scenario's 6 harbors are all gifts: one 2:1 harbor per resource and one generic 3:1. */
+export const TRIBE_HARBORS: HarborType[] = ['brick', 'lumber', 'wool', 'grain', 'ore', 'generic'];
+
+/** What players see of a gift spot: VP chits and harbors lie face up, development cards face down. */
+export type GiftView = 'vp' | 'devCard' | `harbor:${HarborType}`;
 
 function legalHarborEdges(state: GameState, p: PlayerId): EdgeId[] {
   return topo(state).edgeIds.filter((e) => harborEdgeError(state, e, p) === null);
@@ -38,7 +44,7 @@ export const theForgottenTribe: ScenarioDef = {
   name: 'The Forgotten Tribe',
   expansion: 'seafarers',
   description:
-    'The tribe islands cannot be settled. Building or moving a ship onto a marked path collects its gift: a VP chit, a development card, or a harbor that must be placed next to your own coastal settlement at once if possible. 13 VP to win.',
+    'The tribe islands cannot be settled. Building or moving a ship onto a marked path collects its gift: a VP chit, a development card, or a harbor that must be placed next to your own coastal settlement at once if possible. The robber only visits numbered hexes. 13 VP to win.',
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 13,
@@ -53,12 +59,13 @@ export const theForgottenTribe: ScenarioDef = {
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
     ],
     pools: { default: { terrains: TERRAIN_BASE, tokens: TOKENS_BASE_SPIRAL } },
-    harbors: { spots: 'auto', pool: ['generic', 'generic', 'wool', 'ore'], zones: ['main'] },
+    // No harbors on the map: all six are gifts of the tribe.
+    harbors: null,
     robber: 'desert',
     pirate: 'offboard',
   }),
   ...seafarersSupply,
-  rules: seafarersRules({ forbiddenZones: ['tribe'], robberForbiddenZones: ['tribe'] }),
+  rules: seafarersRules({ forbiddenZones: ['tribe'], robberForbiddenZones: ['tribe'], robberNeedsToken: true }),
   hooks: {
     init(state) {
       const tribeHexes = Object.keys(state.board.hexes)
@@ -76,12 +83,15 @@ export const theForgottenTribe: ScenarioDef = {
         const c = state.devDeck.pop();
         if (c) giftCards.push(c);
       }
-      const tribe: TribeState = {
-        gifts: Object.fromEntries(spots.map((e, i) => [e, gifts[i % gifts.length]])),
-        giftCards,
-        giftHarbors: shuffle(state.rng, ['generic', 'generic', 'generic', 'brick', 'lumber', 'grain'] as HarborType[]),
-      };
-      state.ext.tribe = tribe;
+      const harbors = shuffle(state.rng, [...TRIBE_HARBORS]);
+      const harborAt: Record<EdgeId, HarborType> = {};
+      const giftAt: Record<EdgeId, Gift> = {};
+      spots.forEach((e, i) => {
+        const g = gifts[i % gifts.length];
+        giftAt[e] = g;
+        if (g === 'harbor') harborAt[e] = harbors.pop() ?? 'generic';
+      });
+      state.ext.tribe = { gifts: giftAt, harborAt, giftCards } satisfies TribeState;
       state.ext.heldHarbors = {};
     },
     afterEdge(state, player, edge, kind) {
@@ -103,7 +113,8 @@ export const theForgottenTribe: ScenarioDef = {
           log(state, `(${name} received ${card})`, [player]);
         }
       } else {
-        const type = tribe.giftHarbors.pop() ?? 'generic';
+        const type = tribe.harborAt[edge] ?? 'generic';
+        delete tribe.harborAt[edge];
         const held = state.ext.heldHarbors as Record<string, HarborType[]>;
         (held[player] ??= []).push(type);
         log(state, `${name} receives a ${type} harbor from the forgotten tribe`);
@@ -124,8 +135,10 @@ export const theForgottenTribe: ScenarioDef = {
     },
     redact(state) {
       const tribe = state.ext.tribe as TribeState;
-      // Viewers see where gifts lie, not what they are.
-      state.ext.tribe = { giftSpots: Object.keys(tribe.gifts).sort(), giftHarborsLeft: tribe.giftHarbors.length };
+      // VP chits and harbors lie face up; development cards stay face down.
+      const spots: Record<EdgeId, GiftView> = {};
+      for (const [e, g] of Object.entries(tribe.gifts)) spots[e] = g === 'harbor' ? `harbor:${tribe.harborAt[e] ?? 'generic'}` : g;
+      state.ext.tribe = { spots, cardsLeft: tribe.giftCards.length };
     },
   },
 };

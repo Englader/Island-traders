@@ -1,15 +1,25 @@
 import { axialToOffset, neighbor, offsetToAxial } from '../../board/hex.js';
 import { expandTerrains, type CellSpec, type MapSpec } from '../../board/mapSpec.js';
-import { HARBORS_SEAFARERS, TOKENS_28 } from '../../core/constants.js';
+import { HARBORS_5_6, HARBORS_BASE } from '../../core/constants.js';
 import { nextInt, shuffle } from '../../core/rng.js';
 import type { HarborType, RngState, Terrain } from '../../core/types.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply } from './common.js';
 
+/** Land tiles from the rulebooks' component lists (no desert or gold with 3-4 players). */
 function terrainsFor(players: number): Partial<Record<Terrain, number>> {
   return players >= 5
-    ? { forest: 6, pasture: 6, fields: 6, hills: 5, mountains: 5, gold: 2, desert: 2 }
-    : { forest: 4, pasture: 4, fields: 4, hills: 4, mountains: 4, gold: 2, desert: 1 };
+    ? { forest: 7, pasture: 7, fields: 7, hills: 7, mountains: 7, gold: 4, desert: 3 }
+    : { forest: 5, pasture: 5, fields: 5, hills: 4, mountains: 4 };
+}
+
+/** Number tokens: 23 for 3-4 players; 39 for 5-6 (one per producing hex). */
+export function newWorldTokens(players: number): number[] {
+  const counts: Record<number, number> =
+    players >= 5
+      ? { 2: 2, 3: 3, 4: 4, 5: 5, 6: 5, 8: 5, 9: 5, 10: 4, 11: 4, 12: 2 }
+      : { 2: 1, 3: 3, 4: 3, 5: 3, 6: 2, 8: 2, 9: 3, 10: 3, 11: 2, 12: 1 };
+  return Object.entries(counts).flatMap(([t, n]) => Array<number>(n).fill(Number(t)));
 }
 
 /**
@@ -18,8 +28,8 @@ function terrainsFor(players: number): Partial<Record<Terrain, number>> {
  */
 export function newWorldCells(players: number, rng: RngState): CellSpec[] {
   const big = players >= 5;
-  const W = big ? 14 : 12;
-  const H = big ? 9 : 8;
+  const W = big ? 16 : 12;
+  const H = big ? 10 : 8;
   const landCount = expandTerrains(terrainsFor(players)).length;
   const key = (c: number, r: number) => `${c},${r}`;
   const interior: Array<[number, number]> = [];
@@ -96,28 +106,24 @@ export const newWorld: ScenarioDef = {
   name: 'New World',
   expansion: 'seafarers',
   description:
-    'A random archipelago. Players first place the harbors, then start anywhere. Your first settlement on each other island earns 1 VP. 12 VP to win.',
+    'A random archipelago. Players first place the harbors, then start anywhere. Your first settlement on each other island earns 1 VP. The robber and pirate start off the board. 12 VP to win.',
   minPlayers: 3,
   maxPlayers: 6,
   victoryPoints: () => 12,
   map: (players): MapSpec => ({
     generate: (rng) => newWorldCells(players, rng),
-    pools: {
-      default: {
-        terrains: terrainsFor(players),
-        tokens: players >= 5 ? [...TOKENS_28, 4, 10] : TOKENS_28,
-      },
-    },
+    pools: { default: { terrains: terrainsFor(players), tokens: newWorldTokens(players) } },
     harbors: null,
-    robber: 'desert',
+    // Both enter play when first moved.
+    robber: 'offboard',
     pirate: 'offboard',
   }),
   ...seafarersSupply,
   rules: seafarersRules({ islandBonus: { vp: 1, home: 'setup' }, playersPlaceHarbors: true }),
   hooks: {
     init(state) {
-      const pool: HarborType[] = [...HARBORS_SEAFARERS];
-      if (state.players.length >= 5) pool.push('generic');
+      // 9 harbors (5 special, 4 generic); 11 with 5-6 players (a second wool and a fifth generic).
+      const pool: HarborType[] = state.players.length >= 5 ? [...HARBORS_5_6] : [...HARBORS_BASE];
       state.ext.harborPool = shuffle(state.rng, pool);
     },
   },

@@ -6,6 +6,7 @@ import {
   legalActions,
   legalRoads,
   legalSetupSettlements,
+  legalShips,
   movableShips,
   publicVP,
   topo,
@@ -93,6 +94,38 @@ describe('2 The Four Islands', () => {
     s = settleWithShip(s, 0, coastalVertexIn(s, foreign, Object.keys(s.board.buildings)));
     expect(s.players[0].bonusVP).toBe(2);
     expect(s.victoryTarget).toBe(13);
+  });
+});
+
+describe('harbors and robber start positions (rulebook component lists)', () => {
+  it('scenarios 1, 3 and 4 use 8 harbors with 3 players and 9 with 4; The Four Islands always 9', () => {
+    for (const id of ['seafarers-1-new-shores', 'seafarers-3-fog-islands', 'seafarers-4-through-the-desert']) {
+      expect(createGame({ scenario: id, players: 3, seed: 1 }).board.harbors).toHaveLength(8);
+      expect(createGame({ scenario: id, players: 4, seed: 1 }).board.harbors).toHaveLength(9);
+    }
+    for (const n of [3, 4]) {
+      const h = createGame({ scenario: 'seafarers-2-four-islands', players: n, seed: 1 }).board.harbors;
+      expect(h).toHaveLength(9);
+      expect(h.filter((x) => x.type === 'generic')).toHaveLength(4);
+    }
+  });
+
+  it('The Four Islands and The Fog Islands have no desert: the robber starts on a 12', () => {
+    for (const id of ['seafarers-2-four-islands', 'seafarers-3-fog-islands']) {
+      for (const seed of [1, 2, 3]) {
+        const g = createGame({ scenario: id, players: 4, seed });
+        expect(Object.values(g.board.hexes).some((h) => h.terrain === 'desert')).toBe(false);
+        expect(g.board.hexes[g.board.robber!].token).toBe(12);
+      }
+    }
+    const four = createGame({ scenario: 'seafarers-2-four-islands', players: 4, seed: 1 });
+    expect(Object.values(four.board.hexes).some((h) => h.terrain === 'gold')).toBe(false);
+  });
+
+  it('The Pirate Islands use 8 harbors: 5 special and 3 generic', () => {
+    const h = createGame({ scenario: 'seafarers-7-pirate-islands', players: 4, seed: 1 }).board.harbors;
+    expect(h).toHaveLength(8);
+    expect(h.filter((x) => x.type === 'generic')).toHaveLength(3);
   });
 });
 
@@ -243,11 +276,48 @@ describe('5 The Forgotten Tribe', () => {
     expect(s.board.harbors).toHaveLength(1);
   });
 
-  it('gift identities are hidden in player views', () => {
+  it('all 6 harbors are gifts (one 2:1 per resource and one 3:1); none are printed on the map', () => {
+    const s = blank('seafarers-5-forgotten-tribe', 4);
+    expect(s.board.harbors).toHaveLength(0);
+    const st = s.ext.tribe as { gifts: Record<string, string>; harborAt: Record<string, string> };
+    const types = Object.keys(st.gifts)
+      .filter((e) => st.gifts[e] === 'harbor')
+      .map((e) => st.harborAt[e])
+      .sort();
+    expect(types).toEqual(['brick', 'generic', 'grain', 'lumber', 'ore', 'wool']);
+  });
+
+  it('a harbor gift gives the harbor lying on that spot', () => {
+    let { s, edge } = tribe('harbor');
+    (s.ext.tribe as { harborAt: Record<string, string> }).harborAt[edge] = 'ore';
+    s = act(s, { type: 'buildShip', player: 0, edge });
+    expect((s.ext.heldHarbors as Record<string, string[]>)[0]).toEqual(['ore']);
+  });
+
+  it('VP chits and harbors lie face up; development cards stay hidden in player views', () => {
     const s = blank('seafarers-5-forgotten-tribe', 3);
     const v = viewFor(s, 0);
-    expect(v.ext.tribe).toMatchObject({ giftSpots: expect.any(Array) });
-    expect(JSON.stringify(v.ext.tribe)).not.toMatch(/devCard|"vp"|knight/);
+    const spots = (v.ext.tribe as { spots: Record<string, string> }).spots;
+    const kinds = Object.values(spots);
+    expect(kinds).toHaveLength(18);
+    expect(kinds.filter((k) => k === 'vp')).toHaveLength(8);
+    expect(kinds.filter((k) => k === 'devCard')).toHaveLength(4);
+    expect(kinds.filter((k) => k.startsWith('harbor:'))).toHaveLength(6);
+    expect(JSON.stringify(v.ext.tribe)).not.toMatch(/knight|victoryPoint|roadBuilding|yearOfPlenty|monopoly/);
+  });
+
+  it('the robber may only move to hexes with a number: never the desert or the tribe islands', () => {
+    const s = blank('seafarers-5-forgotten-tribe', 3);
+    s.phase = { kind: 'robber', reason: 'knight', resume: { kind: 'main' } };
+    const desert = Object.keys(s.board.hexes).find((h) => s.board.hexes[h].terrain === 'desert')!;
+    const tribeHex = Object.keys(s.board.hexes).find((h) => s.board.hexes[h].zone === 'tribe')!;
+    const numbered = Object.keys(s.board.hexes).find((h) => s.board.hexes[h].token !== null)!;
+    s.board.robber = numbered;
+    fail(s, { type: 'moveRobber', player: 0, piece: 'robber', hex: desert }, /number/);
+    fail(s, { type: 'moveRobber', player: 0, piece: 'robber', hex: tribeHex });
+    const robberMoves = legalActions(s, 0).filter((a) => a.type === 'moveRobber' && a.piece === 'robber');
+    expect(robberMoves.length).toBeGreaterThan(0);
+    for (const m of robberMoves) expect(s.board.hexes[(m as { hex: string }).hex].token).not.toBeNull();
   });
 });
 
@@ -426,7 +496,7 @@ describe('7 The Pirate Islands', () => {
     expect(Object.values(s.players[2].resources).reduce((a, b) => a + b, 0)).toBe(1);
   });
 
-  it('a stronger player fleet earns a free resource; several nearby players mean no attack', () => {
+  it('a stronger player fleet earns a free resource; every player next to the fleet is attacked', () => {
     let s = blank('seafarers-7-pirate-islands', 3);
     const p2ship = Object.keys(s.board.pieces).find((e) => s.board.pieces[e].owner === 2)!;
     s.board.pieces[p2ship].warship = true;
@@ -434,17 +504,20 @@ describe('7 The Pirate Islands', () => {
     const t = topo(s);
     const extra = t.edgeIds.filter((e) => t.edgeHexes[e].every((h) => s.board.hexes[h].terrain === 'sea') && !s.board.pieces[e]).slice(0, 2);
     for (const e of extra) s.board.pieces[e] = { owner: 2, type: 'ship', placedPart: 0, warship: true };
-    const base = s;
+    const base = structuredClone(s);
     s.phase = { kind: 'preRoll' };
     s = act(withDice(s, 2, 4), { type: 'rollDice', player: 0 });
     expect(s.phase).toMatchObject({ kind: 'gold', pending: { 2: 1 } });
-    // a second player next to the fleet: no battle
+    // a second player next to the fleet is attacked too: without warships they lose a card
     const other = t.hexVertices[pi(base).circuit[2]].find(
       (v) => !base.board.buildings[v] && t.vertexHexes[v].some((h) => base.board.hexes[h].zone === 'main'),
     )!;
     put(base, other, 1);
+    give(base, 1, { brick: 1, wool: 1 });
+    base.phase = { kind: 'preRoll' };
     const n = act(withDice(base, 2, 4), { type: 'rollDice', player: 0 });
-    expect(n.phase.kind).toBe('main');
+    expect(n.phase).toMatchObject({ kind: 'gold', pending: { 2: 1 } });
+    expect(Object.values(n.players[1].resources).reduce((a, b) => a + b, 0)).toBe(1);
   });
 
   it('on a 7 the fleet acts first, then discards, then the roller may rob any player', () => {
@@ -546,8 +619,44 @@ describe('7 The Pirate Islands', () => {
     expect(onward.length).toBe(2);
     give(s, 0, { lumber: 2, wool: 2 });
     s.board.pirate = null;
-    s = act(s, { type: 'buildShip', player: 0, edge: onward[0] });
-    fail(s, { type: 'buildShip', player: 0, edge: onward[1] }, /branch/);
+    const legal = legalShips(s, 0);
+    const next = onward.find((e) => legal.includes(e))!;
+    expect(next).toBeDefined();
+    s = act(s, { type: 'buildShip', player: 0, edge: next });
+    fail(s, { type: 'buildShip', player: 0, edge: onward.find((e) => e !== next)! }, /branch/);
+  });
+
+  it('the route takes a shortest path to the marked intersection, then to the fortress, and ends there', () => {
+    const s = blank('seafarers-7-pirate-islands', 3);
+    const t = topo(s);
+    s.board.pirate = null;
+    give(s, 0, { lumber: 5, wool: 5 });
+    // every legal ship extends the route one step closer; following them reaches the fortress
+    let cur = s;
+    const f = pi(cur).fortresses[0];
+    for (let i = 0; i < 40; i++) {
+      const legal = legalShips(cur, 0);
+      if (legal.length === 0) break;
+      give(cur, 0, { lumber: 1, wool: 1 });
+      cur = act(cur, { type: 'buildShip', player: 0, edge: legal[0] });
+      cur.turn.part++;
+    }
+    const mine = Object.keys(cur.board.pieces).filter((e) => cur.board.pieces[e].owner === 0);
+    const touches = (v: string) => mine.some((e) => t.edgeVertices[e].includes(v));
+    expect(touches(f.waypoint)).toBe(true);
+    expect(touches(f.vertex)).toBe(true);
+    expect(legalShips(cur, 0)).toHaveLength(0);
+    // a detour is refused: from the start, only steps toward the marked intersection are legal
+    const start = blank('seafarers-7-pirate-islands', 3);
+    start.board.pirate = null;
+    give(start, 0, { lumber: 1, wool: 1 });
+    const firstShip = Object.keys(start.board.pieces).find((e) => start.board.pieces[e].owner === 0)!;
+    const tip = t.edgeVertices[firstShip].find((v) => !start.board.buildings[v])!;
+    const options = t.vertexEdges[tip].filter(
+      (e) => e !== firstShip && t.edgeHexes[e].some((h) => start.board.hexes[h].terrain === 'sea'),
+    );
+    const refused = options.filter((e) => !legalShips(start, 0).includes(e));
+    for (const e of refused) fail(start, { type: 'buildShip', player: 0, edge: e }, /shortest/);
   });
 });
 
@@ -622,6 +731,18 @@ describe('8 The Wonders', () => {
     expect(cathedral.eligible(s, 0)).toBe(true);
   });
 
+  it('your first settlement on each small island earns 1 VP', () => {
+    let s = blank('seafarers-8-wonders', 3);
+    const islands = [...new Set(Object.values(s.board.hexes).map((h) => h.zone))].filter(
+      (z): z is string => !!z && z.startsWith('island-'),
+    );
+    expect(islands.length).toBeGreaterThanOrEqual(2);
+    s = settleWithShip(s, 0, coastalVertexIn(s, islands[0]));
+    expect(s.players[0].bonusVP).toBe(1);
+    s = settleWithShip(s, 0, coastalVertexIn(s, 'east', Object.keys(s.board.buildings)));
+    expect(s.players[0].bonusVP).toBe(1);
+  });
+
   it('10 VP wins only with the strictly highest wonder level', () => {
     const s = blank('seafarers-8-wonders', 3);
     const w = s.ext.wonders as { levels: number[] };
@@ -648,8 +769,8 @@ describe('9 New World', () => {
       s = act(s, legalActions(s, p)[0]);
       placed++;
     }
-    expect(placed).toBe(10);
-    expect(s.board.harbors).toHaveLength(10);
+    expect(placed).toBe(9);
+    expect(s.board.harbors).toHaveLength(9);
     expect(s.phase.kind).toBe('setup');
     while (s.phase.kind === 'setup' || s.phase.kind === 'gold') {
       if (s.phase.kind === 'gold') {
@@ -674,5 +795,24 @@ describe('9 New World', () => {
     expect(v).toBeDefined();
     s = settleWithShip(s, 0, v);
     expect(totalVP(s, 0)).toBe(before + 2);
+  });
+
+  it('components follow the rulebooks: no desert or gold with 3-4 players; robber and pirate start off the board', () => {
+    for (const [n, land, harbors] of [
+      [3, 23, 9],
+      [4, 23, 9],
+      [5, 42, 11],
+      [6, 42, 11],
+    ] as const) {
+      const g = createGame({ scenario: 'seafarers-9-new-world', players: n, seed: `c${n}` });
+      const hexes = Object.values(g.board.hexes).filter((h) => h.terrain !== 'sea');
+      expect(hexes).toHaveLength(land);
+      expect(g.board.robber).toBeNull();
+      expect(g.board.pirate).toBeNull();
+      expect((g.ext.harborPool as string[]).length).toBe(harbors);
+      const producing = hexes.filter((h) => h.terrain !== 'desert');
+      expect(producing.every((h) => h.token !== null)).toBe(true);
+      if (n <= 4) expect(hexes.some((h) => h.terrain === 'desert' || h.terrain === 'gold')).toBe(false);
+    }
   });
 });

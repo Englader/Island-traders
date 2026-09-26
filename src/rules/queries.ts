@@ -248,6 +248,9 @@ function robberHexBasicError(state: GameState, hex: HexId): string | null {
   if (hex === state.board.robber) return 'the robber must move to a different hex';
   const zone = state.board.hexes[hex].zone;
   if (zone && sc.rules.robberForbiddenZones.includes(zone)) return 'the robber may not enter this area';
+  if (sc.rules.robberNeedsToken && state.board.hexes[hex].token === null) {
+    return 'the robber may only be moved to a hex with a number';
+  }
   return null;
 }
 

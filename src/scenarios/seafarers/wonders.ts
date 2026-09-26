@@ -9,9 +9,9 @@ import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply, withoutTokens } from './common.js';
 
 /**
- * The Wonders (the rulebook's "Wonders of Catan"). Wonder requirements and per-level costs follow the
- * wonder cards as encoded by JSettlers2 (Theater, Great Bridge, Monument,
- * Great Wall, Cathedral). You claim a wonder by meeting its requirement and
+ * The Wonders (the rulebook's "Wonders of Catan"). Wonder requirements and
+ * per-level costs follow the wonder cards printed in the 5th-edition
+ * Seafarers rulebook (Theater, Great Bridge, Monument, Great Wall, Cathedral). You claim a wonder by meeting its requirement and
  * putting one of your unplaced ships on its card. Each of its 4 levels costs
  * the 5 resources on the card, and you may build several levels in a turn.
  * Win by finishing all 4 levels, or with 10 VP and more levels than anyone
@@ -139,7 +139,7 @@ export const theWonders: ScenarioDef = {
   name: 'The Wonders',
   expansion: 'seafarers',
   description:
-    "Meet a wonder's requirement and mark it with a ship to claim it, then build its four levels. Finish a wonder, or reach 10 VP with more levels than anyone else, to win. No pirate.",
+    "Meet a wonder's requirement and mark it with a ship to claim it, then build its four levels. Your first settlement on each small island earns 1 VP. Finish a wonder, or reach 10 VP with more levels than anyone else, to win. No pirate.",
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 10,
@@ -165,7 +165,11 @@ export const theWonders: ScenarioDef = {
     pirate: null,
   }),
   ...seafarersSupply,
-  rules: seafarersRules({ pirate: false, setupZones: ['west', 'east'] }),
+  rules: seafarersRules({
+    pirate: false,
+    setupZones: ['west', 'east'],
+    islandBonus: { vp: 1, home: ['west', 'east'] },
+  }),
   hooks: {
     init(state) {
       state.ext.wonders = {

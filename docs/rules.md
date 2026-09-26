@@ -179,43 +179,72 @@ changes hands only for strictly more.
 
 ## Scenario rules and their sources
 
-The rules spec summarises scenarios 5–8 in one line each. The official
-rulebook PDFs on catan.com could not be read from the build environment (its
-network policy blocks the host). The details below were therefore taken from:
+Scenarios 1–9 were checked against the official rulebooks on catan.com:
 
-- [UltraBoardGames scenario pages](https://www.ultraboardgames.com/catan/seafarers-game-rules.php)
-  (seen through search-result excerpts)
-- BoardGameGeek rules threads
-- the source code of [JSettlers2](https://github.com/jdmonin/JSettlers2), a
-  long-running open-source implementation of these scenarios (`SOCScenario`,
-  `SOCSpecialItem`, `SOCGame`, `SOCVillage`, `SOCBoardAtServer`)
+- the 5th-edition *Catan: Seafarers* rulebook (`catan-seafarers_2021_rule_book_201201.pdf`,
+  rules as of December 1, 2020), including the five wonder cards printed with
+  scenario 8
+- the 2025 *CATAN – Seafarers* rulebook, used only where the 5th edition is
+  ambiguous (it is marked where this happens)
+- the *Seafarers 5-6* 2023 rules (paired players, New World for 5–6)
+- the 5th-edition base rules and Almanac (2020), the 2022 *CATAN 5-6* rules and
+  the Seafarers FAQ on catan.com
 
-Where sources give a number it is used. Where none do, the choice is marked
-*engine choice*. Maps are original layouts built to each scenario's structure.
+The rulebook's own names are "Cloth for Catan" and "The Wonders of Catan"; the
+engine calls them **Cloth Trade** and **The Wonders**. Maps are original
+layouts built to each scenario's structure, so terrain positions and the exact
+marked spots differ from the printed maps; the component mix, harbor counts,
+start positions and rules follow the rulebook. Anything the rulebooks leave
+open is marked *engine choice*.
 
-| Scenario | Rules implemented | Source |
+| Scenario | VP | Rules implemented |
 |---|---|---|
-| Fog Islands | A road, ship **or settlement** touching a fog hex reveals it. New land gets a random number and pays the discoverer 1 card (gold: a free choice). Stacks are hidden | spec; JSettlers2 (settlements also reveal) |
-| Forgotten Tribe | **18 gift spots:** 8 VP chits (1 VP each), 4 development cards set aside face down from the deck, 6 harbors. A ship built **or moved** onto a marked path takes the gift. A card works like a bought one. A harbor **must be placed at once** next to your coastal settlement/city if possible (a mandatory placement step), otherwise it is set aside and placed later on your turn. The tribe islands can't be settled | UltraBoardGames excerpts; JSettlers2 |
-| Cloth Trade ("Cloth for Catan") | **8 villages on intersections** of 4 small islands (left and right end of each), each with a distinct number and **5 cloth**, plus a **general supply of 10**. A ship reaching a village establishes trade and pays **1 cloth at once**. The village's number pays each trader 1 more (current player first, then order of arrival); when the village is short, cloth comes from the general supply. 2 cloth = 1 VP. A route linking your settlement to a village is **closed**. You can't move the pirate until you have reached a village; **the pirate may steal cloth** instead of a card. **3 starting settlements** (forward, reverse, forward; resources for the third). No Longest Trade Route. The game ends **as soon as fewer than 4 villages have cloth**: most VP wins, then most cloth (*engine choice* for further ties: turn order from the current player) | UltraBoardGames excerpts; JSettlers2 |
-| Pirate Islands | See below | UltraBoardGames excerpts; BoardGameGeek; JSettlers2 |
-| The Wonders ("The Wonders of Catan") | See below | UltraBoardGames excerpts; JSettlers2 `SOCSpecialItem` |
-| New World | Random archipelago; **players place the harbor tokens before the starting placement**, in turn order from the start player; start on any island(s); +1 VP per foreign island; 12 VP | spec; UltraBoardGames excerpt |
-| New Shores (3p) | The rulebook's "pirate on hills 12" is read as the robber; this map starts the robber on the desert | spec |
+| 1 Heading for New Shores | 14 | Start on the main island. +2 VP for your first settlement on each small island. 8 harbors with 3 players, 9 with 4. The 3-player text says the *pirate* starts on the hills 12; this is read as the robber (the 4-player map puts it on the desert) |
+| 2 The Four Islands | 13 | Start on one or two islands; +2 VP for your first settlement on each other island. **No desert and no gold; the robber starts on a 12.** 9 harbors |
+| 3 The Fog Islands | 12 | A **road or ship** reaching an intersection of a fog hex reveals it (settlements do not). New land gets a number from the hidden stack and pays the discoverer 1 card of its type (gold: *engine choice*, a free pick). **No desert on the face-up island; the robber starts on its 12.** 8/9 harbors |
+| 4 Through the Desert | 14 | Three deserts cut off a strip. +2 VP for your first settlement in each foreign area (the strip or an islet). Robber on a desert. 8/9 harbors |
+| 5 The Forgotten Tribe | 13 | 18 gift spots: 8 VP chits (1 VP each), 4 development cards taken from the top of the deck (face down), 6 harbors (face up). **The 6 harbors are the scenario's only harbors: one 2:1 per resource and one 3:1.** A ship built **or moved** onto a spot takes the gift. A card works like one bought this turn. A harbor must be placed at once next to your coastal settlement if possible, never on or next to another harbor; otherwise it is set aside and placed later on your turn. The tribe islands can't be settled. **The robber may only move to hexes with a number**, so never to the tribe islands or back to the desert |
+| 6 Cloth Trade | 14 | See below |
+| 7 The Pirate Islands | 10 + fortress | See below |
+| 8 The Wonders | see below | See below |
+| 9 New World | 12 | Random archipelago. **3–4 players: 23 land hexes, no desert and no gold, 9 harbors. 5–6 players: 42 land hexes incl. 3 deserts and 4 gold, 11 harbors.** Players place the harbor tokens before the starting placement, in turn order from the start player. Start on any island(s). +1 VP for your first settlement on each other island. **The robber and pirate start off the board** and enter when first moved |
+
+**Cloth Trade**
+
+- **Setup.** Three starting settlements: forward, reverse, forward. Only the
+  third pays starting resources. Settlements may never go on the 4 village
+  islands, and the robber may not enter them.
+- **Villages.** 8 villages on intersections of 4 small islands (the left and
+  right end of each), each with a distinct number and **5 cloth**, plus a
+  **general supply of 10**.
+- **Trade.** A ship reaching a village establishes trade and pays **1 cloth**
+  from that village (nothing if it is empty). When the village's number is
+  rolled, each trader gets 1 more (*engine choice*: current player first,
+  then order of arrival). If the village runs short, the rest comes from the
+  general supply; an empty village pays nothing.
+- **Scoring.** 2 cloth = 1 VP. No Longest Trade Route.
+- **Ships.** A route linking your settlement to a village is **closed**.
+- **Pirate.** You can't move it until you have reached a village. It may
+  steal a card **or a cloth**.
+- **End.** 14 VP on your turn, or as soon as **3 or fewer villages still have
+  cloth**: most VP wins, then most cloth (*engine choice* for further ties:
+  turn order from the current player).
 
 **Pirate Islands**
 
 - **Setup.** There is no robber. Each player has a pre-placed coastal
   settlement and ship on the main (east) island, then places two more
   settlements in the snake draft. Each player's pirate fortress is one of
-  their own settlements, stacked on 3 chits.
+  their own settlements, stacked on 3 chits; it doesn't produce until it is
+  conquered. 8 harbors (5 special, 3 generic).
 - **Development cards.** With 3 players the VP cards are removed. With 4
-  players they count as knights.
+  players they count as knights. Knights are used only to arm warships.
 - **The pirate fleet.**
   - Every roll, before production and before handling a 7, it sails
     clockwise around the two desert islets by the **lower die**. That die is
     also its **strength**.
-  - It attacks only if **exactly one** player has buildings next to it.
+  - It attacks **every player with a building next to its hex** (in seat
+    order from the roller). Their strength is their number of warships.
   - Stronger fleet: the player discards **1 random card plus 1 per city**.
   - Tie: nothing happens.
   - Weaker fleet: the player picks a free resource; on a 7 this happens
@@ -224,8 +253,11 @@ Where sources give a number it is used. Where none do, the choice is marked
   or rob nobody.
 - **Shipping route.** One unbranched route per player. It starts at a coastal
   building on the main island and passes the **marked intersection of your
-  colour** on the way to your fortress. That intersection is also a
-  settlement spot open only to you. Ships can be moved, within these limits.
+  colour** on the way to your fortress. **Every new ship must bring the route
+  one step closer along a shortest path** (first to the marked intersection,
+  then to the fortress), so a route can't veer off to block others, and it
+  can't continue past the fortress. The marked intersection is also a
+  settlement spot open only to you. Ships can be moved within these limits.
 - **Knights.** A knight turns the **rearmost normal ship** of the route
   (closest to its start) into a warship.
 - **Fortress battles.** A battle is allowed once the route reaches the
@@ -238,7 +270,9 @@ Where sources give a number it is used. Where none do, the choice is marked
   be upgraded. When every fortress has fallen, the fleet leaves.
 - **Winning.** 10 VP and your own fortress. There is no Longest Trade Route
   or Largest Army.
-- *Engine choice:* the fleet circuit on this original map.
+- *Engine choice:* the fleet circuit on this original map. The 5th edition
+  says you *can* attack at the end of your turn; the attack is an action you
+  choose (the 2025 edition makes it automatic).
 
 **Wonders**
 
@@ -251,11 +285,14 @@ Where sources give a number it is used. Where none do, the choice is marked
 | Cathedral | a city and 6 VP | 1 brick, 3 ore, 1 grain |
 
 - To claim a wonder, meet its requirement and **put one of your unplaced ships
-  on its card**. One wonder per player.
+  on its card**. One wonder per player, and nobody else may take it.
 - Each wonder has four levels, and you may build several in one turn.
+- **Your first settlement on each small island earns 1 VP.** (The 5th
+  edition's wording could also be read as 1 VP per settlement; the 2025
+  rulebook settles it as one per island.)
 - You win by finishing all four levels, or with 10 VP and more levels than
   any other player.
-- There is no pirate.
+- There is no pirate. The robber starts on a desert.
 - Starting settlements may not go on the small islands, the wasteland, the
   strait intersections or the intersections next to them. All of these open
   up after setup.

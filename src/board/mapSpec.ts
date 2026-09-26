@@ -69,8 +69,11 @@ export interface MapSpec {
   pools: Record<string, PoolSpec>;
   /** Harbors fixed by the map, or null when players place them during the game. */
   harbors: HarborSpec | null;
-  /** 'desert' = first desert (by id), 'offboard', or an offset reference "col,row". */
-  robber: 'desert' | 'offboard' | string;
+  /**
+   * 'desert' = first desert (by id), 'token:N' = first land hex (by id) with
+   * number token N, 'offboard', or an offset reference "col,row".
+   */
+  robber: 'desert' | 'offboard' | `token:${number}` | string;
   /** null disables the pirate; 'offboard' = enters on its first move. */
   pirate: 'offboard' | string | null;
   /** Hidden stack for fog hexes. */
@@ -256,6 +259,14 @@ function resolvePosition(hexes: Record<HexId, HexState>, where: string, kind: 'd
       .sort()
       .find((id) => hexes[id].terrain === 'desert');
     return d ?? null;
+  }
+  if (where.startsWith('token:')) {
+    const n = Number(where.slice('token:'.length));
+    const h = Object.keys(hexes)
+      .sort()
+      .find((id) => hexes[id].token === n);
+    if (!h) throw new Error(`no hex with number ${n} for the start position`);
+    return h;
   }
   const [col, row] = where.split(',').map(Number);
   const a = offsetToAxial(col, row);

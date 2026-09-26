@@ -32,6 +32,8 @@ export interface ScenarioRules {
   forbiddenZones: string[];
   /** Zones the robber may not be moved to. */
   robberForbiddenZones: string[];
+  /** The robber may only be moved to hexes with a number token (Forgotten Tribe). */
+  robberNeedsToken: boolean;
   /**
    * VP chits for the first settlement in each foreign zone. `home` is either
    * a fixed list of home zones or 'setup' (zones of each player's starting settlements).
@@ -128,6 +130,7 @@ export function baseRules(overrides: Partial<ScenarioRules> = {}): ScenarioRules
     setupZones: null,
     forbiddenZones: [],
     robberForbiddenZones: [],
+    robberNeedsToken: false,
     islandBonus: null,
     playersPlaceHarbors: false,
     ...overrides,

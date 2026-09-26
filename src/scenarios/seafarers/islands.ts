@@ -1,7 +1,7 @@
 import type { MapSpec } from '../../board/mapSpec.js';
-import { HARBORS_BASE, HARBORS_SEAFARERS, TERRAIN_BASE, TOKENS_28, TOKENS_BASE_SPIRAL } from '../../core/constants.js';
+import { TERRAIN_BASE, TOKENS_28, TOKENS_BASE_SPIRAL } from '../../core/constants.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
-import { revealFogAround, revealFogAt, seafarersSupply } from './common.js';
+import { revealFogAround, seafarersHarbors, seafarersSupply } from './common.js';
 
 /*
  * Maps below are original layouts that follow each scenario's structure (main
@@ -20,7 +20,7 @@ export const headingForNewShores: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 14,
-  map: (): MapSpec => ({
+  map: (players): MapSpec => ({
     rows: [
       '~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~',
       '~  ~  ?  ?  ?  ~  ~  $4 ?b ~  ~',
@@ -34,7 +34,7 @@ export const headingForNewShores: ScenarioDef = {
       default: { terrains: TERRAIN_BASE, tokens: TOKENS_BASE_SPIRAL },
       b: { terrains: { mountains: 1, hills: 1, forest: 1, pasture: 1 }, tokens: [3, 5, 9, 11] },
     },
-    harbors: { spots: 'auto', pool: HARBORS_BASE, zones: ['main'] },
+    harbors: { spots: 'auto', pool: seafarersHarbors(players), zones: ['main'] },
     robber: 'desert',
     pirate: 'offboard',
   }),
@@ -54,7 +54,7 @@ export const theFourIslands: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 13,
-  map: (): MapSpec => ({
+  map: (players): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
       '~ ? ? ? ~ ~ ~ ? ? ? ~',
@@ -66,14 +66,16 @@ export const theFourIslands: ScenarioDef = {
       '~ ~ ? ~ ~ ~ ~ ~ ? ~ ~',
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
     ],
+    // No desert and no gold, as in the rulebook's component list.
     pools: {
       default: {
-        terrains: { forest: 5, pasture: 5, fields: 5, hills: 5, mountains: 5, gold: 2, desert: 1 },
+        terrains: { forest: 6, pasture: 6, fields: 6, hills: 5, mountains: 5 },
         tokens: TOKENS_28,
       },
     },
-    harbors: { spots: 'auto', pool: HARBORS_SEAFARERS },
-    robber: 'desert',
+    harbors: { spots: 'auto', pool: seafarersHarbors(Math.max(players, 4)) },
+    // The robber starts on a hex with a 12.
+    robber: 'token:12',
     pirate: 'offboard',
   }),
   ...seafarersSupply,
@@ -88,11 +90,11 @@ export const theFogIslands: ScenarioDef = {
   name: 'The Fog Islands',
   expansion: 'seafarers',
   description:
-    'The east is unexplored. A road, ship or settlement touching a fog hex reveals it; new land gets a random number and pays the discoverer 1 card. 12 VP to win.',
+    'The east is unexplored. A road or ship reaching a fog hex reveals it; new land gets a random number and pays the discoverer 1 card. 12 VP to win.',
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 12,
-  map: (): MapSpec => ({
+  map: (players): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
       '~ ? ? ~ ~ x x x x x ~',
@@ -102,18 +104,19 @@ export const theFogIslands: ScenarioDef = {
       '~ ? ? ~ ~ x x x x x ~',
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
     ],
+    // The face-up island has no desert; the robber starts on its 12.
     pools: {
       default: {
-        terrains: { forest: 3, pasture: 3, fields: 2, hills: 2, mountains: 2, desert: 1 },
-        tokens: [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 5, 9],
+        terrains: { forest: 3, pasture: 3, fields: 3, hills: 2, mountains: 2 },
+        tokens: [2, 3, 4, 4, 5, 5, 6, 8, 9, 9, 10, 11, 12],
       },
     },
     fog: {
       terrains: { forest: 2, pasture: 2, fields: 3, hills: 3, mountains: 3, gold: 2, sea: 9 },
       tokens: [2, 3, 3, 4, 4, 5, 6, 6, 8, 8, 9, 10, 10, 11, 11, 12],
     },
-    harbors: { spots: 'auto', pool: ['generic', 'generic', 'lumber', 'grain', 'ore'], zones: ['home'] },
-    robber: 'desert',
+    harbors: { spots: 'auto', pool: seafarersHarbors(players), zones: ['home'] },
+    robber: 'token:12',
     pirate: 'offboard',
   }),
   ...seafarersSupply,
@@ -121,9 +124,6 @@ export const theFogIslands: ScenarioDef = {
   hooks: {
     afterEdge(state, player, edge) {
       revealFogAround(state, player, edge);
-    },
-    afterSettlement(state, player, vertex) {
-      revealFogAt(state, player, [vertex]);
     },
   },
 };
@@ -139,7 +139,7 @@ export const throughTheDesert: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 14,
-  map: (): MapSpec => ({
+  map: (players): MapSpec => ({
     rows: [
       '~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~',
       '~  ~  ?s@strip ?s@strip ?s@strip ?s@strip ?s@strip ~ ~ ~ ~',
@@ -157,7 +157,7 @@ export const throughTheDesert: ScenarioDef = {
       s: { terrains: { forest: 1, pasture: 1, fields: 1, hills: 1, mountains: 1 }, tokens: [3, 6, 8, 10, 11] },
       i: { terrains: { pasture: 1, fields: 1 }, tokens: [5, 9] },
     },
-    harbors: { spots: 'auto', pool: HARBORS_BASE, zones: ['home', 'strip'] },
+    harbors: { spots: 'auto', pool: seafarersHarbors(players), zones: ['home', 'strip'] },
     robber: 'desert',
     pirate: 'offboard',
   }),
