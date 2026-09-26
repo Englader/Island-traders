@@ -154,7 +154,7 @@ test('open trade: the active player asks what a friend would give for a card; th
 
   // "what will you give for my card?": offer one of the cards the active player has most of
   await a.getByRole('button', { name: /Trade/ }).first().click();
-  const before = (await a.locator('.your-cards .rc-n').allTextContents()).map(Number);
+  const before = (await a.locator('.your-cards .rtile-n').allTextContents()).map(Number);
   const most = before.indexOf(Math.max(...before));
   expect(before[most]).toBeGreaterThan(0);
   await a.locator('.res-picker').nth(0).locator('.res-picker-row').nth(most).getByRole('button', { name: 'more' }).click();
@@ -175,7 +175,7 @@ test('open trade: the active player asks what a friend would give for a card; th
   await expect(answer).toBeVisible();
   await answer.getByRole('button', { name: 'Accept' }).click();
   await expect(a.locator('.offer.open')).toHaveCount(0);
-  const after = (await a.locator('.your-cards .rc-n').allTextContents()).map(Number);
+  const after = (await a.locator('.your-cards .rtile-n').allTextContents()).map(Number);
   expect(after[most]).toBe(before[most] - 1);
   expect(after.reduce((x, y) => x + y, 0)).toBe(before.reduce((x, y) => x + y, 0));
   await hostCtx.close();

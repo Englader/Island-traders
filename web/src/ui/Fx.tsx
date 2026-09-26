@@ -2,7 +2,7 @@ import type { Action, DevCardType, GameView, PartialCounts, PlayerId, Resource }
 import { useEffect, useRef } from 'preact/hooks';
 import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
 import type { PlayerColor } from '../game/seats';
-import { ResGlyph } from './icons';
+import { DevCardView, ResourceCard } from './cards';
 
 /** A moment worth showing in the middle of the screen: a trade or a development card. */
 export type FxEvent =
@@ -71,16 +71,11 @@ function Party({ name, color, bank }: { name: string; color?: PlayerColor; bank?
 function DevFace({ card }: { card: DevCardType | null }) {
   return (
     <div class="fx-flip">
-      <div class="fx-dev back">★</div>
+      <div class="fx-dev back">
+        <DevCardView type={null} back />
+      </div>
       <div class="fx-dev face">
-        {card ? (
-          <>
-            <span class="fx-dev-icon">{DEV_INFO[card].icon}</span>
-            <span class="fx-dev-name">{DEV_INFO[card].label}</span>
-          </>
-        ) : (
-          <span class="fx-dev-icon">★</span>
-        )}
+        <DevCardView type={card} back={!card} />
       </div>
     </div>
   );
@@ -112,15 +107,15 @@ export function FxOverlay({ fx, view, colors, seat, ms, onDone }: { fx: FxEvent 
           <div class="fx-lanes">
             <div class="fx-lane">
               {right.map((r, i) => (
-                <span key={`r${i}`} class={`fx-card go-right r-${r}`} style={{ '--i': i } as Record<string, number>}>
-                  <ResGlyph r={r} />
+                <span key={`r${i}`} class="fx-card go-right" style={{ '--i': i } as Record<string, number>}>
+                  <ResourceCard r={r} look="mini" />
                 </span>
               ))}
             </div>
             <div class="fx-lane">
               {left.map((r, i) => (
-                <span key={`l${i}`} class={`fx-card go-left r-${r}`} style={{ '--i': i } as Record<string, number>}>
-                  <ResGlyph r={r} />
+                <span key={`l${i}`} class="fx-card go-left" style={{ '--i': i } as Record<string, number>}>
+                  <ResourceCard r={r} look="mini" />
                 </span>
               ))}
             </div>

@@ -1165,6 +1165,9 @@ svg.board {
   .rcard {
     height: 44px;
   }
+  .rtile {
+    height: 46px;
+  }
   .rc-icon {
     font-size: 1.05rem;
   }
@@ -1372,8 +1375,8 @@ svg.board {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
 }
-.your-cards-row .rcard {
-  height: 46px;
+.your-cards-row .rtile {
+  height: 50px;
 }
 .res-have {
   font-size: 0.8rem;
@@ -2318,34 +2321,18 @@ svg.board text {
 }
 .fx-lane {
   position: relative;
-  height: 40px;
+  height: 45px;
 }
 .fx-card {
   position: absolute;
   top: 0;
-  width: 30px;
-  height: 40px;
-  border-radius: 7px;
-  display: grid;
-  place-items: center;
-  font-size: 1.25rem;
-  border: 2px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+  width: 32px;
+  height: 45px;
+  display: flex;
 }
-.fx-card.r-brick {
-  background: linear-gradient(160deg, #eb9369, #c65a32);
-}
-.fx-card.r-lumber {
-  background: linear-gradient(160deg, #6cbf6e, #2f7d3a);
-}
-.fx-card.r-wool {
-  background: linear-gradient(160deg, #d7f0a6, #8ccf55);
-}
-.fx-card.r-grain {
-  background: linear-gradient(160deg, #fbe39a, #e2b93b);
-}
-.fx-card.r-ore {
-  background: linear-gradient(160deg, #c6cbd3, #7d8491);
+.fx-card .gcard {
+  width: 100%;
+  height: 100%;
 }
 .fx-card.go-right {
   left: 0;
@@ -2364,7 +2351,7 @@ svg.board text {
     left: 0;
   }
   to {
-    left: calc(100% - 34px);
+    left: calc(100% - 36px);
   }
 }
 @keyframes fx-go-left {
@@ -2372,7 +2359,7 @@ svg.board text {
     right: 0;
   }
   to {
-    right: calc(100% - 34px);
+    right: calc(100% - 36px);
   }
 }
 .fx-devbuy,
@@ -2382,8 +2369,8 @@ svg.board text {
 }
 .fx-flip {
   position: relative;
-  width: 84px;
-  height: 118px;
+  width: 100px;
+  height: 140px;
   margin: 0 auto;
   transform-style: preserve-3d;
 }
@@ -2442,26 +2429,16 @@ svg.board text {
 .fx-dev {
   position: absolute;
   inset: 0;
-  border-radius: 12px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
 }
-.fx-dev.back {
-  background: linear-gradient(160deg, #a58ae6, #5d3fb0);
-  border: 3px solid rgba(255, 255, 255, 0.7);
-  color: #fff;
-  font-size: 2.2rem;
+.fx-dev .gcard {
+  width: 100%;
+  height: 100%;
 }
 .fx-dev.face {
   transform: rotateY(180deg);
-  background: #fffdf6;
-  border: 3px solid #a58ae6;
-  color: #1d1a14;
 }
 .fx-dev-icon {
   font-size: 2.2rem;
@@ -2473,4 +2450,181 @@ svg.board text {
   font-size: 0.78rem;
   font-weight: 800;
   line-height: 1.1;
+}
+
+
+/* illustrated cards (see ui/cards.tsx) */
+.gcard {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  flex-direction: column;
+  aspect-ratio: 5 / 7;
+  padding: 6%;
+  border-radius: 9% / 6.5%;
+  background: linear-gradient(160deg, #fbf0d0, #e7d09a);
+  border: 1.5px solid #7a5a2e;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+  color: #3b2a14;
+  /* names and text scale with the card */
+  container-type: inline-size;
+}
+.gcard.mini {
+  padding: 5%;
+  border-width: 1px;
+  border-radius: 12% / 9%;
+}
+.gcard-art {
+  flex: 1;
+  min-height: 0;
+  display: block;
+  border-radius: 6% / 5%;
+  overflow: hidden;
+  border: 1px solid #7a5a2e;
+}
+.gcard.mini .gcard-art {
+  border-radius: 10% / 8%;
+}
+.gcard-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.gcard-name {
+  margin-top: 6%;
+  padding: 2px 6px;
+  color: #fff8e6;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(8px, 10.5cqw, 15px);
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  clip-path: polygon(0 0, 100% 0, 95% 50%, 100% 100%, 0 100%, 5% 50%);
+}
+.gcard .dev-ribbon {
+  background: #5d3fb0;
+}
+.gcard-corner {
+  position: absolute;
+  top: 3%;
+  left: 3%;
+  width: 22%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fbf0d0;
+  border: 1px solid #7a5a2e;
+  font-size: 0.8rem;
+}
+.gcard-text {
+  margin-top: 4%;
+  height: 3.75em;
+  overflow: hidden;
+  font-size: clamp(7px, 7.6cqw, 12px);
+  line-height: 1.25;
+  text-align: center;
+}
+.gcard.back {
+  padding: 0;
+  border: 2px solid #e9dcff;
+}
+.gcard.back svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.gcard.tile {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.gcard.tile .gcard-art {
+  border: none;
+  border-radius: 0;
+}
+
+/* the hand: square card tiles, art filling each one */
+.rtile {
+  position: relative;
+  display: block;
+  height: 56px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid #caa86a;
+  background: #f3e3bd;
+  box-shadow:
+    0 2px 0 #b99a5e,
+    0 3px 6px rgba(0, 0, 0, 0.18);
+}
+.rtile-art {
+  position: absolute;
+  inset: 2px;
+  display: block;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.rtile-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.rtile-icon {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(251, 240, 208, 0.94);
+  border: 1px solid #7a5a2e;
+  font-size: 12px;
+}
+.rtile-n {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1d1a14;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.rtile.empty {
+  filter: saturate(0.2) brightness(1.05);
+  opacity: 0.6;
+  box-shadow: none;
+}
+button.rtile:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #b99a5e;
+}
+.dev-thumb {
+  flex: none;
+  width: 54px;
+  height: 76px;
+  display: flex;
+}
+.dev-thumb .gcard {
+  width: 100%;
+  height: 100%;
 }

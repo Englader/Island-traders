@@ -7,7 +7,7 @@ import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerC
 import { FxOverlay, fxFor, type FxEvent } from './Fx';
 import { DiceRoll, type RollInfo } from './DiceRoll';
 import { DiceStatsSheet } from './DiceStats';
-import { ResGlyph } from './icons';
+import { DevCardView, ResourceCard } from './cards';
 import type { Flash } from './flash';
 import { Die, Sheet } from './common';
 import {
@@ -717,16 +717,13 @@ function Hand({ view, seat, onCards }: { view: GameView; seat: PlayerId; onCards
   return (
     <div class="hand">
       {RESOURCE_LIST.map((r) => (
-        <div key={r} class={res[r] === 0 ? `rcard r-${r} empty` : `rcard r-${r}`} title={RESOURCE_INFO[r].label}>
-          <span class="rc-icon">
-            <ResGlyph r={r} />
-          </span>
-          <span class="rc-n">{res[r]}</span>
-        </div>
+        <ResourceCard key={r} r={r} n={res[r]} look="tile" empty={res[r] === 0} />
       ))}
-      <button type="button" class={cards.length === 0 ? 'rcard dev empty' : 'rcard dev'} onClick={onCards} aria-label="Development cards">
-        <span class="rc-icon">🃏</span>
-        <span class="rc-n">{cards.length}</span>
+      <button type="button" class={cards.length === 0 ? 'rtile dev empty' : 'rtile dev'} onClick={onCards} aria-label="Development cards">
+        <span class="rtile-art">
+          <DevCardView type={null} back look="tile" />
+        </span>
+        <span class="rtile-n">{cards.length}</span>
       </button>
     </div>
   );
