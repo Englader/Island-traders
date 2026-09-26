@@ -18,6 +18,7 @@ import { RESOURCE_INFO } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import type { Flash } from '../ui/flash';
 import { ResGlyph } from '../ui/icons';
+import { GOLD_TILE, GoldFieldDefs } from './gold';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 
@@ -68,7 +69,7 @@ const TILE: Record<Exclude<Terrain, 'sea'>, { top: string; light: string; side: 
   fields: { top: '#eac24a', light: '#f5d673', side: '#a57f1b' },
   mountains: { top: '#8f97a3', light: '#aab1bb', side: '#565d68' },
   desert: { top: '#e7d6a2', light: '#f3e7c2', side: '#b09b62' },
-  gold: { top: '#f1c21b', light: '#ffdc5c', side: '#a57c00' },
+  gold: GOLD_TILE,
   fog: { top: '#b9c2cc', light: '#d3dae1', side: '#7d8792' },
 };
 
@@ -438,6 +439,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                   <polygon points={polygon(shift(top, DEPTH))} fill={tile.side} class="tile-side" />
                   <polygon points={polygon(top)} fill={`url(#tile-${hex.terrain})`} class="tile-top" />
                   <polygon points={polygon(top)} fill={`url(#tex-${hex.terrain})`} class="tile-tex" />
+                  {hex.terrain === 'gold' && <use href="#gold-art" x={fmt(centers[h].x)} y={fmt(centers[h].y)} class="tile-art" />}
                   {hex.terrain === 'fog' && (
                     <T x={centers[h].x} y={centers[h].y} s={0.62} cls="fog-mark">
                       ?
@@ -703,11 +705,7 @@ function BoardDefs() {
       <pattern id="tex-desert" width="0.4" height="0.26" patternUnits="userSpaceOnUse">
         <path d="M0.02 0.12 q0.08 -0.07 0.16 0 M0.22 0.24 q0.08 -0.07 0.16 0" stroke="#b79d5c" stroke-width="0.018" fill="none" opacity="0.6" />
       </pattern>
-      {/* gold: glints */}
-      <pattern id="tex-gold" width="0.36" height="0.34" patternUnits="userSpaceOnUse">
-        <path d="M0.09 0.02 l0.02 0.06 l0.06 0.02 l-0.06 0.02 l-0.02 0.06 l-0.02 -0.06 l-0.06 -0.02 l0.06 -0.02 Z" fill="#fff" opacity="0.8" />
-        <circle cx="0.27" cy="0.26" r="0.018" fill="#fff" opacity="0.75" />
-      </pattern>
+      <GoldFieldDefs />
       {/* fog: hatching */}
       <pattern id="tex-fog" width="0.12" height="0.12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
         <line x1="0" y1="0.06" x2="0.12" y2="0.06" stroke="#fff" stroke-width="0.025" opacity="0.35" />

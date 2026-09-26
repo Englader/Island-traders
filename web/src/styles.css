@@ -1841,8 +1841,33 @@ svg.board text {
   stroke-width: 0.03;
   stroke-linejoin: round;
 }
-.tile-tex {
+.tile-tex,
+.tile-art {
   pointer-events: none;
+}
+/* gold fields: the sparkles light up in turn, then rest for a few seconds */
+.gold-glint {
+  opacity: 0.9;
+  animation: gold-glint 8s ease-in-out infinite;
+}
+.gold-glint.g2 {
+  animation-delay: 0.6s;
+}
+.gold-glint.g3 {
+  animation-delay: 1.2s;
+}
+.gold-glint.g4 {
+  animation-delay: 1.8s;
+}
+@keyframes gold-glint {
+  0%,
+  16%,
+  100% {
+    opacity: 0.3;
+  }
+  6% {
+    opacity: 1;
+  }
 }
 .fog-mark {
   fill: #5d6875;
@@ -2138,6 +2163,7 @@ svg.board text {
   .target-edge,
   .target-edge-halo,
   .target-hex,
+  .gold-glint,
   .flash,
   .roll-glow,
   .feed-line,
