@@ -2142,3 +2142,335 @@ svg.board text {
   padding: 3px 6px;
   border-bottom: 1px solid var(--line);
 }
+
+/* new pieces arrive (board units: 1px = 1 unit, about a hex) */
+.arrive-drop,
+.arrive-pop,
+.arrive-sail {
+  transform-box: fill-box;
+}
+.arrive-drop {
+  transform-origin: 50% 100%;
+  animation: drop-in 0.6s cubic-bezier(0.3, 1.4, 0.55, 1) both;
+}
+.arrive-pop {
+  transform-origin: 50% 50%;
+  animation: pop-in 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+.arrive-sail {
+  transform-origin: 50% 80%;
+  animation: sail-in 0.7s ease-out both;
+}
+@keyframes drop-in {
+  0% {
+    transform: translateY(-0.9px) scale(1.2);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(0.02px) scale(1.08, 0.9);
+  }
+  80% {
+    transform: translateY(-0.05px) scale(0.97, 1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes pop-in {
+  0% {
+    transform: scale(0.1);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes sail-in {
+  0% {
+    transform: translateY(0.3px) scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(-0.06px) scale(1.1) rotate(-6deg);
+    opacity: 1;
+  }
+  75% {
+    transform: rotate(4deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrive-drop,
+  .arrive-pop,
+  .arrive-sail {
+    animation: none;
+  }
+}
+
+/* trades and development cards, shown in the middle of the screen (see ui/Fx.tsx) */
+.fx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fx-bg var(--fx-ms) ease both;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+@keyframes fx-bg {
+  0%,
+  100% {
+    background: rgba(8, 22, 36, 0);
+  }
+  10%,
+  85% {
+    background: rgba(8, 22, 36, 0.2);
+  }
+}
+.fx-panel {
+  width: min(100%, 360px);
+  padding: 14px 16px 16px;
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  text-align: center;
+  animation: fx-panel var(--fx-ms) ease both;
+}
+@keyframes fx-panel {
+  0% {
+    transform: translateY(24px) scale(0.9);
+    opacity: 0;
+  }
+  12%,
+  86% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-12px) scale(0.96);
+    opacity: 0;
+  }
+}
+.fx-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.15rem;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+.fx-sub {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+.fx-trade-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fx-party {
+  flex: none;
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.fx-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: #fff;
+  background: var(--chip);
+  border: 3px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+.fx-name {
+  max-width: 62px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fx-lanes {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fx-lane {
+  position: relative;
+  height: 40px;
+}
+.fx-card {
+  position: absolute;
+  top: 0;
+  width: 30px;
+  height: 40px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 1.25rem;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+.fx-card.r-brick {
+  background: linear-gradient(160deg, #eb9369, #c65a32);
+}
+.fx-card.r-lumber {
+  background: linear-gradient(160deg, #6cbf6e, #2f7d3a);
+}
+.fx-card.r-wool {
+  background: linear-gradient(160deg, #d7f0a6, #8ccf55);
+}
+.fx-card.r-grain {
+  background: linear-gradient(160deg, #fbe39a, #e2b93b);
+}
+.fx-card.r-ore {
+  background: linear-gradient(160deg, #c6cbd3, #7d8491);
+}
+.fx-card.go-right {
+  left: 0;
+  margin-left: calc(var(--i) * 4px);
+  animation: fx-go-right calc(var(--fx-ms) * 0.5) cubic-bezier(0.5, 0, 0.3, 1) both;
+  animation-delay: calc(var(--fx-ms) * 0.14 + var(--i) * 90ms);
+}
+.fx-card.go-left {
+  right: 0;
+  margin-right: calc(var(--i) * 4px);
+  animation: fx-go-left calc(var(--fx-ms) * 0.5) cubic-bezier(0.5, 0, 0.3, 1) both;
+  animation-delay: calc(var(--fx-ms) * 0.2 + var(--i) * 90ms);
+}
+@keyframes fx-go-right {
+  from {
+    left: 0;
+  }
+  to {
+    left: calc(100% - 34px);
+  }
+}
+@keyframes fx-go-left {
+  from {
+    right: 0;
+  }
+  to {
+    right: calc(100% - 34px);
+  }
+}
+.fx-devbuy,
+.fx-devplay {
+  perspective: 700px;
+  margin: 2px 0 8px;
+}
+.fx-flip {
+  position: relative;
+  width: 84px;
+  height: 118px;
+  margin: 0 auto;
+  transform-style: preserve-3d;
+}
+/* the fade runs on the wrapper: fading the turning card itself would flatten its 3D faces */
+.fx-devbuy,
+.fx-devplay {
+  animation: fx-fade-in calc(var(--fx-ms) * 0.2) ease both;
+}
+@keyframes fx-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.fx-devbuy .fx-flip {
+  animation: fx-dev-fly var(--fx-ms) cubic-bezier(0.3, 1.2, 0.5, 1) both;
+}
+.fx-devbuy.reveal .fx-flip {
+  animation-name: fx-dev-fly-turn;
+}
+.fx-devplay .fx-flip {
+  animation: fx-dev-turn var(--fx-ms) ease both;
+}
+@keyframes fx-dev-fly {
+  0% {
+    transform: translateY(-38vh) rotate(-14deg) scale(0.7);
+  }
+  35%,
+  100% {
+    transform: none;
+  }
+}
+@keyframes fx-dev-fly-turn {
+  0% {
+    transform: translateY(-38vh) rotate(-14deg) scale(0.7);
+  }
+  32% {
+    transform: none;
+  }
+  52%,
+  100% {
+    transform: rotateY(180deg);
+  }
+}
+@keyframes fx-dev-turn {
+  0% {
+    transform: scale(0.6);
+  }
+  18% {
+    transform: none;
+  }
+  42%,
+  100% {
+    transform: rotateY(180deg);
+  }
+}
+.fx-dev {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+.fx-dev.back {
+  background: linear-gradient(160deg, #a58ae6, #5d3fb0);
+  border: 3px solid rgba(255, 255, 255, 0.7);
+  color: #fff;
+  font-size: 2.2rem;
+}
+.fx-dev.face {
+  transform: rotateY(180deg);
+  background: #fffdf6;
+  border: 3px solid #a58ae6;
+  color: #1d1a14;
+}
+.fx-dev-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+.fx-dev-name {
+  margin-top: 6px;
+  padding: 0 4px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.1;
+}

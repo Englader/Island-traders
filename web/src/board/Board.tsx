@@ -550,12 +550,23 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                   </g>
                 );
               })}
-            {/* roads and ships */}
+            {/* roads and ships (the newest one pops into place) */}
             {pieces.map(([e, piece]) => {
               const col = color(piece.owner);
               const [a, c] = edgeEnds(e);
-              if (piece.type === 'road') return <Road key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} />;
-              return <Ship key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} war={!!piece.warship} />;
+              const el =
+                piece.type === 'road' ? (
+                  <Road key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} />
+                ) : (
+                  <Ship key={`pc${e}`} a={a} c={c} fill={col.fill} stroke={col.stroke} war={!!piece.warship} />
+                );
+              return flash?.kind === 'edge' && flash.id === e ? (
+                <g key={`new${e}-${flash.key}`} class={piece.type === 'road' ? 'arrive-pop' : 'arrive-sail'}>
+                  {el}
+                </g>
+              ) : (
+                el
+              );
             })}
             {/* Pirate Islands: fortresses */}
             {pirateIslands &&
@@ -565,11 +576,27 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
             {/* buildings */}
             {buildings.map(([v, bd]) => {
               const col = color(bd.owner);
-              return <Building key={`bd${v}`} p={vpt[v]} city={bd.type === 'city'} fill={col.fill} stroke={col.stroke} />;
+              const el = <Building key={`bd${v}`} p={vpt[v]} city={bd.type === 'city'} fill={col.fill} stroke={col.stroke} />;
+              // the newest settlement or city drops onto the board
+              return flash?.kind === 'vertex' && flash.id === v ? (
+                <g key={`new${v}-${flash.key}`} class="arrive-drop">
+                  {el}
+                </g>
+              ) : (
+                el
+              );
             })}
-            {/* robber & pirate */}
-            {b.robber && centers[b.robber] && <Robber p={centers[b.robber]} />}
-            {b.pirate && centers[b.pirate] && <PirateShip p={centers[b.pirate]} />}
+            {/* robber & pirate (land with a bounce when moved) */}
+            {b.robber && centers[b.robber] && (
+              <g key={`robber${b.robber}`} class={flash?.kind === 'hex' && flash.id === b.robber ? 'arrive-drop' : undefined}>
+                <Robber p={centers[b.robber]} />
+              </g>
+            )}
+            {b.pirate && centers[b.pirate] && (
+              <g key={`pirate${b.pirate}`} class={flash?.kind === 'hex' && flash.id === b.pirate ? 'arrive-sail' : undefined}>
+                <PirateShip p={centers[b.pirate]} />
+              </g>
+            )}
             {flash ? renderFlash(flash) : null}
             {/* targets */}
             {[...targets.hexes].map((h) =>
