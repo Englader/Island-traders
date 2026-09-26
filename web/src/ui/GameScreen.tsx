@@ -322,13 +322,16 @@ export function GameScreen(props: GameScreenProps) {
   const ghost = pending && seat !== null ? ghostFor(pending.actions[0], seat) : null;
 
   // --- forced sheets ---------------------------------------------------------------
+  // Under another sheet (the log, the scores) the choice waits, hidden, with what was picked so far.
+  const covered = sheet !== null;
   let forced: JSX.Element | null = null;
   if (seat !== null && me?.resources) {
-    if (ph.kind === 'discard' && ph.pending[seat] !== undefined) forced = <DiscardSheet view={view} seat={seat} send={doSend} />;
-    else if (ph.kind === 'gold' && ph.pending[seat] !== undefined) forced = <GoldSheet view={view} seat={seat} send={doSend} />;
+    if (ph.kind === 'discard' && ph.pending[seat] !== undefined) forced = <DiscardSheet view={view} seat={seat} send={doSend} covered={covered} />;
+    else if (ph.kind === 'gold' && ph.pending[seat] !== undefined) forced = <GoldSheet view={view} seat={seat} send={doSend} covered={covered} />;
     else if (ph.kind === 'scenario' && ph.step === 'rob' && ph.player === seat)
-      forced = <RobAnySheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} />;
+      forced = <RobAnySheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} covered={covered} />;
     else if (
+      !covered &&
       ph.kind === 'main' &&
       view.turn.actor !== seat &&
       view.turn.trades.some((t) => t.from === view.turn.actor && t.to.includes(seat) && !t.accepted.includes(seat) && !t.rejected.includes(seat))
@@ -863,7 +866,7 @@ export function GameScreen(props: GameScreenProps) {
         />
       )}
       {sheet === 'dice' && <DiceStatsSheet view={view} colors={colors} player={diceFor} close={() => setSheet(null)} />}
-      {!sheet && forced}
+      {forced}
       {gameOver && (
         <EndGame
           view={view}

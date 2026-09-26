@@ -77,6 +77,27 @@ export function stepRow(row: SignedCounts, r: Resource, dir: 1 | -1, rule: BoxRu
   return out;
 }
 
+/** How many cards a row moves, both sides counted. */
+export function rowCount(row: SignedCounts): number {
+  return RESOURCE_LIST.reduce((n, r) => n + Math.abs(row[r] ?? 0), 0);
+}
+
+/**
+ * The boxes for picking exactly `need` cards, all on one side: discarding
+ * (`sign` −1, up to what the player holds in `limit`) or taking (+1, up to
+ * what the bank has). Once `need` cards are picked no box goes further, so
+ * the row never holds too many.
+ */
+export function pickRules(row: SignedCounts, need: number, limit: PartialCounts, sign: 1 | -1): Record<Resource, BoxRule> {
+  const full = rowCount(row) >= need;
+  const out = {} as Record<Resource, BoxRule>;
+  for (const r of RESOURCE_LIST) {
+    const far = full ? row[r] ?? 0 : sign * (limit[r] ?? 0);
+    out[r] = sign < 0 ? { min: Math.min(far, 0), max: 0 } : { min: 0, max: Math.max(far, 0) };
+  }
+  return out;
+}
+
 /**
  * A bank trade: `lots` is how many cards the given cards pay for at the
  * player's rates, `cards` how many are asked for. It is complete when they

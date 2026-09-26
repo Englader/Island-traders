@@ -1981,6 +1981,12 @@ svg.board {
 .sheet-head h2 {
   margin: 0;
 }
+.sheet-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .sheet-body {
   padding: 4px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
@@ -2027,19 +2033,6 @@ svg.board {
 }
 .res-icon {
   font-size: 1.1rem;
-}
-.res-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.res-picker-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.res-label {
-  flex: 1;
 }
 .res-choice {
   display: grid;
@@ -2101,6 +2094,172 @@ svg.board {
 }
 .your-cards-row .rtile {
   height: 50px;
+}
+/* One tile per resource; while picking cards (a discard, free resources) each
+   counts what will be left, with the change on a badge and "held → left" under it. */
+.your-cards.picking .your-cards-row {
+  padding-top: 5px;
+}
+.yc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.yc .rtile {
+  transition:
+    border-color 0.15s ease,
+    opacity 0.15s ease,
+    filter 0.15s ease;
+}
+.yc.out .rtile {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.yc.in .rtile {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
+}
+/* the count on the card: on its white pill in both themes */
+.yc.out .rtile-n {
+  color: #b3261e;
+}
+.yc.in .rtile-n {
+  color: #1d7a41;
+}
+.yc-delta {
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  z-index: 1;
+  min-width: 26px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--panel);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-sm);
+  animation: tpop 0.18s ease-out;
+}
+.yc.in .yc-delta {
+  background: var(--ok);
+}
+.yc-was {
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.yc.out .yc-was {
+  color: var(--danger);
+}
+.yc.in .yc-was {
+  color: var(--ok);
+}
+/* the line that says what the whole pick comes to */
+.pick-lead {
+  margin: 0 0 2px;
+  font-family: var(--display);
+  font-size: 1.12rem;
+  font-weight: 700;
+}
+.pick-lead b {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.pick-note {
+  margin: 0 0 10px;
+}
+.tsum-left {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+/* "Peek at the board": the sheet folds into a bar at the foot of the map (see .peek-bar) */
+button.peek-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0.25em 0.85em 0.25em 0.65em;
+  border-radius: 999px;
+  border-bottom-width: 1px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+button.peek-btn:active:not(:disabled) {
+  border-bottom-width: 1px;
+}
+@media (hover: hover) {
+  button.peek-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+}
+.peek-eye {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.peek-eye circle {
+  fill: currentColor;
+  stroke: none;
+}
+@media (max-width: 440px) {
+  .long-title .peek-more {
+    display: none;
+  }
+}
+@media (max-width: 380px) {
+  .peek-more {
+    display: none;
+  }
+}
+.peek-bar {
+  animation: rise 0.18s ease-out;
+}
+.peek-bar .peek-text {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.peek-bar .peek-text b {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.02rem;
+}
+.peek-bar .peek-text small {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.peek-bar button {
+  flex: none;
+  white-space: nowrap;
+  padding-inline: 0.8em;
+  font-size: 0.94rem;
+}
+.peek-bar.floating {
+  position: fixed;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
 }
 /* the trade row (ui/TradeRow.tsx): one box per resource, ▲ get / ▼ give */
 .trow {
@@ -2330,11 +2489,14 @@ svg.board {
   font-weight: 600;
 }
 @media (prefers-reduced-motion: reduce) {
-  .tbox-val {
+  .tbox-val,
+  .yc-delta,
+  .peek-bar {
     animation: none;
   }
   .tbox,
-  .tbox-card .rtile {
+  .tbox-card .rtile,
+  .yc .rtile {
     transition: none;
   }
 }

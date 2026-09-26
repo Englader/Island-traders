@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /** Clicks the first clickable board target of a kind ('v', 'e' or 'h'). */
 async function pickTarget(page: Page, kind: 'v' | 'e' | 'h'): Promise<boolean> {
@@ -27,28 +27,30 @@ async function turnNumber(page: Page): Promise<number> {
   return Number(/Turn (\d+)/.exec(text)?.[1] ?? 0);
 }
 
+/** Picks the number of cards the sheet's title asks for (a discard, free resources) and confirms. */
+async function pickCards(sheet: Locator, verb: 'Discard' | 'Take', title: RegExp): Promise<void> {
+  const need = Number(title.exec((await sheet.getAttribute('aria-label')) ?? '')?.[1] ?? 0);
+  const more = sheet.locator(`button[aria-label^="${verb} one more"]`);
+  let picked = 0;
+  for (let i = 0; i < 5 && picked < need; i++) {
+    while (picked < need && (await more.nth(i).isEnabled())) {
+      await more.nth(i).click();
+      picked++;
+    }
+  }
+  await sheet.locator('button.primary').click();
+}
+
 /** Does the next sensible thing for the human seat; returns false when there is nothing to do. */
 async function step(page: Page): Promise<string> {
   const status = (await page.locator('.status-text').textContent()) ?? '';
   if (await page.locator('.sheet[aria-label^="Discard"]').isVisible()) {
     const sheet = page.locator('.sheet[aria-label^="Discard"]');
-    const need = Number(/Discard (\d+)/.exec((await sheet.getAttribute('aria-label')) ?? '')?.[1] ?? 0);
-    const plus = sheet.locator('button[aria-label="more"]');
-    let picked = 0;
-    for (let i = 0; i < 5 && picked < need; i++) {
-      while (picked < need && (await plus.nth(i).isEnabled())) {
-        await plus.nth(i).click();
-        picked++;
-      }
-    }
-    await sheet.locator('button.primary').click();
+    await pickCards(sheet, 'Discard', /Discard (\d+)/);
     return 'discard';
   }
   if (await page.locator('.sheet[aria-label^="Choose"]').isVisible()) {
-    const sheet = page.locator('.sheet[aria-label^="Choose"]');
-    const need = Number(/Choose (\d+)/.exec((await sheet.getAttribute('aria-label')) ?? '')?.[1] ?? 0);
-    for (let i = 0; i < need; i++) await sheet.locator('button[aria-label="more"]').first().click();
-    await sheet.locator('button.primary').click();
+    await pickCards(page.locator('.sheet[aria-label^="Choose"]'), 'Take', /Choose (\d+)/);
     return 'gold';
   }
   if (await page.locator('.sheet[aria-label="Trade offer"]').isVisible()) {
