@@ -1,0 +1,25 @@
+name: Online check
+
+# Checks the outside services online play depends on (room server, relay
+# servers) and runs a host + guest join against the live site.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/island-traders-seafarers-rh48ru]
+    paths: [scripts/online-check.mjs, .github/workflows/online-check.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/online-check.mjs
