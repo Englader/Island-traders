@@ -1,6 +1,7 @@
 import { VP, getScenario, type GameStats as Stats, type GameView, type PlayerId, type PlayerStats, type Resource } from 'engine';
 import type { ComponentChildren, RefObject } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { averageTurn, formatClock, formatDuration, formatRough, type ClockFeed, type ClockSummary } from '../game/clock';
 import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
 import type { PlayerColor, SeatKind } from '../game/seats';
 import { Sheet } from './common';
@@ -18,6 +19,7 @@ export function GameStatsSheet({
   colors,
   kinds,
   seat,
+  clock,
   close,
   onDice,
 }: {
@@ -25,6 +27,8 @@ export function GameStatsSheet({
   colors: PlayerColor[];
   kinds: SeatKind[];
   seat: PlayerId | null;
+  /** The game clock (null: the game was not timed). */
+  clock: ClockFeed | null;
   close(): void;
   onDice(): void;
 }) {
@@ -32,11 +36,12 @@ export function GameStatsSheet({
   const stats = view.stats && view.stats.players.length === view.players.length ? view.stats : null;
   const winner = view.phase.kind === 'gameOver' ? view.phase.winner : null;
   const rolls = view.rolls.length;
+  const time = clock && clock.sum.perPlayerMs.length === view.players.length ? clock.sum : null;
   return (
     <Sheet title="Game stats" onClose={close} wide>
       <div class="gstats">
         <p class="gs-sub">
-          {sc.name} · {view.turn.number} turns · {view.players.length} players
+          {sc.name} · {view.turn.number} turns · {view.players.length} players{time ? ` · ${formatRough(time.playedMs)}` : ''}
         </p>
 
         <Section title="Final scores">
@@ -61,6 +66,14 @@ export function GameStatsSheet({
 
         <Section title="Cards and trades" note={`Thieves: the robber${sc.rules.pirate ? ', the pirate' : ''} and Monopoly`}>
           {stats ? <Ledger view={view} colors={colors} stats={stats} /> : <NotRecorded />}
+        </Section>
+
+        <Section title="Time" note="Active play, each moment counted for the player whose turn it was">
+          {time ? (
+            <TimeStats view={view} colors={colors} kinds={kinds} seat={seat} time={time} />
+          ) : (
+            <p class="gs-empty">Time wasn't recorded for this game: it was started before the game kept time.</p>
+          )}
         </Section>
 
         <Section title="Dice">
@@ -738,3 +751,140 @@ function Ledger({ view, colors, stats }: { view: GameView; colors: PlayerColor[]
   );
 }
 
+
+// --- time: how long the game took, and who took it --------------------------------------------
+
+function TimeStats({ view, colors, kinds, seat, time }: { view: GameView; colors: PlayerColor[]; kinds: SeatKind[]; seat: PlayerId | null; time: ClockSummary }) {
+  const [focus, setFocus] = useState<PlayerId | null>(null);
+  const players = view.players.map((p) => p.id);
+  const total = time.playedMs;
+  const pct = (p: PlayerId) => `${total > 0 ? Math.round((100 * time.perPlayerMs[p]) / total) : 0}%`;
+  const turns = time.turnCount.reduce((a, b) => a + b, 0);
+  const turnMs = time.turnMs.reduce((a, b) => a + b, 0);
+  const avg = (p: PlayerId) => averageTurn(time, p);
+  const bot = (p: PlayerId) => kinds[p] === 'bot';
+  // fastest and slowest: the shortest and longest average turn (players who had a turn)
+  const paced = players.filter((p) => avg(p) !== null).sort((a, b) => avg(a)! - avg(b)!);
+  const fastest = paced.length >= 2 ? paced[0] : null;
+  const slowest = paced.length >= 2 ? paced[paced.length - 1] : null;
+  const most = Math.max(1, ...time.perPlayerMs);
+  const longest = time.longest;
+  const who = (p: PlayerId) => (
+    <>
+      <Who view={view} colors={colors} p={p} line={false} />
+      {bot(p) && <span class="gs-tag">computer</span>}
+    </>
+  );
+  const pace = (p: PlayerId) => `${formatDuration(avg(p)!)} a turn`;
+  return (
+    <div class="tm">
+      <div class="gs-tiles tm-tiles">
+        <div class="gs-tile tm-hero">
+          <span class="stat-label">Game time</span>
+          <span class="tm-value big">{formatDuration(total)}</span>
+          <span class="stat-sub">
+            active play · {plural(turns, 'turn')} · {plural(view.players.length, 'player')}
+          </span>
+        </div>
+        <div class="gs-tile">
+          <span class="stat-label">Average turn</span>
+          <span class="tm-value">{turns > 0 ? formatDuration(turnMs / turns) : '–'}</span>
+          <span class="stat-sub">{turns > 0 ? `over ${plural(turns, 'turn')}` : 'No turns yet'}</span>
+        </div>
+        <div class="gs-tile">
+          <span class="stat-label">Longest turn</span>
+          <span class="tm-value">{longest ? formatDuration(longest.ms) : '–'}</span>
+          <span class="stat-sub tm-who">{longest ? <>{who(longest.player)} · turn {longest.turn}</> : 'No turns yet'}</span>
+        </div>
+        <div class="gs-tile">
+          <span class="stat-label">Fastest player</span>
+          <span class="gs-tile-who">{fastest !== null ? who(fastest) : '–'}</span>
+          <span class="stat-sub">{fastest !== null ? pace(fastest) : 'Needs two players with a turn'}</span>
+        </div>
+        <div class="gs-tile">
+          <span class="stat-label">Slowest player</span>
+          <span class="gs-tile-who">{slowest !== null ? who(slowest) : '–'}</span>
+          <span class="stat-sub">{slowest !== null ? pace(slowest) : 'Needs two players with a turn'}</span>
+        </div>
+      </div>
+
+      <div class="gs-chart tm-chart" role="group" aria-label="Time per player">
+        <p class="tm-cap">Time per player and share of the game</p>
+        {players.map((p) => {
+          const on = focus === p;
+          const a = avg(p);
+          return (
+            <div
+              key={p}
+              class={on ? 'tm-row on' : 'tm-row'}
+              tabIndex={0}
+              aria-label={`${view.players[p].name}${bot(p) ? ' (computer)' : ''}: ${formatDuration(time.perPlayerMs[p])}, ${pct(p)} of the game${a !== null ? `, ${formatDuration(a)} a turn` : ''}`}
+              onPointerEnter={(e) => e.pointerType === 'mouse' && setFocus(p)}
+              onPointerLeave={() => setFocus((f) => (f === p ? null : f))}
+              onClick={() => setFocus(p)}
+              onFocus={() => setFocus(p)}
+              onBlur={() => setFocus((f) => (f === p ? null : f))}
+            >
+              <span class="tm-label">
+                <span class="tm-name">
+                  <Who view={view} colors={colors} p={p} line={false} />
+                  {p === seat && <span class="you">you</span>}
+                  {bot(p) && <span class="gs-tag">computer</span>}
+                </span>
+                <span class="tm-pace">{a !== null ? pace(p) : 'no turns yet'}</span>
+              </span>
+              <span class="tm-track">
+                <span class="tm-bar" style={{ width: `calc((100% - 5.6em) * ${(time.perPlayerMs[p] / most).toFixed(4)})`, background: colors[p].fill }} />
+                <span class="tm-tip">
+                  <b>{formatClock(time.perPlayerMs[p])}</b> {pct(p)}
+                </span>
+              </span>
+              {on && (
+                <span class="gs-tip tm-pop" role="status">
+                  <b>{formatDuration(time.perPlayerMs[p])}</b> · {pct(p)} of the game
+                  <br />
+                  {plural(time.turnCount[p], 'turn')}
+                  {a !== null ? `, ${formatDuration(a)} on average` : ''}
+                  {bot(p) ? ' (computer)' : ''}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <details class="dice-table gs-details">
+        <summary>Show as a table</summary>
+        <div class="gs-scroll">
+          <table class="gs-table tm-table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th class="num">Time</th>
+                <th class="num">Share</th>
+                <th class="num">Turns</th>
+                <th class="num">Average</th>
+              </tr>
+            </thead>
+            <tbody>
+              {players.map((p) => (
+                <tr key={p}>
+                  <th scope="row">{who(p)}</th>
+                  <td class="num">{formatClock(time.perPlayerMs[p])}</td>
+                  <td class="num">{pct(p)}</td>
+                  <td class="num">{time.turnCount[p]}</td>
+                  <td class="num">{avg(p) !== null ? formatClock(avg(p)!) : '–'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <p class="gs-key-line">
+        A player's time is the time on their turns, setup placements included: while others discard on a 7 or answer their trade offer,
+        it still counts for them. The clock stops while the game is hidden or closed (online: it runs while the host's page is open).
+        Computer players' times are their real pace, set by the computer speed.
+      </p>
+    </div>
+  );
+}

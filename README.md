@@ -40,6 +40,13 @@ GitHub Actions)
   VP-over-turns race chart, resources produced by type, cards stolen, lost
   and traded, and highlights such as the luckiest roller (dice production
   against what their numbers should have given)
+- A game clock: the time played so far in the header, and the turn in play
+  by the player whose turn it is (hide it from the menu). Only active play
+  counts: it pauses while the game is off screen or closed, and every moment
+  goes to the player whose turn it is. Online, the host keeps the time and
+  everyone sees the same clock. The game stats end with the time: each
+  player's total and share, their average turn, the longest turn, and the
+  fastest and slowest players
 - Drawn resource icons that look the same on every device
 - Illustrated cards: original painted scenes for the five resources and the
   development cards, in a parchment frame with a name ribbon
@@ -377,6 +384,11 @@ and the differences between printings.
 - **Game statistics** reconcile after whole bot games: every hand equals its
   gains minus its losses, the bank and the log agree, and trades and steals
   balance between players.
+- **Game clock** (`web/src/game/clock.ts`, fake timers): time adds up only
+  while the clock runs, each moment goes to the player whose turn it is,
+  a hidden page pauses it (an online host's doesn't), a saved clock comes
+  back paused, and a guest's reading matches the host's whatever the two
+  devices think the time is.
 - **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
   against the computer that is reloaded and continued, a Seafarers board,
   the pass-and-play hand-over, a random map whose preview (after a 🎲
@@ -386,7 +398,9 @@ and the differences between printings.
   (`scripts/mqtt-broker.mjs`): a direct link on the host's random map, a
   relay-only link, and a friend who joins while the host is away. The end
   of a game: the results popup, the final map with the Results chip, and
-  the game stats with their charts and tables.
+  the game stats with their charts and tables. The game clock: the live
+  timer, hiding it from the menu, pausing while the page is hidden or
+  closed, and a friend seeing the host's time.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 

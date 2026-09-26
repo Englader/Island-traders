@@ -21,6 +21,8 @@ test('the end of the game: results, the final map, and the game stats', async ({
   await expect(popup).toBeVisible();
   await expect(popup.locator('.eg-ranking li')).toHaveCount(4);
   await expect(popup.locator('.eg-ranking li').first()).toContainText(game.name);
+  // how long it took, from the game clock saved with the game
+  await expect(popup.locator('.eg-hero-text span')).toHaveText(/ · \d+ turns · \d+ min$/);
   await expect(popup.getByRole('button', { name: 'Home' })).toBeVisible();
 
   // View map: the popup goes and the whole board can be seen and zoomed
@@ -53,7 +55,7 @@ test('the end of the game: results, the final map, and the game stats', async ({
   await expect(stats).toBeVisible();
   await expect(stats.locator('.gs-scores tbody tr')).toHaveCount(4);
   await expect(stats.locator('.gs-scores tr.gs-win')).toContainText(game.name);
-  await expect(stats.locator('.gs-tile')).toHaveCount(6);
+  await expect(stats.locator('section[aria-label="Highlights"] .gs-tile')).toHaveCount(6);
   await expect(stats.locator('.gs-empty')).toHaveCount(0);
   const race = stats.locator('section[aria-label="Race to the finish"]');
   await expect(race.locator('path.gs-line')).toHaveCount(4);
@@ -73,6 +75,24 @@ test('the end of the game: results, the final map, and the game stats', async ({
   await produced.getByText('Show as a table').click();
   await expect(produced.locator('details[open] tbody tr')).toHaveCount(4);
   await expect(stats.locator('.gs-ledger tbody tr').first()).toContainText('From the dice');
+  // time: the whole game, each player's share, their pace, the longest turn
+  const time = stats.locator('section[aria-label="Time"]');
+  await expect(time.locator('.tm-hero .tm-value')).toHaveText(/^\d+ min \d+ s$/);
+  await expect(time.locator('.gs-tile', { hasText: 'Longest turn' })).toContainText(/turn \d+/);
+  // (the human took longer over each turn than the computer players)
+  await expect(time.locator('.gs-tile', { hasText: 'Slowest player' })).toContainText(game.name);
+  await expect(time.locator('.gs-tile', { hasText: 'Fastest player' })).toContainText('computer');
+  const rows = time.locator('.tm-row');
+  await expect(rows).toHaveCount(4);
+  await expect(rows.filter({ hasText: 'computer' })).toHaveCount(3);
+  const shares = (await time.locator('.tm-tip').allInnerTexts()).map((t) => Number(/(\d+)%/.exec(t)![1]));
+  expect(Math.abs(shares.reduce((a, b) => a + b, 0) - 100)).toBeLessThanOrEqual(2);
+  await expect(time.locator('.tm-bar')).toHaveCount(4);
+  // a tap on a player's bar tells their time and pace
+  await rows.filter({ hasText: game.name }).click();
+  await expect(time.locator('.tm-pop')).toContainText(/of the game/);
+  await time.getByText('Show as a table').click();
+  await expect(time.locator('details[open] tbody tr')).toHaveCount(4);
   // nothing is wider than the phone screen
   const overflow = await stats.locator('.sheet-body').evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
@@ -91,6 +111,7 @@ test('the end of the game: results, the final map, and the game stats', async ({
 test('games saved before the stats existed say so instead', async ({ page }) => {
   const game = nearlyWonGame();
   delete (game.record.state as { stats?: unknown }).stats;
+  delete game.record.clock;
   await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [SAVE_KEY, JSON.stringify(game.record)] as const);
   await page.goto('/');
   await page.getByRole('button', { name: /Continue/ }).click();
@@ -99,4 +120,7 @@ test('games saved before the stats existed say so instead', async ({ page }) => 
   const stats = page.locator('.sheet[aria-label="Game stats"]');
   await expect(stats.locator('.gs-scores tbody tr')).toHaveCount(4);
   await expect(stats.locator('.gs-empty', { hasText: /^Not recorded for this game/ })).toHaveCount(3);
+  await expect(stats.locator('section[aria-label="Time"] .gs-empty')).toContainText("Time wasn't recorded for this game");
+  // and no live timer for it either
+  await expect(page.locator('.hud-clock')).toHaveCount(0);
 });

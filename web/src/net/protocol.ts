@@ -1,4 +1,5 @@
 import type { Action, PlayerId } from 'engine';
+import type { ClockSummary } from '../game/clock';
 import type { SeatSnapshot } from '../game/controller';
 import type { Seat } from '../game/seats';
 import type { ChatMessage } from './chat';
@@ -17,6 +18,7 @@ import { loadJson, saveJson } from '../game/storage';
  * another version. Both sides ignore message types they don't know, so new
  * types (like chat) are added without a bump: an older guest just doesn't see
  * the chat, and a newer guest only shows it once the host sends a chat history.
+ * New optional fields (like the game clock on `state`) don't need a bump either.
  */
 export const PROTOCOL = 3;
 
@@ -127,6 +129,13 @@ export type HostMessage =
       snap: SeatSnapshot;
       seats: LobbySeat[];
       last: { action: Action; at: number } | null;
+      /**
+       * The game clock as the host had it when sending: elapsed times (never
+       * the host's timestamps, the guest's clock may differ) and whether it is
+       * running, in which case the guest adds the time since it arrived.
+       * Missing from hosts without a timer and games started before it.
+       */
+      clock?: ClockSummary;
     }
   | { t: 'error'; message: string }
   | { t: 'pong' }

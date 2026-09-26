@@ -341,6 +341,37 @@ test('games on this device have no chat', async ({ page }) => {
   await expect(page.locator('.chat-fab')).toHaveCount(0);
 });
 
+// --- the game clock ----------------------------------------------------------------------------
+
+/** The game time in the header, in seconds. */
+async function gameTime(p: Page): Promise<number> {
+  const text = (await p.locator('.hud-clock').innerText()).replace(/[^\d:]/g, '');
+  return text.split(':').reduce((t, n) => t * 60 + Number(n), 0);
+}
+
+test('the host keeps the game time and a friend sees the same clock', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  await join(guest, code, 'Clocky');
+  await startWithFriend(host, guest);
+  await expect(host.locator('.hud-clock')).toBeVisible();
+  await expect(guest.locator('.hud-clock')).toBeVisible();
+  await expect.poll(() => gameTime(host), { timeout: 20_000 }).toBeGreaterThanOrEqual(4);
+  // read side by side (a second may tick between the two readings)
+  await expect(async () => {
+    const [h, g] = await Promise.all([gameTime(host), gameTime(guest)]);
+    expect(Math.abs(h - g)).toBeLessThanOrEqual(2);
+  }).toPass({ timeout: 10_000 });
+  // the friend's reading runs on between the host's updates
+  const g = await gameTime(guest);
+  await expect.poll(() => gameTime(guest), { timeout: 5000 }).toBeGreaterThan(g);
+  // and the turn in play shows by the player whose turn it is, on both
+  await expect(host.locator('.player .pturn')).toHaveCount(1);
+  await expect(guest.locator('.player .pturn')).toHaveCount(1);
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
 type Box = { x: number; y: number; width: number; height: number };
 const overlap = (a: Box, b: Box) => a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1 && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1;
 const within = (a: Box, b: Box) => a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1;

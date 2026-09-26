@@ -8,6 +8,7 @@ import {
   type GameView,
   type PlayerId,
 } from 'engine';
+import { isRunning, newClock, observe, pause, restoreClock, resume, stop, summarize, type ClockFeed, type GameClock } from './clock';
 import { botDelay, mustAct, type BotLevel, type BotSpeed, type Seat } from './seats';
 import { removeKey, saveJson } from './storage';
 
@@ -29,7 +30,14 @@ export interface GameRecord {
   claims?: Record<string, number>;
   /** Online games: the host has left the lobby and play has begun. */
   started?: boolean;
+  /** How long the game has been played, and by whom (games saved before the timer: none). */
+  clock?: GameClock;
   savedAt: number;
+}
+
+/** A clock for a new game: the first placement is about to be timed. */
+export function clockFor(state: GameState): GameClock {
+  return newClock(state.players.length, state.turn.actor, state.turn.number);
 }
 
 export const SAVE_KEY: Record<GameMode, string> = { local: 'save:local', host: 'save:host' };
@@ -62,9 +70,13 @@ export class GameController {
   private botSteps = 0;
   private botPart = -1;
   private destroyed = false;
+  private discarded = false;
 
   constructor(record: GameRecord) {
-    this.record = record;
+    // a saved clock comes back paused: the time the game spent closed doesn't count
+    let clock = record.clock ? restoreClock(record.clock, record.state.players.length) ?? undefined : undefined;
+    if (clock && record.state.phase.kind === 'gameOver' && !clock.stopped) clock = { ...clock, stopped: true };
+    this.record = { ...record, clock };
     const humans = this.localHumans();
     // With several humans on one device nobody's hand is shown until the device is handed over.
     this.viewer = humans.length === 1 ? humans[0] : null;
@@ -111,8 +123,15 @@ export class GameController {
       return r.error;
     }
     this.error = null;
-    this.record = { ...this.record, state: r.state, savedAt: Date.now() };
-    this.last = { action, by: action.player, at: Date.now() };
+    const now = Date.now();
+    let clock = this.record.clock;
+    if (clock) {
+      // the time so far goes to whoever had the turn; then the next turn is timed
+      clock = observe(clock, r.state.turn.actor, r.state.turn.number, now);
+      if (r.state.phase.kind === 'gameOver') clock = stop(clock, now);
+    }
+    this.record = { ...this.record, state: r.state, clock, savedAt: now };
+    this.last = { action, by: action.player, at: now };
     this.save();
     this.refresh(false);
     return null;
@@ -170,15 +189,48 @@ export class GameController {
     this.emit();
   }
 
+  /**
+   * Runs or pauses the game clock (the page decides: see useGameClock). Pausing
+   * saves the game, so the time so far is kept if the page is closed next.
+   */
+  setClockRunning(on: boolean): void {
+    const c = this.record.clock;
+    if (!c || this.destroyed) return;
+    const now = Date.now();
+    const next = on ? resume(c, now) : pause(c, now);
+    if (next === c) return;
+    this.record = { ...this.record, clock: next };
+    if (!on) this.save();
+    this.emit();
+  }
+
+  /** The clock's numbers now, for the screens and the guests (null: not timed). */
+  clockFeed(): ClockFeed | null {
+    const c = this.record.clock;
+    if (!c) return null;
+    const now = Date.now();
+    return { sum: summarize(c, now), at: now };
+  }
+
   save(): void {
-    saveJson(SAVE_KEY[this.record.mode], this.record);
+    if (this.discarded) return;
+    const c = this.record.clock;
+    // saved paused with the time so far: a reload carries on from there, however long the page was closed
+    saveJson(SAVE_KEY[this.record.mode], c ? { ...this.record, clock: pause(c, Date.now()) } : this.record);
   }
 
   discardSave(): void {
+    this.discarded = true;
     removeKey(SAVE_KEY[this.record.mode]);
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    // keep the time played so far
+    if (this.record.clock && isRunning(this.record.clock)) {
+      this.record = { ...this.record, clock: pause(this.record.clock, Date.now()) };
+      this.save();
+    }
     this.destroyed = true;
     if (this.timer) clearTimeout(this.timer);
     this.listeners.clear();

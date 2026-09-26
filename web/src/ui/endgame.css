@@ -541,3 +541,130 @@
   font-size: 0.85rem;
   color: var(--ink-2);
 }
+
+/* time: tiles, a bar per player (total time and share) and a table */
+.tm-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 700px) {
+  .tm-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.tm-hero {
+  grid-column: 1 / -1;
+}
+.tm-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.tm-value.big {
+  font-size: 1.9rem;
+}
+.tm-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+}
+.tm-who .gs-tag {
+  margin-left: 0;
+}
+.tm-chart {
+  margin-top: 12px;
+}
+.tm-cap {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.tm-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: clamp(112px, 40%, 210px) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.tm-row:hover,
+.tm-row.on {
+  background: var(--panel-2);
+}
+.tm-row:focus {
+  outline: none;
+}
+.tm-row:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+.tm-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tm-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.tm-name .gs-name {
+  font-weight: 600;
+}
+.tm-name .gs-tag,
+.gs-tile-who .gs-tag {
+  flex: none;
+  align-self: center;
+  margin-left: 6px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.gs-tile-who .gs-tag {
+  margin-left: -4px;
+}
+.tm-pace {
+  font-size: 0.74rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+/* thin bars from one baseline, rounded at the data end */
+.tm-bar {
+  flex: none;
+  height: 16px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+.tm-tip {
+  flex: none;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tm-tip b {
+  color: var(--ink);
+  font-weight: 800;
+}
+/* above the row, kept inside it */
+.gs-tip.tm-pop {
+  top: auto;
+  bottom: calc(100% - 4px);
+  left: auto;
+  right: 0;
+  max-width: 100%;
+  transform: none;
+  white-space: normal;
+}

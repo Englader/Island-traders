@@ -5,6 +5,8 @@ import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../b
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
+import type { ClockFeed } from '../game/clock';
+import { ClockIcon, LiveTime, useTimerShown } from './Clock';
 import { FxOverlay, fxFor, type FxEvent } from './Fx';
 import { DiceRoll, type RollInfo } from './DiceRoll';
 import { DiceStatsSheet } from './DiceStats';
@@ -52,6 +54,8 @@ export interface GameScreenProps {
   note?: string;
   /** Online games: the chat button and window, shown over the board. */
   chat?: ComponentChildren;
+  /** The game clock (null: this game is not timed). */
+  clock?: ClockFeed | null;
 }
 
 type Mode =
@@ -251,6 +255,9 @@ export function GameScreen(props: GameScreenProps) {
   const me = seat !== null ? view.players[seat] : null;
   const desk = useMedia(DESK);
   const dock = useMedia(DOCK);
+  // the live timer, unless turned off in the menu
+  const timerOn = useTimerShown();
+  const live = timerOn && props.clock ? props.clock : null;
   const [logPrefs, setLogPrefsState] = useState<LogPrefs>(loadLogPrefs);
   const setLogPrefs = (p: LogPrefs) => {
     setLogPrefsState(p);
@@ -654,7 +661,18 @@ export function GameScreen(props: GameScreenProps) {
             {!canAct && !gameOver && waitingFor.length > 0 && <span class="spinner" aria-hidden="true" />}
           </div>
           <div class="sub">
-            {sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP{props.note ? ` · ${props.note}` : ''}
+            <span class="sub-main">
+              {sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP
+            </span>
+            {live && (
+              <span class="hud-clock" title={gameOver ? 'Game time' : 'Game time so far (active play)'}>
+                <span aria-hidden="true">{' · '}</span>
+                <ClockIcon />
+                <span class="sr-only">Game time </span>
+                <LiveTime feed={live} pick={(c) => c.playedMs} />
+              </span>
+            )}
+            {props.note && <span class="sub-note">{` · ${props.note}`}</span>}
           </div>
         </div>
         <div
@@ -796,7 +814,7 @@ export function GameScreen(props: GameScreenProps) {
       </div>
 
       <div ref={panelRef} class={desk ? (tight ? 'panel desk tight' : 'panel desk') : 'panel'}>
-        <Players view={view} colors={colors} kinds={kinds} seat={seat} desk={desk} onOpen={() => setSheet('scores')} />
+        <Players view={view} colors={colors} kinds={kinds} seat={seat} desk={desk} clock={live} onOpen={() => setSheet('scores')} />
         {desk && me?.resources ? (
           <div class="tray">
             <Hand view={view} seat={seat!} desk onCards={() => setSheet('cards')} />
@@ -858,6 +876,7 @@ export function GameScreen(props: GameScreenProps) {
           colors={colors}
           kinds={kinds}
           seat={seat}
+          clock={live}
           close={() => setSheet(null)}
           onDice={(p) => {
             setDiceFor(p);
@@ -873,6 +892,7 @@ export function GameScreen(props: GameScreenProps) {
           colors={colors}
           kinds={kinds}
           seat={seat}
+          clock={props.clock ?? null}
           covered={sheet !== null}
           onHome={props.onHome}
           onRematch={props.onRematch}
@@ -892,6 +912,7 @@ function Players({
   kinds,
   seat,
   desk,
+  clock,
   onOpen,
 }: {
   view: GameView;
@@ -899,6 +920,8 @@ function Players({
   kinds: SeatKind[];
   seat: PlayerId | null;
   desk: boolean;
+  /** The live timer: the turn in play shows how long it has taken so far. */
+  clock: ClockFeed | null;
   onOpen(): void;
 }) {
   return (
@@ -906,6 +929,19 @@ function Players({
       {view.players.map((p) => {
         const active = view.turn.actor === p.id && view.phase.kind !== 'gameOver';
         const vp = p.totalVP ?? p.publicVP;
+        const turnTime = active && clock?.sum.current?.player === p.id && (
+          <span class="pm pturn" title="This turn so far">
+            <ClockIcon />
+            <span class="sr-only">This turn: </span>
+            <LiveTime feed={clock} pick={(c) => (c.current?.player === p.id ? c.current.ms : null)} />
+          </span>
+        );
+        const name = (
+          <span class="pname">
+            {p.name}
+            {p.id === seat && <span class="you">you</span>}
+          </span>
+        );
         return (
           <button
             type="button"
@@ -918,10 +954,15 @@ function Players({
           >
             <span class="avatar">{kinds[p.id] === 'bot' ? '🤖' : kinds[p.id] === 'remote' ? '🌐' : p.name.slice(0, 1).toUpperCase()}</span>
             <span class="pinfo">
-              <span class="pname">
-                {p.name}
-                {p.id === seat && <span class="you">you</span>}
-              </span>
+              {desk ? (
+                // the turn's time on the name line, where there is room for it
+                <span class="pline">
+                  {name}
+                  {turnTime}
+                </span>
+              ) : (
+                name
+              )}
               {desk ? (
                 <span class="pmeta">
                   <span class="pm" title="Resource cards">
@@ -951,6 +992,7 @@ function Players({
                   🎴 {p.resourceCount}
                   {view.longestRoute.holder === p.id && <span title="Longest route"> 🛣️</span>}
                   {view.largestArmy.holder === p.id && <span title="Largest army"> ⚔️</span>}
+                  {turnTime}
                 </span>
               )}
             </span>
@@ -969,6 +1011,7 @@ function ScoresSheet({
   colors,
   kinds,
   seat,
+  clock,
   close,
   onDice,
 }: {
@@ -976,6 +1019,8 @@ function ScoresSheet({
   colors: PlayerColor[];
   kinds: SeatKind[];
   seat: PlayerId | null;
+  /** The live timer (null: hidden, or not timed). */
+  clock: ClockFeed | null;
   close(): void;
   /** Opens the dice statistics, for one player or (null) everyone. */
   onDice(p: PlayerId | null): void;
@@ -1011,6 +1056,17 @@ function ScoresSheet({
               {forts && <span>{forts[p.id].captured ? '🏰 fortress conquered' : `🏴 fortress ${forts[p.id].chits}/3`}</span>}
               {view.longestRoute.holder === p.id && <span class="badge">{sc.rules.ships ? 'Longest Trade Route' : 'Longest Road'}</span>}
               {view.largestArmy.holder === p.id && <span class="badge">Largest Army</span>}
+              {clock && (
+                <span class="score-time" title="Time on their turns so far">
+                  <ClockIcon /> <LiveTime feed={clock} pick={(c) => c.perPlayerMs[p.id] ?? 0} /> played
+                  {clock.sum.current?.player === p.id && view.phase.kind !== 'gameOver' && (
+                    <>
+                      {' · this turn '}
+                      <LiveTime feed={clock} pick={(c) => (c.current?.player === p.id ? c.current.ms : null)} />
+                    </>
+                  )}
+                </span>
+              )}
               <button type="button" class="small-btn dice-btn" onClick={() => onDice(p.id)} aria-label={`${p.name}'s dice rolls`}>
                 🎲 Rolls
               </button>
