@@ -113,6 +113,12 @@ Guests send a heartbeat, so a dropped link is noticed within seconds and the
 guest reconnects on its own. A host whose phone paused the page gets the same
 room code back when it returns.
 
+Online games have a chat: the 💬 button over the board opens a small window
+with quick phrases and emoji. The host stamps who sent each message (plain
+text, up to 200 characters, 5 messages per 10 seconds per friend) and keeps
+the last 50, which friends get again when they rejoin. Chat is not part of
+the game state (`web/src/net/chat.ts`).
+
 The free PeerJS cloud broker introduces the browsers. To use your own broker,
 run `node scripts/peer-broker.mjs` (or `npx peer`) and open the game with
 `?peer=host:port/path`, or build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,

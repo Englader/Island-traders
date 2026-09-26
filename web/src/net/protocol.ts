@@ -1,6 +1,7 @@
 import type { Action, PlayerId } from 'engine';
 import type { SeatSnapshot } from '../game/controller';
 import type { Seat } from '../game/seats';
+import type { ChatMessage } from './chat';
 import { loadJson, saveJson } from '../game/storage';
 
 /**
@@ -11,7 +12,12 @@ import { loadJson, saveJson } from '../game/storage';
  * hidden cards or make an illegal move.
  */
 
-/** Bumped when messages change; a host turns away guests on another version. */
+/**
+ * Bumped when messages change incompatibly; a host turns away guests on
+ * another version. Both sides ignore message types they don't know, so new
+ * types (like chat) are added without a bump: an older guest just doesn't see
+ * the chat, and a newer guest only shows it once the host sends a chat history.
+ */
 export const PROTOCOL = 3;
 
 /** Room codes avoid easily confused characters (0/O, 1/I). */
@@ -109,7 +115,9 @@ export type GuestMessage =
   | { t: 'action'; action: Action }
   /** heartbeat; the host answers with a pong */
   | { t: 'ping' }
-  | { t: 'bye' };
+  | { t: 'bye' }
+  /** A chat line. The host decides who sent it; anything else here is ignored. */
+  | { t: 'chat'; text: string };
 
 export type HostMessage =
   | { t: 'welcome'; seat: PlayerId | null; reason?: string }
@@ -121,4 +129,8 @@ export type HostMessage =
       last: { action: Action; at: number } | null;
     }
   | { t: 'error'; message: string }
-  | { t: 'pong' };
+  | { t: 'pong' }
+  /** The chat so far, sent after every welcome (join or reconnect). */
+  | { t: 'chatHistory'; msgs: ChatMessage[] }
+  /** A new chat message, stamped by the host. */
+  | { t: 'chat'; msg: ChatMessage };

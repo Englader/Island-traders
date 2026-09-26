@@ -5,8 +5,10 @@ import { flashOf } from '../ui/flash';
 import type { GameController, SeatSnapshot } from '../game/controller';
 import { PLAYER_COLORS } from '../game/seats';
 import { clientId, loadJson, saveJson } from '../game/storage';
+import { ChatWindow } from '../ui/ChatWindow';
 import { GameScreen } from '../ui/GameScreen';
 import { Logo } from '../ui/screens';
+import { ChatHub, mergeChat, type ChatMessage, type ChatPostResult } from './chat';
 import { GuestConnector, type Via } from './guest';
 import { PROTOCOL, brokerOptions, hostPeerId, normalizeCode, randomRoomCode, roomToken, rtcConfig, type GuestMessage, type HostMessage, type LobbySeat } from './protocol';
 import { RelayHost } from './relay';
@@ -21,6 +23,8 @@ interface Guest {
   close(): void;
   client: string | null;
   seat: number | null;
+  /** The name from the guest's hello. */
+  name: string;
   /** When the guest was last heard from. */
   seen: number;
 }
@@ -35,7 +39,14 @@ export interface HostNet {
   online: Set<number>;
   newRoomCode(): string;
   broadcast(): void;
+  /** The room's chat, oldest first. */
+  chat: ChatMessage[];
+  /** The host's own chat message; false when it was not sent. */
+  sendChat(text: string): boolean;
 }
+
+/** The host keeps the room's chat in this browser, so a reload doesn't lose it. */
+const CHAT_KEY = 'chat';
 
 function lobbySeats(ctrl: GameController, online: Set<number>): LobbySeat[] {
   const claimed = new Set(Object.values(ctrl.record.claims ?? {}));
@@ -56,6 +67,27 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
   const guests = useRef(new Set<Guest>());
   const onlineRef = useRef(online);
   onlineRef.current = online;
+  const hub = useRef<ChatHub | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+
+  /** A chat message the hub accepted: keep it and pass it on to everyone. */
+  const publish = (r: ChatPostResult | undefined) => {
+    const h = hub.current;
+    const code = ctrl?.record.room;
+    if (!r?.ok || !h || !code) return;
+    const msgs = h.history();
+    setChat(msgs);
+    saveJson(CHAT_KEY, { room: code, msgs });
+    for (const g of guests.current) if (g.client !== null) g.send({ t: 'chat', msg: r.message });
+  };
+
+  const sendChat = (text: string): boolean => {
+    if (!ctrl) return false;
+    const seat = ctrl.viewer;
+    const r = hub.current?.post({ seat, name: seat !== null ? ctrl.seats[seat]?.name ?? 'Host' : 'Host' }, text);
+    publish(r);
+    return r?.ok === true;
+  };
 
   const sendState = (g: Guest) => {
     if (!ctrl) return;
@@ -79,6 +111,9 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
     let retry: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
     const relayGuests = new Map<string, Guest>();
+    const saved = loadJson<{ room: string; msgs: ChatMessage[] }>(CHAT_KEY);
+    hub.current = new ChatHub(saved?.room === room && Array.isArray(saved.msgs) ? saved.msgs : []);
+    setChat(hub.current.history());
 
     const refreshOnline = () => {
       const s = new Set<number>();
@@ -111,6 +146,8 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
         const client = String(msg.client).slice(0, 40);
         const name = String(msg.name || 'Friend').slice(0, 16);
         g.client = client;
+        g.name = name;
+        const history = () => g.send(hub.current?.joinMessage() ?? { t: 'chatHistory', msgs: [] });
         const claims = ctrl.record.claims ?? {};
         let seat = claims[client];
         if (seat === undefined || ctrl.seats[seat]?.kind !== 'remote') {
@@ -119,6 +156,7 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
           if (seat < 0) {
             g.send({ t: 'welcome', seat: null, reason: 'All seats are taken. You are watching.' });
             g.seat = null;
+            history();
             sendState(g);
             return;
           }
@@ -128,6 +166,7 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
         g.seat = seat;
         ctrl.claimSeat(client, seat, name);
         g.send({ t: 'welcome', seat });
+        history();
         refreshOnline();
         broadcast();
         return;
@@ -144,6 +183,13 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
         }
         const err = ctrl.act(a);
         if (err) g.send({ t: 'error', message: err });
+        return;
+      }
+      if (msg.t === 'chat') {
+        // dropped unless the guest said hello; the sender comes from the host's own records
+        const r = hub.current?.fromGuest(g, msg, (s) => ctrl.seats[s]?.name);
+        if (r && !r.ok && r.reason === 'limited') g.send({ t: 'error', message: 'Too many chat messages: wait a few seconds.' });
+        publish(r);
       }
     };
 
@@ -168,6 +214,7 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
           },
           client: null,
           seat: null,
+          name: 'Friend',
           seen: Date.now(),
         };
         g = ng;
@@ -206,6 +253,7 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
           close: () => conn.close(),
           client: null,
           seat: null,
+          name: 'Friend',
           seen: Date.now(),
         };
         guests.current.add(g);
@@ -278,6 +326,8 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       guests.current.clear();
       relay.close();
       peer?.destroy();
+      hub.current = null;
+      setChat([]);
       setDirectReady(false);
       setRelayReady(false);
       setStatus('');
@@ -297,8 +347,10 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       online,
       newRoomCode: randomRoomCode,
       broadcast,
+      chat,
+      sendChat,
     }),
-    [status, ready, online, room],
+    [status, ready, online, room, ctrl, chat],
   );
 }
 
@@ -461,6 +513,8 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
   const conn = useRef<GuestConnector | null>(null);
   const seatRef = useRef<number | null>(null);
   const [online, setOnline] = useState<Via | null>(null);
+  // null until the host sends a chat history (a host without chat never does)
+  const [chat, setChat] = useState<ChatMessage[] | null>(null);
 
   useEffect(() => {
     const say = (msg: string) => setSt((cur) => (cur.kind === 'connecting' ? { kind: 'connecting', msg } : { ...cur, note: msg }));
@@ -483,6 +537,10 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
             setSt({ kind: 'game', snap: msg.snap, seats: msg.seats, last: msg.last, seat: msg.snap.seat });
           } else if (msg.t === 'error') {
             setError(msg.message);
+          } else if (msg.t === 'chatHistory') {
+            setChat((cur) => mergeChat(cur ?? [], msg.msgs));
+          } else if (msg.t === 'chat') {
+            setChat((cur) => (cur ? mergeChat(cur, [msg.msg]) : cur));
           }
         },
       },
@@ -506,6 +564,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
   const send = (a: Action) => {
     if (!conn.current?.send({ t: 'action', action: a })) setError('Not connected to the host right now.');
   };
+  const sendChat = (text: string) => conn.current?.send({ t: 'chat', text }) ?? false;
 
   if (st.kind === 'connecting') {
     return (
@@ -571,6 +630,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         onMenu={() => setMenu(true)}
         onHome={onHome}
         note={online ? `Room ${code}${online === 'relay' ? ' · via relay' : ''}` : st.note ?? 'Offline'}
+        chat={chat && <ChatWindow messages={chat} seat={st.seat} colors={colors} room={code} onSend={sendChat} />}
       />
       {menu && (
         <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && setMenu(false)}>
