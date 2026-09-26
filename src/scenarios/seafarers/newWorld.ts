@@ -5,6 +5,7 @@ import { nextInt, shuffle } from '../../core/rng.js';
 import type { HarborType, RngState, Terrain } from '../../core/types.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply } from './common.js';
+import { NEW_WORLD_FRAME_3_4, NEW_WORLD_FRAME_5_6 } from './officialMaps.js';
 
 /** Land tiles from the rulebooks' component lists (no desert or gold with 3-4 players). */
 function terrainsFor(players: number): Partial<Record<Terrain, number>> {
@@ -110,6 +111,17 @@ export const newWorld: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 6,
   victoryPoints: () => 12,
+  // The rulebook's New World: every hex of the frame, sea included, is dealt at random.
+  officialMap: (players): MapSpec => {
+    const big = players >= 5;
+    return {
+      rows: big ? NEW_WORLD_FRAME_5_6 : NEW_WORLD_FRAME_3_4,
+      pools: { default: { terrains: { ...terrainsFor(players), sea: big ? 21 : 19 }, tokens: newWorldTokens(players) } },
+      harbors: null,
+      robber: 'offboard',
+      pirate: 'offboard',
+    };
+  },
   map: (players): MapSpec => ({
     generate: (rng) => newWorldCells(players, rng),
     pools: { default: { terrains: terrainsFor(players), tokens: newWorldTokens(players) } },

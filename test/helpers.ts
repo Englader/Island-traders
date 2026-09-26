@@ -48,7 +48,8 @@ export function ringVertices(q: number, r: number): VertexId[] {
 
 /**
  * A game with setup skipped: player 0's turn 1, dice already rolled (main
- * phase), empty board, empty hands.
+ * phase), empty board, empty hands. Rule tests use the random layout's
+ * boards (their coordinates are written against them) unless told otherwise.
  */
 export function blank(
   scenario = 'base',
@@ -56,7 +57,7 @@ export function blank(
   options: Partial<GameOptions> = {},
   seed: string | number = 'test',
 ): GameState {
-  const s = createGame({ scenario, players, seed, options: { firstPlayer: 0, ...options } });
+  const s = createGame({ scenario, players, seed, options: { firstPlayer: 0, layout: 'random', ...options } });
   s.turn.number = 1;
   s.turn.part = 1;
   s.turn.current = 0;

@@ -1,12 +1,12 @@
 /**
  * Plays one bot game and prints the board and the end of the log.
  *
- *   npm run demo -- [scenario-id] [players] [seed]
+ *   npm run demo -- [scenario-id] [players] [seed] [official|random]
  *   npm run demo -- list
  */
 import { createGame, listScenarios, publicVP, renderAscii, seedRng, simulate, totalVP } from '../src/index.js';
 
-const [scenario = 'base', players = '4', seed = 'demo'] = process.argv.slice(2);
+const [scenario = 'base', players = '4', seed = 'demo', layout = 'official'] = process.argv.slice(2);
 
 if (scenario === 'list') {
   for (const s of listScenarios()) {
@@ -15,8 +15,8 @@ if (scenario === 'list') {
   process.exit(0);
 }
 
-const game = createGame({ scenario, players: Number(players), seed });
-console.log(`${scenario}, ${players} players, seed "${seed}", target ${game.victoryTarget} VP\n`);
+const game = createGame({ scenario, players: Number(players), seed, options: { layout: layout === 'random' ? 'random' : 'official' } });
+console.log(`${scenario}, ${players} players, seed "${seed}", ${game.options.layout} map, target ${game.victoryTarget} VP\n`);
 console.log(renderAscii(game.board.hexes));
 console.log('\nLegend: h hills  f forest  p pasture  g fields  m mountains  d desert  $ gold  ~ sea  x fog\n');
 

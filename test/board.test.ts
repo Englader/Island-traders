@@ -106,7 +106,7 @@ describe('number tokens', () => {
         scenario: 'base',
         players: 4,
         seed: `rand${i}`,
-        options: { tokenPlacement: 'random', noAdjacent2and12: true, noAdjacentSameNumber: true },
+        options: { layout: 'random', tokenPlacement: 'random', noAdjacent2and12: true, noAdjacentSameNumber: true },
       });
       expect(
         tokensOk(s.board.hexes, { noAdjacentRed: true, noAdjacent2and12: true, noAdjacentSameNumber: true }),
@@ -117,7 +117,7 @@ describe('number tokens', () => {
   it('red-number rule can be switched off', () => {
     let sawAdjacentRed = false;
     for (let i = 0; i < 60 && !sawAdjacentRed; i++) {
-      const s = createGame({ scenario: 'base', players: 4, seed: `off${i}`, options: { tokenPlacement: 'random', noAdjacentRed: false } });
+      const s = createGame({ scenario: 'base', players: 4, seed: `off${i}`, options: { layout: 'random', tokenPlacement: 'random', noAdjacentRed: false } });
       const t = topo(s);
       for (const [id, h] of Object.entries(s.board.hexes)) {
         if (isRed(h.token) && t.hexNeighbors[id].some((n) => isRed(s.board.hexes[n].token))) sawAdjacentRed = true;
@@ -146,45 +146,52 @@ describe('harbors', () => {
 });
 
 describe('every scenario map', () => {
-  it('builds valid boards for several seeds and player counts', () => {
-    for (const sc of BUILT_IN_SCENARIOS) {
-      for (let n = sc.minPlayers; n <= sc.maxPlayers; n++) {
-        for (let i = 0; i < 3; i++) {
-          const s = createGame({ scenario: sc.id, players: n, seed: `${sc.id}-${n}-${i}` });
-          const t = topo(s);
-          // land never touches the edge of the map
-          for (const [id, h] of Object.entries(s.board.hexes)) {
-            if (h.terrain !== 'sea') expect(t.hexNeighbors[id]).toHaveLength(6);
-          }
-          // harbors are on coasts and never share intersections
-          const used = new Set<string>();
-          for (const h of s.board.harbors) {
-            for (const v of t.edgeVertices[h.edge]) {
-              expect(used.has(v)).toBe(false);
-              used.add(v);
+  it('builds valid boards for several seeds, player counts and both layouts', () => {
+    for (const layout of ['official', 'random'] as const) {
+      for (const sc of BUILT_IN_SCENARIOS) {
+        for (let n = sc.minPlayers; n <= sc.maxPlayers; n++) {
+          for (let i = 0; i < 3; i++) {
+            const s = createGame({ scenario: sc.id, players: n, seed: `${sc.id}-${n}-${i}`, options: { layout } });
+            const t = topo(s);
+            // land never touches the edge of the map
+            for (const [id, h] of Object.entries(s.board.hexes)) {
+              if (h.terrain !== 'sea') expect(t.hexNeighbors[id]).toHaveLength(6);
             }
-          }
-          // producing land has a token (islands that can never be settled aside)
-          for (const h of Object.values(s.board.hexes)) {
-            if (['hills', 'forest', 'pasture', 'fields', 'mountains', 'gold'].includes(h.terrain)) {
-              if (!sc.rules.forbiddenZones.includes(h.zone ?? '')) expect(h.token, `${sc.id} ${h.q},${h.r}`).not.toBeNull();
+            // harbors are on coasts and never share intersections
+            const used = new Set<string>();
+            for (const h of s.board.harbors) {
+              expect(t.edgeHexes[h.edge].filter((x) => isLandHex(s, x))).toHaveLength(1);
+              for (const v of t.edgeVertices[h.edge]) {
+                expect(used.has(v)).toBe(false);
+                used.add(v);
+              }
             }
-            if (h.terrain === 'desert' || h.terrain === 'sea') expect(h.token).toBeNull();
-          }
-          // Seafarers component limits: at most 30 land hexes and 2 gold fields
-          if (sc.expansion === 'seafarers' && n <= 4) {
-            const land = Object.values(s.board.hexes).filter((h) => !['sea', 'fog'].includes(h.terrain));
-            expect(land.length).toBeLessThanOrEqual(30);
-            expect(land.filter((h) => h.terrain === 'gold').length).toBeLessThanOrEqual(2);
+            // producing land has a token (islands that can never be settled aside); the
+            // rulebook's Pirate Islands map leaves the two western hills without a number
+            let unnumbered = 0;
+            for (const h of Object.values(s.board.hexes)) {
+              if (['hills', 'forest', 'pasture', 'fields', 'mountains', 'gold'].includes(h.terrain)) {
+                if (!sc.rules.forbiddenZones.includes(h.zone ?? '') && h.token === null) unnumbered++;
+              }
+              if (h.terrain === 'desert' || h.terrain === 'sea') expect(h.token).toBeNull();
+            }
+            const expected = layout === 'official' && sc.id === 'seafarers-7-pirate-islands' ? 2 : 0;
+            expect(unnumbered, `${layout} ${sc.id} ${n}`).toBe(expected);
+            // Seafarers component limits: at most 30 land hexes and 2 gold fields
+            if (sc.expansion === 'seafarers' && n <= 4) {
+              const land = Object.values(s.board.hexes).filter((h) => !['sea', 'fog'].includes(h.terrain));
+              expect(land.length).toBeLessThanOrEqual(30);
+              expect(land.filter((h) => h.terrain === 'gold').length).toBeLessThanOrEqual(2);
+            }
           }
         }
       }
     }
   });
 
-  it('New World islands never touch each other', () => {
+  it('random New World islands never touch each other', () => {
     for (let i = 0; i < 10; i++) {
-      const s = createGame({ scenario: 'seafarers-9-new-world', players: 4, seed: `nw${i}` });
+      const s = createGame({ scenario: 'seafarers-9-new-world', players: 4, seed: `nw${i}`, options: { layout: 'random' } });
       const t = topo(s);
       for (const [id, h] of Object.entries(s.board.hexes)) {
         if (h.terrain === 'sea') continue;

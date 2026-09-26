@@ -4,10 +4,11 @@ import { PIECES_PER_PLAYER } from '../core/constants.js';
 import { emptyCounts, filledCounts } from '../core/resources.js';
 import { rollDie, seedRng, shuffle } from '../core/rng.js';
 import type { DevCardType, GameConfig, GameOptions, GameState, PlayerId, PlayerState, RngState } from '../core/types.js';
-import { getScenario } from '../scenarios/registry.js';
+import { getScenario, mapSpecFor } from '../scenarios/registry.js';
 import '../scenarios/all.js';
 
 export const DEFAULT_OPTIONS: GameOptions = {
+  layout: 'official',
   tradeBuildMode: 'combined',
   fiveSixMode: 'paired',
   tokenPlacement: 'spiral',
@@ -46,7 +47,7 @@ export function createGame(config: GameConfig): GameState {
   const rng = seedRng(seed);
 
   const map = generateMap(
-    scenario.map(n, options),
+    mapSpecFor(scenario, n, options),
     rng,
     {
       noAdjacentRed: options.noAdjacentRed,
@@ -131,7 +132,7 @@ export function createGame(config: GameConfig): GameState {
     rolls: [],
   };
   if (map.fogStack) state.ext.fog = map.fogStack;
-  scenario.hooks.init?.(state);
+  scenario.hooks.init?.(state, map);
   // New World: players place the harbor tokens before the starting placement.
   const pool = state.ext.harborPool as unknown[] | undefined;
   if (scenario.rules.playersPlaceHarbors && pool && pool.length > 0) {

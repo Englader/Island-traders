@@ -175,12 +175,22 @@ export interface RngState {
 export type TradeBuildMode = 'combined' | 'separate';
 export type FiveSixMode = 'paired' | 'specialBuild';
 
+/**
+ * Which board a game is played on:
+ * - 'official': the set-up map printed in the rulebook (default). Only what
+ *   the rulebook itself shuffles (fog tiles, some harbor types, New World) varies.
+ * - 'random': the scenario's shuffled set-up (tiles, numbers and harbors).
+ */
+export type MapLayout = 'official' | 'random';
+
 export interface GameOptions {
+  /** The rulebook's map (default) or a random one. Games saved before this option existed were random. */
+  layout: MapLayout;
   /** Trade and build interleave freely (default) or trade strictly precedes build. */
   tradeBuildMode: TradeBuildMode;
   /** 5-6 players: 2021 paired-player rule (default) or the legacy Special Build Phase. */
   fiveSixMode: FiveSixMode;
-  /** Number-token placement for random maps. 'spiral' only applies to the base 3-4 board. */
+  /** Number-token placement for random maps. 'spiral' only applies to the random base 3-4 board. */
   tokenPlacement: 'spiral' | 'random';
   /** Forbid adjacent 6/8 tokens (on by default). */
   noAdjacentRed: boolean;

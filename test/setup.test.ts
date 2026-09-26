@@ -55,7 +55,7 @@ describe('setup (snake draft)', () => {
   });
 
   it('distance rule and the road must touch the new settlement', () => {
-    let s = createGame({ scenario: 'base', players: 3, seed: 8, options: { firstPlayer: 0 } });
+    let s = createGame({ scenario: 'base', players: 3, seed: 8, options: { firstPlayer: 0, layout: 'random' } });
     s = place(s, C(0, 0, 0));
     // player 1 cannot use an adjacent intersection
     fail(s, { type: 'placeSettlement', player: 1, vertex: C(0, 0, 1) }, /distance/);
@@ -67,7 +67,7 @@ describe('setup (snake draft)', () => {
   });
 
   it('second settlement need not connect to the first', () => {
-    let s = createGame({ scenario: 'base', players: 3, seed: 9, options: { firstPlayer: 0 } });
+    let s = createGame({ scenario: 'base', players: 3, seed: 9, options: { firstPlayer: 0, layout: 'random' } });
     s = place(s, C(0, 0, 0));
     s = place(s, C(2, -2, 4));
     s = place(s, C(-2, 2, 1));
@@ -79,7 +79,7 @@ describe('setup (snake draft)', () => {
 
   it('gold next to the second settlement asks for a free choice (configurable)', () => {
     const mk = (setupGoldYield: 'choose' | 'none') => {
-      let s = createGame({ scenario: 'base', players: 3, seed: 10, options: { firstPlayer: 0, setupGoldYield } });
+      let s = createGame({ scenario: 'base', players: 3, seed: 10, options: { firstPlayer: 0, layout: 'random', setupGoldYield } });
       setHex(s, 0, 0, 'gold', 6);
       setHex(s, 1, -1, 'gold', 6);
       setHex(s, 1, 0, 'gold', 6);
