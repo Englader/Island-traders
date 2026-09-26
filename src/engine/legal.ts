@@ -142,7 +142,8 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
       if (!isActor) {
         for (const t of s.turn.trades) {
           if (!t.to.includes(player)) continue;
-          if (hasAtLeast(pl.resources, t.get) && !t.accepted.includes(player)) {
+          // an open offer is answered with a counter-offer (proposeTrade with replyTo) or declined
+          if (!t.open && hasAtLeast(pl.resources, t.get) && !t.accepted.includes(player)) {
             out.push({ type: 'acceptTrade', player, tradeId: t.id });
           }
           if (!t.rejected.includes(player)) out.push({ type: 'rejectTrade', player, tradeId: t.id });
@@ -172,8 +173,9 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
         if (t.from === player) {
           for (const partner of t.accepted) out.push({ type: 'confirmTrade', player, tradeId: t.id, partner });
           out.push({ type: 'cancelTrade', player, tradeId: t.id });
-        } else if (t.to.includes(player) && hasAtLeast(pl.resources, t.get)) {
-          out.push({ type: 'acceptTrade', player, tradeId: t.id });
+        } else if (t.to.includes(player)) {
+          if (hasAtLeast(pl.resources, t.get)) out.push({ type: 'acceptTrade', player, tradeId: t.id });
+          out.push({ type: 'rejectTrade', player, tradeId: t.id });
         }
       }
       out.push(...(sc.hooks.legalActions?.(s, player) ?? []));

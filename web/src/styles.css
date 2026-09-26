@@ -1357,6 +1357,66 @@ svg.board {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
+.your-cards {
+  margin-bottom: 10px;
+}
+.your-cards-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.your-cards-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.your-cards-row .rcard {
+  height: 46px;
+}
+.res-have {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.fixed-side {
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.offer.open {
+  border: 2px dashed var(--line);
+}
+.answers {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.answers .hint {
+  margin: 0;
+}
+.answer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--chip);
+}
+.answer-text {
+  font-weight: 600;
+}
+.answer-actions {
+  display: flex;
+  gap: 6px;
+}
 .offers {
   margin-bottom: 10px;
 }

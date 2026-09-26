@@ -29,6 +29,11 @@ export function validCounts(c: unknown): c is PartialCounts {
   return true;
 }
 
+export function sameCounts(a: PartialCounts, b: PartialCounts): boolean {
+  for (const r of RESOURCES) if ((a[r] ?? 0) !== (b[r] ?? 0)) return false;
+  return true;
+}
+
 export function hasAtLeast(have: ResourceCounts, need: PartialCounts): boolean {
   for (const r of RESOURCES) if ((need[r] ?? 0) > have[r]) return false;
   return true;

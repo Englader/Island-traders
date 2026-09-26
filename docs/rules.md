@@ -94,7 +94,14 @@ has the target when their turn starts wins before rolling.
   `cancelTrade`. The active player may address one or more players, and the
   proposer confirms with one of the players who accepted. Non-active players
   may only make counter-offers to the active player; accepting a counter-offer
-  completes it.
+  completes it, and the active player can turn one down.
+- **Open offers** (*engine addition*, a table-talk convenience): the active
+  player may name only one side (`open: true`), e.g. "who gives me 1 brick?"
+  or "what will you give for my brick?". Nobody can accept an open offer as
+  it stands. The others answer with counter-offers (`replyTo`) that keep the
+  named side, or decline. Answering counts as the player's reply. Taking one
+  answer closes the open offer and the other answers; withdrawing it closes
+  them too.
 - Card-for-card only: no gifts, no same resource on both sides, no trades
   between two non-active players, no development cards. Offers are public.
   Holdings are validated again when the trade executes.

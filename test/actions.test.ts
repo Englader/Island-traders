@@ -28,6 +28,58 @@ describe('domestic trade', () => {
     expect(s.players[1].resources).toMatchObject({ grain: 2, brick: 0 });
   });
 
+  it('open offer "who has a brick for me?": others answer with counter-offers, the active player takes one', () => {
+    let s = blank('base', 3);
+    give(s, 0, { wool: 1, grain: 1 });
+    give(s, 1, { brick: 1 });
+    give(s, 2, { brick: 1 });
+    s = act(s, { type: 'proposeTrade', player: 0, give: {}, get: { brick: 1 }, to: [1, 2], open: true });
+    const ask = s.turn.trades[0];
+    expect(ask.open).toBe('give');
+    // it can't be accepted as is, only answered
+    fail(s, { type: 'acceptTrade', player: 1, tradeId: ask.id }, /make an offer/);
+    // the answer has to keep the asked-for side
+    fail(s, { type: 'proposeTrade', player: 1, give: { brick: 1, wool: 0 }, get: {}, to: [0], replyTo: ask.id }, /gifts/);
+    fail(s, { type: 'proposeTrade', player: 1, give: { ore: 1 }, get: { wool: 1 }, to: [0], replyTo: ask.id }, /must give 1 brick/);
+    s = act(s, { type: 'proposeTrade', player: 1, give: { brick: 1 }, get: { wool: 1 }, to: [0], replyTo: ask.id });
+    s = act(s, { type: 'proposeTrade', player: 2, give: { brick: 1 }, get: { grain: 1 }, to: [0], replyTo: ask.id });
+    // answering counts as a reply: nobody is waited for any more
+    expect(s.turn.trades.find((t) => t.id === ask.id)!.rejected).toEqual([1, 2]);
+    const fromChen = s.turn.trades.find((t) => t.from === 2)!;
+    s = act(s, { type: 'acceptTrade', player: 0, tradeId: fromChen.id });
+    expect(s.players[0].resources).toMatchObject({ brick: 1, grain: 0, wool: 1 });
+    expect(s.players[2].resources).toMatchObject({ brick: 0, grain: 1 });
+    // the open offer and the other answer are closed
+    expect(s.turn.trades).toHaveLength(0);
+  });
+
+  it('open offer "what will you give for my brick?"; withdrawing it closes the answers; declining an answer removes it', () => {
+    let s = blank('base', 3);
+    give(s, 0, { brick: 2 });
+    give(s, 1, { ore: 1 });
+    give(s, 2, { wool: 2 });
+    fail(s, { type: 'proposeTrade', player: 0, give: { brick: 1 }, get: { ore: 1 }, to: [1, 2], open: true }, /only what you give or only what you want/);
+    fail(s, { type: 'proposeTrade', player: 0, give: { brick: 3 }, get: {}, to: [1, 2], open: true }, /do not have/);
+    s = act(s, { type: 'proposeTrade', player: 0, give: { brick: 1 }, get: {}, to: [1, 2], open: true });
+    const offer = s.turn.trades[0];
+    expect(offer.open).toBe('get');
+    fail(s, { type: 'proposeTrade', player: 1, give: { ore: 1 }, get: { brick: 2 }, to: [0], replyTo: offer.id }, /must ask for 1 brick/);
+    s = act(s, { type: 'proposeTrade', player: 1, give: { ore: 1 }, get: { brick: 1 }, to: [0], replyTo: offer.id });
+    s = act(s, { type: 'proposeTrade', player: 2, give: { wool: 2 }, get: { brick: 1 }, to: [0], replyTo: offer.id });
+    const ore = s.turn.trades.find((t) => t.from === 1)!;
+    s = act(s, { type: 'rejectTrade', player: 0, tradeId: ore.id });
+    expect(s.turn.trades.map((t) => t.from)).toEqual([0, 2]);
+    s = act(s, { type: 'cancelTrade', player: 0, tradeId: offer.id });
+    expect(s.turn.trades).toHaveLength(0);
+    expect(s.players[0].resources.brick).toBe(2);
+  });
+
+  it('only the active player can make an open offer', () => {
+    let s = blank('base', 3);
+    give(s, 1, { wool: 1 });
+    fail(s, { type: 'proposeTrade', player: 1, give: { wool: 1 }, get: {}, to: [0], open: true }, /only the active player/);
+  });
+
   it('forbids gifts, like-for-like, triangular trades, and trading outside the main phase', () => {
     let s = blank('base', 3);
     give(s, 0, { ore: 2, wool: 1 });

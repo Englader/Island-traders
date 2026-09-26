@@ -114,6 +114,16 @@ export interface TradeOffer {
   get: PartialCounts;
   accepted: PlayerId[];
   rejected: PlayerId[];
+  /**
+   * An open offer names only one side and asks the others what they would
+   * trade: 'give' when the proposer leaves what they give open ("who has a
+   * brick for me?"), 'get' when they leave what they get open ("what will you
+   * give for my brick?"). It can't be accepted as is, only answered with a
+   * counter-offer.
+   */
+  open?: 'give' | 'get';
+  /** A counter-offer: the id of the offer it answers. */
+  replyTo?: number;
 }
 
 export interface TurnState {
@@ -243,7 +253,17 @@ export type Action =
   | { type: 'playYearOfPlenty'; player: PlayerId; resources: Resource[] }
   | { type: 'playMonopoly'; player: PlayerId; resource: Resource }
   | { type: 'endRoadBuilding'; player: PlayerId }
-  | { type: 'proposeTrade'; player: PlayerId; give: PartialCounts; get: PartialCounts; to: PlayerId[] }
+  | {
+      type: 'proposeTrade';
+      player: PlayerId;
+      give: PartialCounts;
+      get: PartialCounts;
+      to: PlayerId[];
+      /** Active player only: leave `give` or `get` empty and let the others offer the other side. */
+      open?: boolean;
+      /** Counter-offer to this offer (addressed to its proposer); an open offer's fixed side must be kept. */
+      replyTo?: number;
+    }
   | { type: 'acceptTrade'; player: PlayerId; tradeId: number }
   | { type: 'rejectTrade'; player: PlayerId; tradeId: number }
   | { type: 'confirmTrade'; player: PlayerId; tradeId: number; partner: PlayerId }

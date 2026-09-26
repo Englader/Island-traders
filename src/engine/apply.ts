@@ -1,5 +1,5 @@
 import { COSTS, LARGEST_ARMY_MIN, RESOURCES } from '../core/constants.js';
-import { hasAtLeast, isResource, total, transfer, validCounts } from '../core/resources.js';
+import { hasAtLeast, isResource, sameCounts, total, transfer, validCounts } from '../core/resources.js';
 import { rollDie } from '../core/rng.js';
 import type {
   Action,
@@ -10,6 +10,7 @@ import type {
   HarborType,
   Phase,
   PlayerId,
+  TradeOffer,
   TurnRole,
   VertexId,
 } from '../core/types.js';
@@ -761,20 +762,51 @@ function domesticTradeWindowError(s: GameState): string | null {
 function proposeTrade(s: GameState, a: A<'proposeTrade'>): string | null {
   const w = domesticTradeWindowError(s);
   if (w) return w;
-  const shape = tradeShapeError(a.give, a.get);
-  if (shape) return shape;
   const actor = s.turn.actor;
+  let open: 'give' | 'get' | undefined;
+  if (a.open) {
+    if (a.player !== actor) return 'only the active player can ask for offers';
+    if (!validCounts(a.give) || !validCounts(a.get)) return 'invalid trade';
+    if ((total(a.give) === 0) === (total(a.get) === 0)) return 'an open offer names only what you give or only what you want';
+    open = total(a.give) === 0 ? 'give' : 'get';
+  } else {
+    const shape = tradeShapeError(a.give, a.get);
+    if (shape) return shape;
+  }
   if (!Array.isArray(a.to) || a.to.length === 0) return 'choose who to trade with';
   const to = [...new Set(a.to)];
   if (to.some((p) => !Number.isInteger(p) || p < 0 || p >= s.players.length || p === a.player)) return 'invalid trade partner';
   if (a.player !== actor && (to.length !== 1 || to[0] !== actor)) {
     return 'you may only trade with the active player';
   }
+  let answers: TradeOffer | undefined;
+  if (a.replyTo !== undefined) {
+    answers = s.turn.trades.find((t) => t.id === a.replyTo);
+    if (!answers) return 'that offer is no longer open';
+    if (answers.from !== actor || !answers.to.includes(a.player)) return 'you can only answer offers made to you';
+    if (answers.open === 'give' && !sameCounts(a.give, answers.get)) return `your offer must give ${describeCounts(answers.get)}`;
+    if (answers.open === 'get' && !sameCounts(a.get, answers.give)) return `your offer must ask for ${describeCounts(answers.give)}`;
+  }
   if (!hasAtLeast(s.players[a.player].resources, a.give)) return 'you do not have those cards';
   const id = s.turn.nextTradeId++;
-  s.turn.trades.push({ id, from: a.player, to, give: { ...a.give }, get: { ...a.get }, accepted: [], rejected: [] });
-  log(s, `${nameOf(s, a.player)} offers ${describeCounts(a.give)} for ${describeCounts(a.get)}`);
+  const offer: TradeOffer = { id, from: a.player, to, give: { ...a.give }, get: { ...a.get }, accepted: [], rejected: [] };
+  if (open) offer.open = open;
+  if (answers) {
+    offer.replyTo = answers.id;
+    // answering with a counter-offer is this player's reply to the offer
+    if (!answers.rejected.includes(a.player)) answers.rejected.push(a.player);
+    answers.accepted = answers.accepted.filter((p) => p !== a.player);
+  }
+  s.turn.trades.push(offer);
+  if (open === 'give') log(s, `${nameOf(s, a.player)} asks for ${describeCounts(a.get)}: what will you give?`);
+  else if (open === 'get') log(s, `${nameOf(s, a.player)} offers ${describeCounts(a.give)}: what will you give for it?`);
+  else log(s, `${nameOf(s, a.player)} offers ${describeCounts(a.give)} for ${describeCounts(a.get)}`);
   return null;
+}
+
+/** Closes an open offer together with the counter-offers that answer it. */
+function closeOpenOffer(s: GameState, id: number): void {
+  s.turn.trades = s.turn.trades.filter((t) => t.id !== id && t.replyTo !== id);
 }
 
 function executeTrade(s: GameState, tradeId: number, partner: PlayerId): string | null {
@@ -786,6 +818,9 @@ function executeTrade(s: GameState, tradeId: number, partner: PlayerId): string 
   transfer(from, to, offer.give);
   transfer(to, from, offer.get);
   s.turn.trades = s.turn.trades.filter((t) => t.id !== tradeId);
+  // a counter-offer to an open offer settles it: the others are no longer needed
+  const answered = offer.replyTo === undefined ? undefined : s.turn.trades.find((t) => t.id === offer.replyTo);
+  if (answered?.open) closeOpenOffer(s, answered.id);
   log(s, `${nameOf(s, offer.from)} trades ${describeCounts(offer.give)} to ${nameOf(s, partner)} for ${describeCounts(offer.get)}`);
   return null;
 }
@@ -796,6 +831,7 @@ function acceptTrade(s: GameState, a: A<'acceptTrade'>): string | null {
   const offer = s.turn.trades.find((t) => t.id === a.tradeId);
   if (!offer) return 'no such offer';
   if (!offer.to.includes(a.player)) return 'the offer is not addressed to you';
+  if (offer.open) return 'make an offer for it instead';
   if (!hasAtLeast(s.players[a.player].resources, offer.get)) return 'you do not have the requested cards';
   if (offer.from !== s.turn.actor) {
     // A counter-offer to the active player: accepting completes it.
@@ -811,6 +847,11 @@ function rejectTrade(s: GameState, a: A<'rejectTrade'>): string | null {
   const offer = s.turn.trades.find((t) => t.id === a.tradeId);
   if (!offer) return 'no such offer';
   if (!offer.to.includes(a.player)) return 'the offer is not addressed to you';
+  if (a.player === s.turn.actor && offer.from !== a.player) {
+    // the active player turns down a counter-offer: it goes away
+    s.turn.trades = s.turn.trades.filter((t) => t.id !== offer.id);
+    return null;
+  }
   if (!offer.rejected.includes(a.player)) offer.rejected.push(a.player);
   offer.accepted = offer.accepted.filter((p) => p !== a.player);
   return null;
@@ -830,7 +871,8 @@ function cancelTrade(s: GameState, a: A<'cancelTrade'>): string | null {
   const offer = s.turn.trades.find((t) => t.id === a.tradeId);
   if (!offer) return 'no such offer';
   if (offer.from !== a.player) return 'only the proposer can cancel';
-  s.turn.trades = s.turn.trades.filter((t) => t.id !== a.tradeId);
+  if (offer.open) closeOpenOffer(s, offer.id);
+  else s.turn.trades = s.turn.trades.filter((t) => t.id !== a.tradeId);
   return null;
 }
 

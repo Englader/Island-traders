@@ -9,6 +9,7 @@ import type {
   PlayerId,
   Resource,
   ResourceCounts,
+  TradeOffer,
   VertexId,
 } from '../core/types.js';
 import { applyAction } from '../engine/apply.js';
@@ -405,13 +406,60 @@ function respondToTrades(s: GameState, p: PlayerId, acts: Action[]): Action | nu
     const reject = acts.find((a) => a.type === 'rejectTrade' && a.tradeId === t.id);
     const target = s.players[p].supply.settlements > 0 ? COSTS.settlement : COSTS.city;
     const wants = resourceWants(s, p, target);
+    const proposerClose = totalVPPublic(s, t.from) >= s.victoryTarget - 2;
+    if (t.open) {
+      const counter = proposerClose ? null : counterOffer(s, p, t, wants);
+      if (counter) return counter;
+      if (reject) return reject;
+      continue;
+    }
     let gain = 0;
     for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
-    const proposerClose = totalVPPublic(s, t.from) >= s.victoryTarget - 2;
     if (accept && gain > 0.4 && !proposerClose) return accept;
     if (reject) return reject;
   }
   return null;
+}
+
+/**
+ * Answers an open offer card for card: for "who has X for me?" the bot gives
+ * X (if it can spare it) for what it needs most; for "what will you give for
+ * X?" it pays with what it needs least, if it wants X. It prefers asking for
+ * something the proposer actually holds, so the offer can be taken.
+ */
+function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Resource, number>): Action | null {
+  const mine = s.players[p].resources;
+  const theirs = s.players[t.from].resources;
+  if (t.open === 'give') {
+    const n = total(t.get);
+    if (n === 0 || !hasAtLeast(mine, t.get)) return null;
+    let cost = 0;
+    for (const r of RESOURCES) cost += (t.get[r] ?? 0) * wants[r];
+    // ask card by card for what it values most, up to one card more than it gives
+    const ask: PartialCounts = {};
+    let value = 0;
+    for (let k = 0; k < n + 1 && value - cost <= 0.3; k++) {
+      const r = best(
+        RESOURCES.filter((x) => !(t.get[x] ?? 0)),
+        (x) => wants[x] - (ask[x] ?? 0) * 0.4 + (theirs[x] > (ask[x] ?? 0) ? 0.5 : -2),
+      );
+      if (!r) break;
+      ask[r] = (ask[r] ?? 0) + 1;
+      value += wants[r];
+    }
+    if (value - cost <= 0.3 || total(ask) === 0) return null;
+    return { type: 'proposeTrade', player: p, give: { ...t.get }, get: ask, to: [t.from], replyTo: t.id };
+  }
+  const n = total(t.give);
+  if (n === 0) return null;
+  let value = 0;
+  for (const r of RESOURCES) value += (t.give[r] ?? 0) * wants[r];
+  const pay = best(
+    RESOURCES.filter((r) => !(t.give[r] ?? 0) && mine[r] >= n),
+    (r) => -wants[r] + mine[r] * 0.05,
+  );
+  if (!pay || value - wants[pay] * n <= 0.3) return null;
+  return { type: 'proposeTrade', player: p, give: { [pay]: n }, get: { ...t.give }, to: [t.from], replyTo: t.id };
 }
 
 function totalVPPublic(s: GameState, p: PlayerId): number {
