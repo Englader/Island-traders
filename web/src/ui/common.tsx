@@ -85,27 +85,18 @@ export function ResourcePicker({
   max,
   onChange,
   step,
-  have,
-  only,
 }: {
   value: PartialCounts;
   max: PartialCounts;
   onChange(v: PartialCounts): void;
   step?: PartialCounts;
-  /** The player's own cards, shown next to each resource. */
-  have?: PartialCounts;
-  /** Only these resources can be picked (the others are left out). */
-  only?: Resource[];
 }) {
   return (
     <div class="res-picker">
-      {RESOURCE_LIST.filter((r) => !only || only.includes(r)).map((r) => (
+      {RESOURCE_LIST.map((r) => (
         <div class="res-picker-row" key={r}>
           <ResIcon r={r} />
-          <span class="res-label">
-            {RESOURCE_INFO[r].label}
-            {have && <span class="res-have"> · you have {have[r] ?? 0}</span>}
-          </span>
+          <span class="res-label">{RESOURCE_INFO[r].label}</span>
           <Stepper
             label={RESOURCE_INFO[r].label}
             value={value[r] ?? 0}

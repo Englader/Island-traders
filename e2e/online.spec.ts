@@ -10,7 +10,9 @@ async function place(page: Page): Promise<boolean> {
   if (!kind) return false;
   const targets = page.locator(`[data-pick^="${kind}:"]`);
   const n = await targets.count();
-  for (let i = 0; i < n; i++) {
+  // start from the middle of the list: spots inland touch more tiles and bring in more cards
+  for (let k = 0; k < n; k++) {
+    const i = (Math.floor(n / 2) + k) % n;
     try {
       await targets.nth(i).click({ timeout: 800 });
       await page.locator('.confirm-bar button.primary').first().click({ timeout: 2000 });
@@ -118,8 +120,8 @@ test('open trade: the active player asks what a friend would give for a card; th
   await expect(guest.locator('main')).toContainText('Waiting for');
   await playSetup(host, guest, 'Trader');
 
-  // play until the host or the friend may trade with a card in hand (rolling, moving the
-  // robber after a 7, and passing turns while the hand is empty)
+  // play until the host or the friend may trade and both have cards (rolling, moving the
+  // robber after a 7, and passing turns while a hand is empty)
   let actor: Page | null = null;
   let other: Page | null = null;
   const deadline = Date.now() + 90_000;
@@ -142,8 +144,8 @@ test('open trade: the active player asks what a friend would give for a card; th
       }
       if (await a.getByRole('button', { name: /Trade/ }).first().isVisible()) {
         // a second settlement by the desert or the sea, or the robber, can leave a hand empty
-        const hand = (await a.locator('.hand .rtile:not(.dev) .rtile-n').allTextContents()).map(Number);
-        if (hand.some((n) => n > 0)) {
+        const cards = async (p: Page) => (await p.locator('.hand .rtile:not(.dev) .rtile-n').allTextContents()).map(Number);
+        if ((await cards(a)).some((n) => n > 0) && (await cards(b)).some((n) => n > 0)) {
           actor = a;
           other = b;
           break;
@@ -163,17 +165,18 @@ test('open trade: the active player asks what a friend would give for a card; th
   const before = (await a.locator('.your-cards .rtile-n').allTextContents()).map(Number);
   const most = before.indexOf(Math.max(...before));
   expect(before[most]).toBeGreaterThan(0);
-  await a.locator('.res-picker').nth(0).locator('.res-picker-row').nth(most).getByRole('button', { name: 'more' }).click();
-  await a.getByRole('button', { name: /Ask what they/ }).click();
+  const card = ['Brick', 'Lumber', 'Wool', 'Grain', 'Ore'][most];
+  await a.getByRole('button', { name: `Give one more ${card}` }).click();
+  await a.getByRole('button', { name: 'Ask for offers' }).click();
   await expect(a.locator('.offer.open')).toContainText('what will they give for it?');
 
   // the friend sees the open offer and answers with a card of their own
   const sheet = b.locator('.sheet[aria-label="Trade offer"]');
   await expect(sheet).toContainText('What will you give for it?');
   await sheet.getByRole('button', { name: /Make an offer/ }).click();
-  await expect(b.locator('.fixed-side')).toBeVisible();
-  const plus = b.locator('.res-picker button[aria-label="more"]:not([disabled])').first();
-  await plus.click();
+  // the card offered is locked in; the friend gives one of theirs for it (▼)
+  await expect(b.locator('.tbox.locked')).toHaveAttribute('data-value', '1');
+  await b.locator('.tbox:not(.locked) .tbox-btn.down:not([disabled])').first().click();
   await b.getByRole('button', { name: 'Send offer' }).click();
 
   // the answer shows up under the open offer; accepting it makes the trade and closes the offer
