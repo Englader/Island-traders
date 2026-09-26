@@ -14,7 +14,9 @@
   --sun-edge: #c98b0c;
   --sun-ink: #2b1d00;
   --danger: #b3261e;
+  --danger-soft: #fbe7e4;
   --ok: #23884a;
+  --ok-soft: #e1f3e7;
   --sea-1: #3e93cf;
   --sea-2: #1d5e95;
   --sea-3: #154a78;
@@ -43,7 +45,9 @@
     --sun-edge: #b27805;
     --sun-ink: #231700;
     --danger: #ff7a70;
+    --danger-soft: #3d2126;
     --ok: #62c985;
+    --ok-soft: #173a2b;
     --sea-1: #1f6397;
     --sea-2: #123f66;
     --sea-3: #0b2c49;
@@ -67,7 +71,9 @@
   --sun-edge: #b27805;
   --sun-ink: #231700;
   --danger: #ff7a70;
+  --danger-soft: #3d2126;
   --ok: #62c985;
+  --ok-soft: #173a2b;
   --sea-1: #1f6397;
   --sea-2: #123f66;
   --sea-3: #0b2c49;
@@ -1327,16 +1333,6 @@ svg.board {
   font-size: 0.72rem;
   color: var(--ink-2);
 }
-.trade-summary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  font-family: var(--display);
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 10px 0;
-}
 .tabs {
   display: flex;
   gap: 6px;
@@ -1378,17 +1374,241 @@ svg.board {
 .your-cards-row .rtile {
   height: 50px;
 }
-.res-have {
-  font-size: 0.8rem;
+/* the trade row (ui/TradeRow.tsx): one box per resource, ▲ get / ▼ give */
+.trow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.tcol {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+}
+.tbox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: 14px;
+  background: var(--chip);
+  border: 1.5px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.tbox.get {
+  border-color: var(--ok);
+  background: var(--ok-soft);
+}
+.tbox.give {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.tbox.locked {
+  border-style: dashed;
+  box-shadow: none;
+}
+.tbox-btn {
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.tbox-btn.up {
+  color: var(--ok);
+}
+.tbox-btn.down {
+  color: var(--danger);
+}
+.tbox-btn:active:not(:disabled) {
+  transform: none;
+  border-bottom-width: 0;
+}
+.tbox-btn.up:active:not(:disabled) {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.tbox-btn.down:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+@media (hover: hover) {
+  .tbox-btn.up:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+  .tbox-btn.down:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+  }
+}
+.tbox-btn:disabled {
+  opacity: 0.22;
+}
+.tbox-btn:focus-visible {
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+.tbox-chev {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tbox-card {
+  position: relative;
+  display: block;
+  padding: 0 6px;
+}
+.tbox-card .rtile {
+  height: 46px;
+  transition:
+    filter 0.15s ease,
+    opacity 0.15s ease;
+}
+.tbox.zero .tbox-card .rtile {
+  filter: saturate(0.35);
+  opacity: 0.72;
+}
+.tbox-lock {
+  position: absolute;
+  top: -5px;
+  right: 1px;
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  fill: var(--ink-2);
+  stroke: var(--ink-2);
+  stroke-width: 1.6;
+}
+.tbox-val {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 3px;
+  line-height: 1;
+  animation: tpop 0.18s ease-out;
+}
+.tbox-n {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+.tbox-side {
+  margin-top: 1px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tbox.get .tbox-val {
+  color: var(--ok);
+}
+.tbox.give .tbox-val {
+  color: var(--danger);
+}
+.tbox.zero .tbox-val {
+  color: var(--ink-2);
+  opacity: 0.6;
+}
+@keyframes tpop {
+  from {
+    transform: scale(1.25);
+  }
+}
+.tnote {
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+/* harbor rates: 3:1 in the accent colour, 2:1 on a pill */
+.tnote.r3 {
+  color: var(--accent);
+}
+.tnote.r2 {
+  align-self: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tsum {
+  min-height: 1.5em;
+  margin: 4px 0 8px;
+  text-align: center;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.tsum-tip {
+  color: var(--ink-2);
+  font-size: 0.88rem;
+}
+.tsum-give b {
+  color: var(--danger);
+}
+.tsum-get b {
+  color: var(--ok);
+}
+.tsum-dot {
   color: var(--ink-2);
 }
-.fixed-side {
-  margin: 4px 0 8px;
-  padding: 8px 12px;
+.tto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tto-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-right: 2px;
+}
+.tto .chip {
+  min-height: 40px;
+  padding: 0.3em 0.8em;
+  border-radius: 999px;
+}
+.tsend {
+  margin-bottom: 10px;
+}
+.twhy {
+  margin: 0 0 6px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+.tctx {
+  margin: 0 0 8px;
+  padding: 6px 10px;
   border-radius: 12px;
   background: var(--panel-2);
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tbox-val {
+    animation: none;
+  }
+  .tbox,
+  .tbox-card .rtile {
+    transition: none;
+  }
 }
 .offer.open {
   border: 2px dashed var(--line);

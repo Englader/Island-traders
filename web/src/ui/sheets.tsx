@@ -16,8 +16,10 @@ import { useMemo, useState } from 'preact/hooks';
 import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST, WONDER_INFO, countsText, harborLabel } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import { Cost, ResIcon, ResourcePicker, Sheet, cleanCounts, sumCounts } from './common';
-import { Counts, ResGlyph } from './icons';
+import { Counts } from './icons';
 import { DevCardView, ResourceCard } from './cards';
+import { TradeRow, TradeSummary } from './TradeRow';
+import { bankCheck, rowKind, rowOf, rowSides, type BoxRule, type SignedCounts } from '../game/trade';
 
 export interface SheetProps {
   view: GameView;
@@ -136,6 +138,40 @@ function offerText(t: TradeOffer, view: GameView, seat: PlayerId): ComponentChil
   );
 }
 
+/** The most cards of one kind a player can ask another player for. */
+const MAX_ASK = 9;
+
+/** Can this player give what the row gives? */
+function affordable(row: SignedCounts, hand: PartialCounts): boolean {
+  return RESOURCE_LIST.every((r) => -(row[r] ?? 0) <= (hand[r] ?? 0));
+}
+
+/** Box rules for a trade with players: give up to what you hold, ask for up to MAX_ASK. */
+function playerRules(hand: PartialCounts): Record<Resource, BoxRule> {
+  const out = {} as Record<Resource, BoxRule>;
+  for (const r of RESOURCE_LIST) out[r] = { min: -(hand[r] ?? 0), max: MAX_ASK };
+  return out;
+}
+
+/**
+ * The send button. While the row is empty the summary line above says what
+ * to do; `why` explains any other reason it can't be pressed yet.
+ */
+function SendButton({ disabled, why, onClick, children }: { disabled: boolean; why: string | null; onClick(): void; children: ComponentChildren }) {
+  return (
+    <div class="tsend">
+      {why && (
+        <p class="twhy" id="trade-why">
+          {why}
+        </p>
+      )}
+      <button type="button" class="primary wide" disabled={disabled} aria-describedby={why ? 'trade-sum trade-why' : 'trade-sum'} onClick={onClick}>
+        {children}
+      </button>
+    </div>
+  );
+}
+
 export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProps) {
   const me = view.players[seat];
   const hand = me.resources!;
@@ -148,15 +184,29 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
     !(view.options.tradeBuildMode === 'separate' && view.turn.buildingStarted);
   const [tab, setTab] = useState<'bank' | 'players'>(domestic ? 'players' : 'bank');
 
-  // bank
-  const [give, setGive] = useState<Resource | null>(null);
-  const [get, setGet] = useState<Resource | null>(null);
-  const [lots, setLots] = useState(1);
-  const maxLots = give && get ? Math.min(Math.floor(hand[give] / rates[give]), view.bank[get]) : 0;
+  // bank: ▼ gives a lot at the resource's rate, ▲ takes one card from the bank
+  const [bankRow, setBankRow] = useState<SignedCounts>({});
+  const bankRules = {} as Record<Resource, BoxRule>;
+  const rateNotes = {} as Record<Resource, { text: string; tone?: string }>;
+  for (const r of RESOURCE_LIST) {
+    bankRules[r] = { min: -Math.floor(hand[r] / rates[r]) * rates[r], max: view.bank[r], lot: rates[r] };
+    rateNotes[r] = { text: `${rates[r]}:1`, tone: rates[r] < 4 ? `r${rates[r]}` : undefined };
+  }
+  const bank = bankCheck(bankRow, rates);
+  const bankWhy = !canBank
+    ? 'You can trade with the bank during your turn, after rolling.'
+    : bank.lots === 0 && bank.cards === 0
+      ? null
+      : bank.lots > bank.cards
+        ? `That pays for ${bank.lots} card${bank.lots === 1 ? '' : 's'}: pick ${bank.lots - bank.cards} more (▲)`
+        : bank.cards > bank.lots
+          ? `Give more (▼) to pay for ${bank.cards} card${bank.cards === 1 ? '' : 's'}`
+          : !affordable(bankRow, hand)
+            ? "You don't have those cards"
+            : null;
 
   // players
-  const [offerGive, setOfferGive] = useState<PartialCounts>({});
-  const [offerGet, setOfferGet] = useState<PartialCounts>({});
+  const [offerRow, setOfferRow] = useState<SignedCounts>({});
   const others = view.players.filter((p) => p.id !== seat).map((p) => p.id);
   const [to, setTo] = useState<PlayerId[]>(others);
   const mine = view.turn.trades.filter((t) => t.from === seat);
@@ -164,23 +214,8 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
   // answers to an open offer are listed under it; other counter-offers on their own
   const counters = view.turn.trades.filter((t) => t.from !== seat && t.to.includes(seat) && !(t.replyTo !== undefined && openIds.has(t.replyTo)));
   const answers = (id: number) => view.turn.trades.filter((t) => t.replyTo === id && t.from !== seat);
-  const giveN = sumCounts(offerGive);
-  const getN = sumCounts(offerGet);
-  const same = RESOURCE_LIST.some((r) => (offerGive[r] ?? 0) > 0 && (offerGet[r] ?? 0) > 0);
-  const kind = giveN > 0 && getN > 0 ? 'offer' : giveN > 0 ? 'open-get' : getN > 0 ? 'open-give' : null;
-  const offerOk = kind !== null && to.length > 0 && !same;
-  const offerLabel =
-    kind === 'open-give' ? (
-      <>
-        Ask who gives <Counts c={offerGet} />
-      </>
-    ) : kind === 'open-get' ? (
-      <>
-        Ask what they'd give for <Counts c={offerGive} />
-      </>
-    ) : (
-      'Make offer'
-    );
+  const kind = rowKind(offerRow);
+  const offerWhy = kind === 'empty' ? null : to.length === 0 ? 'Choose who to offer to' : !affordable(offerRow, hand) ? "You don't have those cards" : null;
   const accept = (t: TradeOffer) => (
     <>
       <button
@@ -202,84 +237,59 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
       <YourCards hand={hand} />
       {domestic && (
         <div class="tabs" role="tablist">
-          <button type="button" class={tab === 'players' ? 'tab on' : 'tab'} onClick={() => setTab('players')}>
+          <button type="button" role="tab" aria-selected={tab === 'players'} class={tab === 'players' ? 'tab on' : 'tab'} onClick={() => setTab('players')}>
             Players {counters.length > 0 ? `(${counters.length})` : ''}
           </button>
-          <button type="button" class={tab === 'bank' ? 'tab on' : 'tab'} onClick={() => setTab('bank')}>
+          <button type="button" role="tab" aria-selected={tab === 'bank'} class={tab === 'bank' ? 'tab on' : 'tab'} onClick={() => setTab('bank')}>
             Bank & harbors
           </button>
         </div>
       )}
       {tab === 'bank' || !domestic ? (
         <div class="bank-trade">
-          {!canBank && <p class="hint">You can trade with the bank during your turn (after rolling).</p>}
-          <h3>Give</h3>
-          <div class="res-choice">
-            {RESOURCE_LIST.map((r) => (
-              <button
-                type="button"
-                key={r}
-                class={give === r ? 'res-btn on' : 'res-btn'}
-                disabled={hand[r] < rates[r]}
-                onClick={() => {
-                  setGive(r);
-                  setLots(1);
-                  if (get === r) setGet(null);
-                }}
-              >
-                <ResIcon r={r} n={hand[r]} />
-                <span class="rate">{rates[r]}:1</span>
-              </button>
-            ))}
-          </div>
-          <h3>Get</h3>
-          <div class="res-choice">
-            {RESOURCE_LIST.map((r) => (
-              <button
-                type="button"
-                key={r}
-                class={get === r ? 'res-btn on' : 'res-btn'}
-                disabled={r === give || view.bank[r] === 0}
-                onClick={() => {
-                  setGet(r);
-                  setLots(1);
-                }}
-              >
-                <ResIcon r={r} />
-                <span class="rate">{view.bank[r]} in bank</span>
-              </button>
-            ))}
-          </div>
-          {give && get && (
-            <div class="trade-summary">
-              <button type="button" class="small-btn" disabled={lots <= 1} onClick={() => setLots(lots - 1)}>
-                −
-              </button>
-              <span>
-                {lots * rates[give]}
-                <ResGlyph r={give} /> → {lots}
-                <ResGlyph r={get} />
-              </span>
-              <button type="button" class="small-btn" disabled={lots >= maxLots} onClick={() => setLots(lots + 1)}>
-                +
-              </button>
-            </div>
-          )}
-          <button
-            type="button"
-            class="primary wide"
-            disabled={!canBank || !give || !get || maxLots < 1}
+          <TradeRow row={bankRow} rules={bankRules} notes={rateNotes} onChange={setBankRow} />
+          <TradeSummary row={bankRow} tip="▼ gives cards at the rate shown · ▲ takes a card" />
+          <SendButton
+            disabled={!canBank || !bank.ok || !affordable(bankRow, hand)}
+            why={bankWhy}
             onClick={() => {
-              send({ type: 'bankTrade', player: seat, give: { [give!]: lots * rates[give!] }, get: { [get!]: lots } });
-              setGive(null);
-              setGet(null);
+              const { give, get } = rowSides(bankRow);
+              send({ type: 'bankTrade', player: seat, give, get });
+              setBankRow({});
             }}
           >
             Trade with the bank
-          </button>
+          </SendButton>
         </div>
       ) : (
         <div class="player-trade">
+          <TradeRow row={offerRow} rules={playerRules(hand)} onChange={setOfferRow} />
+          <TradeSummary row={offerRow} tip="▲ a card you want · ▼ a card you give" />
+          <div class="tto" role="group" aria-label="Offer to">
+            <span class="tto-label">Offer to</span>
+            {others.map((p) => (
+              <button
+                type="button"
+                key={p}
+                class={to.includes(p) ? 'chip on' : 'chip'}
+                aria-pressed={to.includes(p)}
+                onClick={() => setTo(to.includes(p) ? to.filter((x) => x !== p) : [...to, p])}
+              >
+                <Dot color={colors[p]} /> {nameOf(view, p)}
+              </button>
+            ))}
+          </div>
+          <SendButton
+            disabled={kind === 'empty' || offerWhy !== null}
+            why={offerWhy}
+            onClick={() => {
+              const { give, get } = rowSides(offerRow);
+              send({ type: 'proposeTrade', player: seat, give, get, to, ...(kind === 'offer' ? {} : { open: true }) });
+              setOfferRow({});
+            }}
+          >
+            {kind === 'give' || kind === 'get' ? 'Ask for offers' : 'Make offer'}
+          </SendButton>
           {counters.length > 0 && (
             <div class="offers">
               <h3>Offers to you</h3>
@@ -323,43 +333,6 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
               ))}
             </div>
           )}
-          <h3>You give</h3>
-          <ResourcePicker value={offerGive} max={hand} have={hand} onChange={setOfferGive} />
-          <h3>You get</h3>
-          <ResourcePicker value={offerGet} max={{ brick: 9, lumber: 9, wool: 9, grain: 9, ore: 9 }} have={hand} onChange={setOfferGet} />
-          <p class="hint">Leave one side empty to ask the others what they would trade.</p>
-          <h3>Offer to</h3>
-          <div class="chips">
-            {others.map((p) => (
-              <button
-                type="button"
-                key={p}
-                class={to.includes(p) ? 'chip on' : 'chip'}
-                onClick={() => setTo(to.includes(p) ? to.filter((x) => x !== p) : [...to, p])}
-              >
-                <Dot color={colors[p]} /> {nameOf(view, p)}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            class="primary wide"
-            disabled={!offerOk}
-            onClick={() => {
-              send({
-                type: 'proposeTrade',
-                player: seat,
-                give: cleanCounts(offerGive),
-                get: cleanCounts(offerGet),
-                to,
-                ...(kind === 'offer' ? {} : { open: true }),
-              });
-              setOfferGive({});
-              setOfferGet({});
-            }}
-          >
-            {offerLabel}
-          </button>
         </div>
       )}
     </Sheet>
@@ -401,61 +374,66 @@ function OfferRow({
   );
 }
 
+/**
+ * The rules for a counter-offer's row, from the answering player's side. An
+ * open offer fixes one side and the engine wants it kept exactly: "who gives
+ * me 1 brick?" locks the brick this player gives and leaves only asking for
+ * something in return; "what will you give for my wool?" locks the wool this
+ * player gets and leaves only giving.
+ */
+function counterRules(t: TradeOffer, hand: PartialCounts): Record<Resource, BoxRule> {
+  const locked = t.open === 'give' ? rowOf(t.get, {}) : t.open === 'get' ? rowOf({}, t.give) : {};
+  const out = {} as Record<Resource, BoxRule>;
+  for (const r of RESOURCE_LIST) {
+    const v = locked[r];
+    if (v !== undefined) out[r] = { min: v, max: v, locked: true };
+    else if (t.open === 'give') out[r] = { min: 0, max: MAX_ASK };
+    else if (t.open === 'get') out[r] = { min: -(hand[r] ?? 0), max: 0 };
+    else out[r] = { min: -(hand[r] ?? 0), max: MAX_ASK };
+  }
+  return out;
+}
+
 /** A player answers the active player's offer: accept, decline, or make a counter-offer. */
 export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProps, 'close'>) {
   const offers = view.turn.trades.filter((t) => t.to.includes(seat) && t.from === view.turn.actor && !t.accepted.includes(seat) && !t.rejected.includes(seat));
   const [counter, setCounter] = useState<TradeOffer | null>(null);
-  const [cGive, setCGive] = useState<PartialCounts>({});
-  const [cGet, setCGet] = useState<PartialCounts>({});
+  const [row, setRow] = useState<SignedCounts>({});
   const hand = view.players[seat].resources!;
   if (offers.length === 0) return null;
   if (counter) {
-    // an open offer fixes one side: the other player's request or card stays as it is
-    const fixedGive = counter.open === 'give';
-    const fixedGet = counter.open === 'get';
-    const fixed = fixedGive ? counter.get : counter.give;
-    const others = RESOURCE_LIST.filter((r) => !((fixed[r] ?? 0) > 0));
-    const ok =
-      sumCounts(cGive) > 0 &&
-      sumCounts(cGet) > 0 &&
-      RESOURCE_LIST.every((r) => !((cGive[r] ?? 0) > 0 && (cGet[r] ?? 0) > 0)) &&
-      RESOURCE_LIST.every((r) => (cGive[r] ?? 0) <= (hand[r] ?? 0));
+    const { give, get } = rowSides(row);
+    const gives = sumCounts(give) > 0;
+    const gets = sumCounts(get) > 0;
+    const why = !gets
+      ? counter.open === 'give'
+        ? 'Pick what you want for it (▲)'
+        : 'Pick what you want (▲)'
+      : !gives
+        ? counter.open === 'get'
+          ? 'Pick what you give for it (▼)'
+          : 'Pick what you give (▼)'
+        : !affordable(row, hand)
+          ? "You don't have those cards"
+          : null;
     return (
       <Sheet title={counter.open ? `Your offer to ${nameOf(view, counter.from)}` : `Counter-offer to ${nameOf(view, counter.from)}`} onClose={() => setCounter(null)} wide>
         <YourCards hand={hand} />
-        <h3>You give</h3>
-        {fixedGive ? (
-          <p class="fixed-side">
-            <Counts c={fixed} />
-          </p>
-        ) : (
-          <ResourcePicker value={cGive} max={hand} have={hand} only={fixedGet ? others : undefined} onChange={setCGive} />
-        )}
-        <h3>You get</h3>
-        {fixedGet ? (
-          <p class="fixed-side">
-            <Counts c={fixed} />
-          </p>
-        ) : (
-          <ResourcePicker
-            value={cGet}
-            max={{ brick: 9, lumber: 9, wool: 9, grain: 9, ore: 9 }}
-            have={hand}
-            only={fixedGive ? others : undefined}
-            onChange={setCGet}
-          />
-        )}
-        <button
-          type="button"
-          class="primary wide"
-          disabled={!ok}
+        <p class="tctx">
+          <Dot color={colors[counter.from]} /> {offerText(counter, view, seat)}
+        </p>
+        <TradeRow row={row} rules={counterRules(counter, hand)} onChange={setRow} />
+        <TradeSummary row={row} tip="▲ a card you want · ▼ a card you give" />
+        <SendButton
+          disabled={why !== null}
+          why={why}
           onClick={() => {
-            send({ type: 'proposeTrade', player: seat, give: cleanCounts(cGive), get: cleanCounts(cGet), to: [counter.from], replyTo: counter.id });
+            send({ type: 'proposeTrade', player: seat, give, get, to: [counter.from], replyTo: counter.id });
             setCounter(null);
           }}
         >
           Send offer
-        </button>
+        </SendButton>
       </Sheet>
     );
   }
@@ -470,8 +448,7 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
               class="primary"
               disabled={t.open === 'give' && !RESOURCE_LIST.every((r) => (t.get[r] ?? 0) <= (hand[r] ?? 0))}
               onClick={() => {
-                setCGive(t.open === 'give' ? { ...t.get } : {});
-                setCGet(t.open === 'get' ? { ...t.give } : {});
+                setRow(t.open === 'give' ? rowOf(t.get, {}) : rowOf({}, t.give));
                 setCounter(t);
               }}
             >
@@ -490,8 +467,8 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
               <button
                 type="button"
                 onClick={() => {
-                  setCGive({ ...t.get });
-                  setCGet({ ...t.give });
+                  // the same trade from this side: give what they ask for, get what they give
+                  setRow(rowOf(t.get, t.give));
                   setCounter(t);
                 }}
               >
