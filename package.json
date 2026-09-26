@@ -1,0 +1,29 @@
+{
+  "name": "island-traders",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Island Traders: an unofficial rules engine for Catan-style island trading games, including the Seafarers scenarios and 5-6 player modes.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json",
+    "test": "vitest run",
+    "demo": "vite-node scripts/demo.ts --",
+    "web:dev": "vite --config web/vite.config.ts",
+    "web:build": "vite build --config web/vite.config.ts",
+    "web:preview": "vite preview --config web/vite.config.ts",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.0.0",
+    "peer": "1.0.2",
+    "peerjs": "1.5.5",
+    "preact": "10.29.8",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}

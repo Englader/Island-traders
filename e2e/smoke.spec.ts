@@ -1,0 +1,157 @@
+import { expect, test, type Page } from '@playwright/test';
+
+/** Clicks the first clickable board target of a kind ('v', 'e' or 'h'). */
+async function pickTarget(page: Page, kind: 'v' | 'e' | 'h'): Promise<boolean> {
+  const targets = page.locator(`[data-pick^="${kind}:"]`);
+  const n = await targets.count();
+  for (let i = 0; i < n; i++) {
+    try {
+      await targets.nth(i).click({ timeout: 1500 });
+      return true;
+    } catch {
+      // covered by another element: try the next one
+    }
+  }
+  return false;
+}
+
+/** Confirms whatever is selected on the board (first choice if there are several). */
+async function confirm(page: Page): Promise<void> {
+  const bar = page.locator('.confirm-bar');
+  await expect(bar).toBeVisible();
+  await bar.locator('button.primary').first().click();
+}
+
+async function turnNumber(page: Page): Promise<number> {
+  const text = (await page.locator('.topbar .sub').textContent()) ?? '';
+  return Number(/Turn (\d+)/.exec(text)?.[1] ?? 0);
+}
+
+/** Does the next sensible thing for the human seat; returns false when there is nothing to do. */
+async function step(page: Page): Promise<string> {
+  const status = (await page.locator('.status-text').textContent()) ?? '';
+  if (await page.locator('.sheet[aria-label^="Discard"]').isVisible()) {
+    const sheet = page.locator('.sheet[aria-label^="Discard"]');
+    const need = Number(/Discard (\d+)/.exec((await sheet.getAttribute('aria-label')) ?? '')?.[1] ?? 0);
+    const plus = sheet.locator('button[aria-label="more"]');
+    let picked = 0;
+    for (let i = 0; i < 5 && picked < need; i++) {
+      while (picked < need && (await plus.nth(i).isEnabled())) {
+        await plus.nth(i).click();
+        picked++;
+      }
+    }
+    await sheet.locator('button.primary').click();
+    return 'discard';
+  }
+  if (await page.locator('.sheet[aria-label^="Choose"]').isVisible()) {
+    const sheet = page.locator('.sheet[aria-label^="Choose"]');
+    const need = Number(/Choose (\d+)/.exec((await sheet.getAttribute('aria-label')) ?? '')?.[1] ?? 0);
+    for (let i = 0; i < need; i++) await sheet.locator('button[aria-label="more"]').first().click();
+    await sheet.locator('button.primary').click();
+    return 'gold';
+  }
+  if (await page.locator('.sheet[aria-label="Trade offer"]').isVisible()) {
+    await page.locator('.sheet[aria-label="Trade offer"] button', { hasText: 'Decline' }).first().click();
+    return 'decline';
+  }
+  if (/Place settlement/.test(status)) {
+    if (await pickTarget(page, 'v')) {
+      await confirm(page);
+      return 'settlement';
+    }
+  }
+  if (/Place a road/.test(status)) {
+    if (await pickTarget(page, 'e')) {
+      await confirm(page);
+      return 'road';
+    }
+  }
+  if (/Move the robber/.test(status)) {
+    if (await pickTarget(page, 'h')) {
+      await confirm(page);
+      return 'robber';
+    }
+  }
+  const roll = page.getByRole('button', { name: /Roll/ });
+  if (await roll.isVisible()) {
+    await roll.click();
+    return 'roll';
+  }
+  const end = page.getByRole('button', { name: /End turn/ });
+  if (await end.isVisible()) {
+    await end.click();
+    return 'end';
+  }
+  return '';
+}
+
+test('start a game against the computer, play a few turns, resume after reload', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Island Traders' })).toBeVisible();
+  await page.getByRole('button', { name: /New game/ }).click();
+
+  // 3 players, fast computer players
+  await page.getByRole('button', { name: 'less' }).first().click();
+  await page.getByRole('button', { name: /Options/ }).click();
+  await page.getByRole('button', { name: 'fast' }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+
+  const deadline = Date.now() + 120_000;
+  let rolls = 0;
+  while (Date.now() < deadline && rolls < 3) {
+    const did = await step(page);
+    if (did === 'roll') rolls++;
+    if (!did) await page.waitForTimeout(200);
+  }
+  expect(rolls).toBeGreaterThanOrEqual(3);
+  const turn = await turnNumber(page);
+  expect(turn).toBeGreaterThan(3);
+  // our pieces are on the board
+  expect(await page.locator('polygon.building').count()).toBeGreaterThanOrEqual(6);
+
+  // the game is saved: reload and continue
+  await page.reload();
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  expect(await turnNumber(page)).toBeGreaterThanOrEqual(turn);
+  expect(errors).toEqual([]);
+});
+
+test('Seafarers scenario renders ships and the pirate', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: /Heading for New Shores/ }).click();
+  await page.getByRole('button', { name: /Options/ }).click();
+  await page.getByRole('button', { name: 'fast' }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  await expect(page.locator('.hex.t-gold').first()).toBeVisible();
+  await expect(page.locator('.status-text')).toContainText(/Place|placing/);
+});
+
+test('pass-and-play hides hands behind a hand-over screen', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'less' }).first().click();
+  // second seat becomes a human on this device
+  await page.locator('.seat').nth(1).getByRole('button', { name: 'Human' }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  const pass = page.getByRole('heading', { name: 'Pass the device to' });
+  await expect(pass).toBeVisible();
+  await expect(page.locator('svg.board')).toHaveCount(0);
+  const first = ((await page.locator('.pass-name').textContent()) ?? '').trim();
+  await page.getByRole('button', { name: /show my cards/ }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  await expect(page.locator('.status-text')).toContainText('Place settlement 1');
+  // place settlement + road, then the device must go to someone else before they see anything
+  await page.locator('[data-pick^="v:"]').first().click();
+  await page.locator('.confirm-bar button.primary').click();
+  await page.locator('[data-pick^="e:"]').first().click();
+  await page.locator('.confirm-bar button.primary').click();
+  await expect(pass).toBeVisible({ timeout: 20_000 });
+  expect(((await page.locator('.pass-name').textContent()) ?? '').trim()).not.toBe(first);
+});
