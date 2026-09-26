@@ -18,6 +18,8 @@ const RELAY_AFTER = 4000;
 const ATTEMPT_TIMEOUT = 20000;
 /** The host must answer the hello within this time. */
 const WELCOME_TIMEOUT = 10000;
+/** Say hello again this often until the host answers (a relay broker may still be subscribing). */
+const HELLO_EVERY = 2500;
 const PING_EVERY = 10000;
 /** No word from the host for this long: the link is dead. */
 const SILENCE_LIMIT = 30000;
@@ -275,8 +277,17 @@ export class GuestConnector {
     this.dropPending();
     this.clear('relay', 'attempt');
     this.ev.status('Connected. Joining…');
-    link.send(this.hello);
-    this.later('welcome', WELCOME_TIMEOUT, () => this.retry("The host didn't reply."));
+    const started = Date.now();
+    const hello = () => {
+      if (this.active !== link || this.heard) return;
+      if (Date.now() - started >= WELCOME_TIMEOUT) {
+        this.retry("The host didn't reply.");
+        return;
+      }
+      link.send(this.hello);
+      this.later('welcome', HELLO_EVERY, hello);
+    };
+    hello();
   }
 
   private receive(msg: HostMessage) {
