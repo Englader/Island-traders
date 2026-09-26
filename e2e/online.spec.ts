@@ -120,10 +120,11 @@ test('open trade: the active player asks what a friend would give for a card; th
   await expect(guest.locator('main')).toContainText('Waiting for');
   await playSetup(host, guest, 'Trader');
 
-  // play until the host or the friend may trade and both have cards (rolling, moving the
-  // robber after a 7, and passing turns while a hand is empty)
+  // play until the host or the friend may trade a card the other can answer with a different
+  // one (rolling, moving the robber after a 7, and passing turns until the hands allow it)
   let actor: Page | null = null;
   let other: Page | null = null;
+  let offered = -1;
   const deadline = Date.now() + 90_000;
   while (!actor && Date.now() < deadline) {
     for (const [a, b] of [
@@ -143,9 +144,13 @@ test('open trade: the active player asks what a friend would give for a card; th
         await a.locator('.confirm-bar button.primary').first().click();
       }
       if (await a.getByRole('button', { name: /Trade/ }).first().isVisible()) {
-        // a second settlement by the desert or the sea, or the robber, can leave a hand empty
+        // early hands are small (and can be empty after a second settlement by the desert or
+        // the sea, or the robber): the friend must hold something other than the card offered
         const cards = async (p: Page) => (await p.locator('.hand .rtile:not(.dev) .rtile-n').allTextContents()).map(Number);
-        if ((await cards(a)).some((n) => n > 0) && (await cards(b)).some((n) => n > 0)) {
+        const mine = await cards(a);
+        const theirs = await cards(b);
+        offered = mine.findIndex((n, r) => n > 0 && theirs.some((m, s) => s !== r && m > 0));
+        if (offered >= 0) {
           actor = a;
           other = b;
           break;
@@ -160,12 +165,11 @@ test('open trade: the active player asks what a friend would give for a card; th
   const b = other!;
   const otherName = b === guest ? 'Trader' : 'Host';
 
-  // "what will you give for my card?": offer one of the cards the active player has most of
+  // "what will you give for my card?"
   await a.getByRole('button', { name: /Trade/ }).first().click();
   const before = (await a.locator('.your-cards .rtile-n').allTextContents()).map(Number);
-  const most = before.indexOf(Math.max(...before));
-  expect(before[most]).toBeGreaterThan(0);
-  const card = ['Brick', 'Lumber', 'Wool', 'Grain', 'Ore'][most];
+  expect(before[offered]).toBeGreaterThan(0);
+  const card = ['Brick', 'Lumber', 'Wool', 'Grain', 'Ore'][offered];
   await a.getByRole('button', { name: `Give one more ${card}` }).click();
   await a.getByRole('button', { name: 'Ask for offers' }).click();
   await expect(a.locator('.offer.open')).toContainText('what will they give for it?');
@@ -185,7 +189,7 @@ test('open trade: the active player asks what a friend would give for a card; th
   await answer.getByRole('button', { name: 'Accept' }).click();
   await expect(a.locator('.offer.open')).toHaveCount(0);
   const after = (await a.locator('.your-cards .rtile-n').allTextContents()).map(Number);
-  expect(after[most]).toBe(before[most] - 1);
+  expect(after[offered]).toBe(before[offered] - 1);
   expect(after.reduce((x, y) => x + y, 0)).toBe(before.reduce((x, y) => x + y, 0));
   await hostCtx.close();
   await guestCtx.close();
