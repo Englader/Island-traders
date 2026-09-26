@@ -1,6 +1,6 @@
 import { DEFAULT_OPTIONS, createGame, getScenario, hasOfficialMap, viewFor, type GameOptions, type GameView } from 'engine';
 import { useMemo, useState } from 'preact/hooks';
-import { Board, NO_TARGETS } from '../board/Board';
+import { Board, NO_TARGETS, useTurned } from '../board/Board';
 import { PLAYER_COLORS } from '../game/seats';
 import { Sheet } from './common';
 
@@ -56,6 +56,8 @@ export function MapPreview({
     return a && b ? variation(a, b) : 'nothing';
   }, [key]);
   const [big, setBig] = useState(false);
+  // One orientation for the picture and its full view: the one the game uses on this screen.
+  const turned = useTurned(view?.board.layoutKey ?? null);
   if (!view) return null;
   const printed = options.layout !== 'random' && hasOfficialMap(getScenario(scenario), players, { ...DEFAULT_OPTIONS, ...options });
   const hidden = Object.values(view.board.hexes).some((h) => h.terrain === 'fog');
@@ -65,12 +67,12 @@ export function MapPreview({
   else if (varies === 'harbors') note = 'Official map from the rulebook. Its harbors are shuffled — tap 🎲 for another.';
   else note = 'Official map from the rulebook.';
   const fog = hidden ? 'Grey tiles are unexplored and shuffled: they turn over when a ship or road reaches them.' : '';
-  const board = <Board view={view} colors={PLAYER_COLORS} targets={NO_TARGETS} accent="#ffffff" ghost={null} flash={null} onPick={noPick} />;
+  const board = <Board view={view} colors={PLAYER_COLORS} targets={NO_TARGETS} accent="#ffffff" ghost={null} flash={null} onPick={noPick} turned={turned} />;
   return (
     <>
       {/* a div, not a button: the board inside has buttons of its own */}
       <div
-        class="map-thumb"
+        class={turned ? 'map-thumb turned' : 'map-thumb'}
         role="button"
         tabIndex={0}
         aria-label={`Show the ${name} map`}
