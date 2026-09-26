@@ -22,4 +22,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Local TURN server (checks the check)
+        run: |
+          sudo apt-get install -y coturn >/dev/null
+          ip=$(hostname -I | awk '{print $1}')
+          sudo turnserver -n -o --lt-cred-mech --user=test:test --realm=check --listening-port=3478 --listening-ip="$ip" --relay-ip="$ip" --no-tls --no-dtls --log-file=stdout >/dev/null
+          echo "LOCAL_TURN=$ip" >> "$GITHUB_ENV"
       - run: node scripts/online-check.mjs

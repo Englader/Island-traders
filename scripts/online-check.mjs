@@ -43,44 +43,37 @@ const page = await browser.newPage();
 await page.goto(SITE);
 
 console.log('== ICE servers');
+if (process.env.LOCAL_TURN) {
+  // a TURN server started next to this script: proves the check itself works
+  ICE.unshift({ name: 'local coturn', urls: `turn:${process.env.LOCAL_TURN}:3478`, username: 'test', credential: 'test' });
+}
 for (const s of ICE) {
   const r = await page.evaluate(async (s) => {
-    const cfg = { iceServers: [{ urls: s.urls, username: s.username, credential: s.credential }], iceTransportPolicy: s.policy ?? 'relay' };
-    const a = new RTCPeerConnection(cfg);
-    const b = new RTCPeerConnection(cfg);
-    const types = new Set();
-    const wire = (from, to) => {
-      from.onicecandidate = (e) => {
-        if (!e.candidate) return;
-        types.add(e.candidate.type ?? '?');
-        to.addIceCandidate(e.candidate).catch(() => {});
-      };
-    };
-    wire(a, b);
-    wire(b, a);
-    const ch = a.createDataChannel('probe');
-    const t0 = performance.now();
-    const got = new Promise((res) => {
-      b.ondatachannel = (e) => (e.channel.onmessage = (m) => res(m.data));
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: s.urls, username: s.username, credential: s.credential }],
+      iceTransportPolicy: s.policy ?? 'relay',
     });
-    const opened = new Promise((res) => (ch.onopen = res));
-    await a.setLocalDescription(await a.createOffer());
-    await b.setRemoteDescription(a.localDescription);
-    await b.setLocalDescription(await b.createAnswer());
-    await a.setRemoteDescription(b.localDescription);
-    const msg = await Promise.race([
-      opened.then(() => {
-        ch.send('ping');
-        return got;
-      }),
-      new Promise((res) => setTimeout(() => res(null), 15000)),
-    ]);
+    const types = new Set();
+    const errors = new Set();
+    pc.onicecandidate = (e) => e.candidate && types.add(e.candidate.type ?? '?');
+    pc.onicecandidateerror = (e) => errors.add(`${e.errorCode} ${e.errorText}`.trim());
+    pc.createDataChannel('probe');
+    const t0 = performance.now();
+    await pc.setLocalDescription(await pc.createOffer());
+    await new Promise((res) => {
+      const t = setTimeout(res, 12000);
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(t);
+          res();
+        }
+      };
+    });
     const ms = Math.round(performance.now() - t0);
-    a.close();
-    b.close();
-    return { ok: s.want ? types.has(s.want) : msg === 'ping', ms, types: [...types].join(',') };
+    pc.close();
+    return { ok: types.has(s.want ?? 'relay'), ms, types: [...types].join(','), errors: [...errors].join('; ') };
   }, s);
-  console.log(`${r.ok ? 'OK  ' : 'FAIL'} ${s.name.padEnd(20)} ${String(r.ms).padStart(6)} ms  candidates: ${r.types || 'none'}`);
+  console.log(`${r.ok ? 'OK  ' : 'FAIL'} ${s.name.padEnd(20)} ${String(r.ms).padStart(6)} ms  candidates: ${r.types || 'none'}${r.errors ? `  errors: ${r.errors}` : ''}`);
 }
 
 console.log('== WebSockets');
