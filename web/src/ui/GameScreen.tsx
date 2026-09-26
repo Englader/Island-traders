@@ -3,7 +3,8 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
-import { mustAct, type PlayerColor, type SeatKind } from '../game/seats';
+import { mustAct, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
+import type { Flash } from './flash';
 import { Die, Sheet } from './common';
 import {
   BuildSheet,
@@ -28,7 +29,10 @@ export interface GameScreenProps {
   send(a: Action): void;
   error: string | null;
   clearError(): void;
-  flash: { kind: PickKind; id: string; key: number } | null;
+  flash: Flash | null;
+  /** Local games with computer players: their pace, adjustable from the board. */
+  speed?: BotSpeed;
+  onSpeed?: (s: BotSpeed) => void;
   onMenu(): void;
   onHome(): void;
   onRematch?: () => void;
@@ -372,7 +376,17 @@ export function GameScreen(props: GameScreenProps) {
   }, [ph.kind, isActor, robberPieces.length]);
 
   const dice = view.turn.dice;
-  const lastEvent = [...view.log].reverse().find((e) => !e.msg.startsWith('---'))?.msg ?? null;
+  // The latest few events, each marked with the colour of the player it is about.
+  const feed = view.log
+    .map((e, i) => ({ msg: e.msg, i }))
+    .filter((e) => !e.msg.startsWith('---'))
+    .slice(-3)
+    .map((e) => {
+      const who = view.players.find((p) => e.msg.startsWith(p.name + ' ') || e.msg.startsWith('(' + p.name + ' '));
+      return { ...e, color: who ? colors[who.id]?.fill : undefined };
+    });
+  const nextSpeed: Record<BotSpeed, BotSpeed> = { slow: 'normal', normal: 'fast', fast: 'slow' };
+  const speedShort: Record<BotSpeed, string> = { slow: '½×', normal: '1×', fast: '2×' };
 
   return (
     <div class="game">
@@ -389,7 +403,11 @@ export function GameScreen(props: GameScreenProps) {
             {sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP{props.note ? ` · ${props.note}` : ''}
           </div>
         </div>
-        <div class="dice" aria-label={dice ? `rolled ${dice[0] + dice[1]}` : 'no roll yet'}>
+        <div
+          class="dice"
+          key={dice ? `${view.turn.number}-${dice[0]}-${dice[1]}` : 'none'}
+          aria-label={dice ? `rolled ${dice[0] + dice[1]}` : 'no roll yet'}
+        >
           {dice ? (
             <>
               <Die n={dice[0]} />
@@ -405,11 +423,42 @@ export function GameScreen(props: GameScreenProps) {
       )}
 
       <div class="board-area">
-        <Board view={view} colors={colors} targets={targets} accent={accent} ghost={ghost} flash={props.flash} onPick={onPick} />
-        {lastEvent && (
-          <button type="button" class="ticker" onClick={() => setSheet('log')} aria-label="Game log">
-            {lastEvent}
-          </button>
+        <Board
+          view={view}
+          colors={colors}
+          targets={targets}
+          accent={accent}
+          ghost={ghost}
+          flash={props.flash}
+          onPick={onPick}
+          tools={
+            <>
+              {props.speed && props.onSpeed && kinds.includes('bot') && (
+                <button
+                  type="button"
+                  class="speed-chip"
+                  onClick={() => props.onSpeed!(nextSpeed[props.speed!])}
+                  aria-label={`Computer speed: ${SPEED_LABEL[props.speed]}. Tap to change.`}
+                  title={`Computer speed: ${SPEED_LABEL[props.speed]}`}
+                >
+                  {speedShort[props.speed]}
+                </button>
+              )}
+              <button type="button" class="log-chip" onClick={() => setSheet('log')} aria-label="Game log" title="Game log">
+                📜
+              </button>
+            </>
+          }
+        />
+        {feed.length > 0 && (
+          <div class="feed" aria-live="polite">
+            {feed.map((e, k) => (
+              <span key={e.i} class={`feed-line age-${feed.length - 1 - k}`}>
+                <span class="feed-dot" style={{ background: e.color ?? 'transparent' }} />
+                {e.msg}
+              </span>
+            ))}
+          </div>
         )}
         {pending && (
           <div class="confirm-bar">

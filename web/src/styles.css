@@ -647,27 +647,61 @@ svg.board {
   user-select: none;
   -webkit-user-select: none;
 }
-.ticker {
+.feed {
   position: absolute;
   left: 8px;
   top: 8px;
   max-width: calc(100% - 64px);
-  min-height: 30px;
-  padding: 4px 12px;
+  min-height: 0;
+  padding: 5px 12px 6px;
   border: none;
-  border-radius: 999px;
-  background: rgba(6, 26, 44, 0.55);
+  border-radius: 14px;
+  background: rgba(6, 26, 44, 0.58);
   color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+  z-index: 2;
+}
+.feed-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   font-size: 0.8rem;
+  line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  z-index: 2;
+  animation: feed-in 0.35s ease-out;
 }
-.ticker:active:not(:disabled) {
-  transform: none;
+.feed-line.age-1 {
+  opacity: 0.72;
+}
+.feed-line.age-2 {
+  opacity: 0.48;
+}
+.feed-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+@keyframes feed-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+.speed-chip {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 0.95rem;
 }
 .zoom-controls {
   position: absolute;
@@ -691,7 +725,8 @@ svg.board {
 }
 /* Touch screens pinch to zoom: keep only the "fit" button. */
 @media (hover: none) and (pointer: coarse) {
-  .zoom-controls button:not(.fit) {
+  .zoom-controls .zoom-in,
+  .zoom-controls .zoom-out {
     display: none;
   }
 }
@@ -1642,12 +1677,29 @@ svg.board text {
   cursor: pointer;
 }
 .flash {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 0.1;
-  stroke-linecap: round;
-  animation: flash 1.6s ease-out forwards;
   pointer-events: none;
+  animation: flash 2.4s ease-out forwards;
+}
+.flash-halo {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 0.16;
+  stroke-linecap: round;
+}
+.flash-ring {
+  fill: none;
+  stroke-width: 0.08;
+  stroke-linecap: round;
+}
+.roll-glow {
+  pointer-events: none;
+  animation: flash 2.6s ease-out forwards;
+}
+.roll-glow-hex {
+  fill: rgba(255, 236, 140, 0.4);
+  stroke: #ffe066;
+  stroke-width: 0.07;
+  stroke-linejoin: round;
 }
 @keyframes pulse {
   50% {
@@ -1661,12 +1713,38 @@ svg.board text {
   }
 }
 @keyframes flash {
-  from {
-    opacity: 0.95;
+  0% {
+    opacity: 1;
   }
-  to {
+  70% {
+    opacity: 0.85;
+  }
+  100% {
     opacity: 0;
   }
+}
+@keyframes shake {
+  0% {
+    transform: rotate(0) scale(1);
+  }
+  25% {
+    transform: rotate(-14deg) scale(1.12);
+  }
+  50% {
+    transform: rotate(10deg) scale(1.08);
+  }
+  75% {
+    transform: rotate(-5deg) scale(1.03);
+  }
+  100% {
+    transform: rotate(0) scale(1);
+  }
+}
+.dice .die {
+  animation: shake 0.5s ease-out;
+}
+.dice .die + .die {
+  animation-delay: 0.06s;
 }
 @media (prefers-reduced-motion: reduce) {
   .target-vertex,
@@ -1674,6 +1752,9 @@ svg.board text {
   .target-edge-halo,
   .target-hex,
   .flash,
+  .roll-glow,
+  .feed-line,
+  .dice .die,
   .spinner,
   .sheet,
   .sheet-backdrop {

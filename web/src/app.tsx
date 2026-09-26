@@ -165,6 +165,8 @@ export function App() {
           error={ctrl.error}
           clearError={() => ctrl.clearError()}
           flash={flashOf(ctrl.last?.action, ctrl.last?.at ?? 0)}
+          speed={ctrl.record.botSpeed}
+          onSpeed={(sp) => ctrl.setBotSpeed(sp)}
           onMenu={() => setMenu(true)}
           onHome={goHome}
           onRematch={

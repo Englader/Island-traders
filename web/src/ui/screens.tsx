@@ -235,7 +235,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
                           s.kind === k
                             ? s.name
                             : k === 'bot'
-                              ? BOT_NAMES[i] ?? `Bot ${i + 1}`
+                              ? BOT_NAMES.find((n) => !activeSeats.some((o, j) => j !== i && o.name === n)) ?? `Bot ${i + 1}`
                               : k === 'remote'
                                 ? `Friend ${i}`
                                 : `Player ${i + 1}`,

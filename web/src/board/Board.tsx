@@ -16,6 +16,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { RESOURCE_INFO } from '../game/names';
 import type { PlayerColor } from '../game/seats';
+import type { Flash } from '../ui/flash';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 
@@ -38,9 +39,11 @@ interface Props {
   /** Colour of the target highlights (the acting player's). */
   accent: string;
   ghost: Ghost | null;
-  /** Something to flash briefly (the latest move). */
-  flash: { kind: PickKind; id: string; key: number } | null;
+  /** The latest move, highlighted for a moment so others can follow it. */
+  flash: Flash | null;
   onPick(kind: PickKind, id: string): void;
+  /** Extra round buttons shown under the zoom buttons (speed, log). */
+  tools?: ComponentChildren;
 }
 
 interface Pt {
@@ -154,7 +157,7 @@ function unrotatedAspect(layoutKey: string): number {
   return (maxX - minX + 2) / ((maxY - minY + 2) * TILT);
 }
 
-export function Board({ view, colors, targets, accent, ghost, flash, onPick }: Props) {
+export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 360, h: 360 });
@@ -359,16 +362,48 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick }: P
       | { circuit: HexId[]; fortresses: Array<{ hex: HexId; vertex: VertexId; waypoint: VertexId; chits: number; captured: boolean }> }
       | undefined;
 
-    function renderFlash(f: NonNullable<Props['flash']>) {
+    function renderFlash(f: Flash) {
+      const col = color(f.by).fill;
+      if (f.kind === 'roll') {
+        const dice = view.turn.dice;
+        const sum = dice ? dice[0] + dice[1] : 0;
+        if (sum === 7) return null;
+        // the tiles that produce this roll glow for a moment
+        return (
+          <g key={`fl${f.key}`} class="roll-glow">
+            {land
+              .filter((h) => b.hexes[h].token === sum && b.robber !== h)
+              .map((h) => (
+                <polygon key={h} points={polygon(hexPts[h])} class="roll-glow-hex" />
+              ))}
+          </g>
+        );
+      }
       if (f.kind === 'vertex' && vpt[f.id]) {
-        return <ellipse key={`fl${f.key}`} class="flash" cx={vpt[f.id].x} cy={vpt[f.id].y} rx={0.34} ry={0.34 * TILT} />;
+        const p = vpt[f.id];
+        return (
+          <g key={`fl${f.key}`} class="flash">
+            <ellipse cx={p.x} cy={p.y} rx={0.42} ry={0.42 * TILT} class="flash-halo" />
+            <ellipse cx={p.x} cy={p.y} rx={0.42} ry={0.42 * TILT} class="flash-ring" stroke={col} />
+          </g>
+        );
       }
       if (f.kind === 'edge' && t.edgeVertices[f.id]) {
         const [a, c] = edgeEnds(f.id);
-        return <line key={`fl${f.key}`} class="flash" x1={a.x} y1={a.y} x2={c.x} y2={c.y} />;
+        return (
+          <g key={`fl${f.key}`} class="flash">
+            <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="flash-halo" />
+            <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="flash-ring" stroke={col} />
+          </g>
+        );
       }
       if (f.kind === 'hex' && hexPts[f.id]) {
-        return <polygon key={`fl${f.key}`} class="flash" points={polygon(hexPts[f.id])} />;
+        return (
+          <g key={`fl${f.key}`} class="flash">
+            <polygon points={polygon(hexPts[f.id])} class="flash-halo" />
+            <polygon points={polygon(hexPts[f.id])} class="flash-ring" stroke={col} />
+          </g>
+        );
       }
       return null;
     }
@@ -576,15 +611,16 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick }: P
         {content}
       </svg>
       <div class="zoom-controls">
-        <button type="button" aria-label="Zoom in" onClick={() => zoomAt(1 / 1.3, size.w / 2, size.h / 2)}>
+        <button type="button" class="zoom-in" aria-label="Zoom in" onClick={() => zoomAt(1 / 1.3, size.w / 2, size.h / 2)}>
           +
         </button>
-        <button type="button" aria-label="Zoom out" onClick={() => zoomAt(1.3, size.w / 2, size.h / 2)}>
+        <button type="button" class="zoom-out" aria-label="Zoom out" onClick={() => zoomAt(1.3, size.w / 2, size.h / 2)}>
           −
         </button>
         <button type="button" class="fit" aria-label="Fit board" onClick={() => setVb(fit)}>
           ⤢
         </button>
+        {tools}
       </div>
     </div>
   );
