@@ -28,9 +28,11 @@ GitHub Actions)
 - Trading with players, including open offers ("who gives me a brick?" or
   "what will you give for my brick?") that the others answer with
   counter-offers; the trade menu shows your cards
-- A preview of each map on the new-game screen, and dice statistics: a bar
-  chart of every total rolled against fair-dice odds, for everyone or one
-  player
+- Official maps: every scenario starts on the set-up map printed in its
+  rulebook, or pick **Random** for a shuffled one. The new-game screen shows
+  the exact board you will play on; 🎲 deals another random map
+- Dice statistics: a bar chart of every total rolled against fair-dice odds,
+  for everyone or one player
 - Drawn resource icons that look the same on every device
 - Illustrated cards: original painted scenes for the five resources and the
   development cards, in a parchment frame with a name ribbon
@@ -125,9 +127,9 @@ change the networking code, every week, and on demand.
 
 ```bash
 npm install
-npm test                                  # 180+ tests: golden positions, scenarios, bots, fuzzing
+npm test                                  # 290+ tests: golden positions, official maps, scenarios, bots, fuzzing
 npm run demo -- list                      # list scenarios
-npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board
+npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board (add "random" for a random map)
 npm run build                             # emit dist/ (ESM + .d.ts)
 ```
 
@@ -166,9 +168,12 @@ e2e/           Playwright tests for the browser game
 - **Edge types follow from terrain.** A road needs land on at least one side. A
   ship needs sea on at least one side. A coastal path takes either a road or a
   ship, never both.
-- **Scenario = data + hooks.** A `ScenarioDef` holds the map (ASCII rows or
-  generated), pools, harbors, robber and pirate start, VP target, setup
-  rounds, allowed and forbidden zones, and island bonuses. It can also add
+- **Scenario = data + hooks.** A `ScenarioDef` holds two maps, the
+  rulebook's (`officialMap`) and a random set-up (`map`), each as ASCII rows or
+  generated, with pools, harbors, printed scenario spots, robber and pirate
+  start. It also holds the VP target, setup rounds, allowed and forbidden
+  zones, and island bonuses. `mapSpecFor` picks the map by `options.layout`.
+  It can also add
   hooks: `afterSettlement`, `afterEdge` (fog, tribe gifts), `afterRoll` (cloth,
   pirate fleet), `onKnight` (warships), `shipAllowed`, `extraVP`, `canWin`,
   `instantWin`, `checkEnd`, `action`, `legalActions` and `redact`. The base
@@ -194,6 +199,13 @@ Rows use odd-r offset coordinates. The cell codes are: `~` sea, `h` hills,
 one. Untagged land inherits the zone of its island; islands without a tag are
 named `island-N`. `renderAscii()` prints a board in the same format.
 
+Harbors are `'auto'` (spread over the coasts), `'ring'` (the base frame) or
+fixed spots: `harborAt('3,1', 'NE', 'grain')` puts a grain harbor on the
+north-east side of the hex at column 3, row 1; leave out the type and it is
+drawn from the shuffled pool. `marks` holds a map's printed scenario spots
+(villages, gift paths, fortresses...) as a hex plus a corner or side, for the
+scenario's `init` hook.
+
 ## Rules coverage
 
 [`docs/rules.md`](docs/rules.md) maps each section of the spec to the code and
@@ -212,13 +224,13 @@ In summary:
 | Victory | Only on your own turn (or part); checked after every action and at the start of every turn and part |
 | Seafarers | Ships, moving one open-ended ship per turn, closed routes, pirate (blocks and robs ships), gold, fog, island bonuses |
 | 5–6 players | 2021 **paired players** (default: P2 is the 3rd player to the left, supply trades only, no roll) and the legacy **Special Build Phase** |
-| Options | `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer` |
+| Options | `layout` official (default)/random, `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer` |
 
 ### Scenarios
 
 | id | Name | VP | Special rules implemented |
 |---|---|---|---|
-| `base` | Base game | 10 | Official A–R spiral or random tokens. The 5–6 board has 30 hexes and 11 harbors |
+| `base` | Base game | 10 | The beginners' set-up, or the variable set-up (A–R spiral or random tokens). The 5–6 board has 30 hexes and 11 harbors |
 | `seafarers-1-new-shores` | Heading for New Shores | 14 | Start on the main island; +2 VP for the first settlement on each small island |
 | `seafarers-2-four-islands` | The Four Islands | 13 | Home islands are chosen at setup; +2 VP per foreign island; no desert, the robber starts on a 12 |
 | `seafarers-3-fog-islands` | The Fog Islands | 12 | Hidden fog stack. Roads and ships reveal hexes; the discoverer is paid |
@@ -227,16 +239,33 @@ In summary:
 | `seafarers-6-cloth-trade` | Cloth Trade (rulebook: "Cloth for Catan") | 14 | 3 starting settlements. 8 villages on intersections with 5 cloth each plus a supply of 10. The pirate steals cloth. Ends when 3 or fewer villages have cloth |
 | `seafarers-7-pirate-islands` | The Pirate Islands | 10 + fortress | Pre-placed pieces. The fleet moves and attacks every adjacent player by the lower die. A 7 lets the roller rob anyone. A single shortest route via a marked intersection. Warships from knights; fortress battles |
 | `seafarers-8-wonders` | The Wonders (rulebook: "The Wonders of Catan") | 4 levels, or 10 + most levels | Theater, Great Bridge, Monument, Great Wall and Cathedral with their card requirements and costs; a ship marks the claim; +1 VP per small island |
-| `seafarers-9-new-world` | New World | 12 | Random archipelago; players place the harbors first; +1 VP per foreign island; robber and pirate start off the board; 3–6 players |
+| `seafarers-9-new-world` | New World | 12 | The map is dealt at random; players place the harbors first; +1 VP per foreign island; robber and pirate start off the board; 3–6 players |
 
 All scenario rules were checked against the official 5th-edition Seafarers
 rulebook, the base rules and the FAQs on catan.com.
 [`docs/rules.md`](docs/rules.md) lists the sources and every remaining engine
 choice.
 
-The maps are original layouts that follow each scenario's structure. They are
-not the printed maps. Official layouts can be added as `MapSpec` data with no
-code changes.
+### Maps
+
+`options.layout` picks the board:
+
+- **`'official'`** (the default): the set-up map printed in the rulebook for
+  the scenario and player count. That is the base game's beginners' set-up
+  (3–4 players, and the 5–6 extension's), and every Seafarers scenario's
+  3- and 4-player map (`src/scenarios/seafarers/officialMaps.ts`, with the
+  page each map comes from). Only what the rulebook itself shuffles varies:
+  the unexplored fog hexes, harbors printed blank, the Forgotten Tribe's
+  harbor gifts and cards, and New World, which the rulebook deals at random
+  into its frame.
+- **`'random'`**: the scenario's shuffled set-up. For the base game that is
+  the rulebook's variable set-up; for Seafarers, original layouts that
+  follow each scenario's structure, with shuffled tiles, numbers and harbors.
+
+The rulebook draws the Seafarers boards with flat-topped hexes; the engine
+turns them a quarter turn, so the board looks exactly like the book when a
+phone shows it upright. [`docs/rules.md`](docs/rules.md) lists the sources
+and the differences between printings.
 
 ## Testing
 
@@ -251,7 +280,11 @@ code changes.
   - the FAQ ship cases (a loop back to the same settlement, a ring touching no settlement)
 - **Board checks:** 54/72 topology. The A–R spiral never puts a 6 next to an
   8, for every desert position and every start corner. Token and harbor
-  constraints hold for every scenario and player count.
+  constraints hold for every scenario, player count and layout.
+- **Official maps:** every official board is compared hex by hex, harbor by
+  harbor, with the printed map (written down column by column as the book
+  shows it) and with the rulebook's component lists. Different seeds give
+  the same board except where the rulebook shuffles.
 - **Simulations:** random bot games run in every scenario and every supported
   player count. Invariants are checked as they play:
   - resources and dev cards are conserved
@@ -265,14 +298,15 @@ code changes.
 - **Purity and determinism:** inputs are never mutated, and the same seed and
   actions always produce the same state.
 
-- **Heuristic bots** finish a full game in every scenario and supported
-  player count, using only moves the engine accepts.
+- **Heuristic bots** finish a full game in every scenario, supported player
+  count and layout, using only moves the engine accepts.
 - **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
   against the computer that is reloaded and continued, a Seafarers board,
-  the pass-and-play hand-over, and online games between two browsers through
-  a local PeerJS broker and a local relay broker (`scripts/mqtt-broker.mjs`):
-  a direct link, a relay-only link, and a friend who joins while the host is
-  away.
+  the pass-and-play hand-over, a random map whose preview (after a 🎲
+  reroll) is the board the game starts with, and online games between two
+  browsers through a local PeerJS broker and a local relay broker
+  (`scripts/mqtt-broker.mjs`): a direct link on the host's random map, a
+  relay-only link, and a friend who joins while the host is away.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 
@@ -286,8 +320,10 @@ and the next steps.
 
 "Catan" and its artwork, names and maps are trademarks and copyrighted
 material of Catan GmbH. Island Traders is an independent, non-commercial fan
-project that implements game mechanics. It uses its own name and original
-maps, and mentions Catan only to say which rules it follows. It is not
+project that implements game mechanics. It uses its own name and art, and
+mentions Catan only to say which rules it follows. The official-map option
+reproduces the rulebooks' set-up maps as game data (which terrain and number
+go where); the random maps are original. It is not
 affiliated with or endorsed by Catan GmbH. A commercial release, or one that
 uses the Catan name, art or rule text, needs a license from Catan GmbH
 (ip@catan.com).

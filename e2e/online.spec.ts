@@ -24,11 +24,20 @@ async function place(page: Page): Promise<boolean> {
   return false;
 }
 
-/** The host opens a room for three: host, one friend, one computer. */
-async function openRoom(host: Page): Promise<string> {
+/** The board's tiles as "hex terrain token", sorted, to compare two boards. */
+async function tiles(board: ReturnType<Page['locator']>): Promise<string[]> {
+  const list = await board.locator('[data-tile]').evaluateAll((els) =>
+    els.map((e) => `${e.getAttribute('data-tile')} ${e.getAttribute('data-terrain')} ${e.getAttribute('data-token')}`),
+  );
+  return list.sort();
+}
+
+/** The host opens a room for three: host, one friend, one computer. `setup` may change the new-game screen first. */
+async function openRoom(host: Page, setup?: (host: Page) => Promise<void>): Promise<string> {
   await host.goto(BASE);
   await host.getByRole('button', { name: /Host online game/ }).click();
   await host.locator('.seat').nth(2).getByRole('button', { name: 'Computer' }).click();
+  if (setup) await setup(host);
   await host.getByRole('button', { name: /Open the room/ }).click();
   const code = ((await host.locator('.big-code').textContent()) ?? '').trim();
   expect(code).toMatch(/^[A-Z0-9]{5}$/);
@@ -72,15 +81,26 @@ async function pages(browser: Browser) {
   return { hostCtx, guestCtx, host: await hostCtx.newPage(), guest: await guestCtx.newPage() };
 }
 
-test('a friend joins with the room code and both play the setup', async ({ browser }) => {
+test('a friend joins with the room code and both play the setup on the random map the host picked', async ({ browser }) => {
   const { hostCtx, guestCtx, host, guest } = await pages(browser);
-  const code = await openRoom(host);
+  let preview: string[] = [];
+  const code = await openRoom(host, async (h) => {
+    await h.locator('.map-row').getByRole('button', { name: 'Random' }).click();
+    const thumb = h.locator('.map-thumb svg.board');
+    const before = (await tiles(thumb)).join();
+    await h.getByRole('button', { name: '🎲 New map' }).click();
+    await expect.poll(async () => (await tiles(thumb)).join()).not.toBe(before);
+    preview = await tiles(thumb);
+  });
   await join(guest, code, 'Guesty');
   await expect(guest.locator('main')).toContainText('Waiting for');
   await expect(host.locator('.lobby-seat').nth(1)).toContainText('Guesty');
   await expect(host.locator('.lobby-seat').nth(1)).toContainText('online');
   await playSetup(host, guest, 'Guesty');
   await expect(guest.locator('.hud')).not.toContainText('via relay');
+  // the game uses the host's previewed map, on both devices
+  expect(await tiles(host.locator('.board-area svg.board'))).toEqual(preview);
+  expect(await tiles(guest.locator('.board-area svg.board'))).toEqual(preview);
   await hostCtx.close();
   await guestCtx.close();
 });

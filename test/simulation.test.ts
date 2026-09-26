@@ -79,7 +79,9 @@ describe('random-game simulations with invariants', () => {
     for (const n of counts) {
       it(`${sc.id} with ${n} players`, () => {
         for (let i = 0; i < SEEDS; i++) {
-          const g = createGame({ scenario: sc.id, players: n, seed: `sim-${sc.id}-${n}-${i}` });
+          // alternate between the rulebook's map and the random one
+          const layout = i % 2 === 0 ? 'official' : 'random';
+          const g = createGame({ scenario: sc.id, players: n, seed: `sim-${sc.id}-${n}-${i}`, options: { layout } });
           checkInvariants(g);
           let steps = 0;
           const r = simulate(g, seedRng(`bot-${i}`), STEPS, (s) => {

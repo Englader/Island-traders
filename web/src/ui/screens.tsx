@@ -1,4 +1,4 @@
-import { COSTS, listScenarios, type GameOptions, type ScenarioDef } from 'engine';
+import { COSTS, listScenarios, type GameOptions, type MapLayout, type ScenarioDef } from 'engine';
 import { Fragment } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, LEVEL_HINT, LEVEL_LABEL, PLAYER_COLORS, type BotLevel, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
@@ -118,7 +118,7 @@ export function HomeScreen({
       </div>
       <footer class="disclaimer">
         Island Traders is an unofficial, non-commercial fan project. It follows the rules of Catan and Catan: Seafarers but is not affiliated with or
-        endorsed by Catan GmbH. Maps and art are original.
+        endorsed by Catan GmbH. The art is original; the official maps follow the rulebooks.
       </footer>
     </main>
   );
@@ -131,6 +131,11 @@ export interface NewGameConfig {
   botSpeed: BotSpeed;
   botLevel: BotLevel;
   seed: string;
+}
+
+/** A fresh game seed: it deals the map shown in the preview, and the game is started with it. */
+function newSeed(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function defaultSeats(n: number, online: boolean, prev: Seat[] = []): Seat[] {
@@ -159,6 +164,8 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
   const [separate, setSeparate] = useState(false);
   const [fiveSix, setFiveSix] = useState<'paired' | 'specialBuild'>('paired');
   const [tokens, setTokens] = useState<'spiral' | 'random'>('spiral');
+  const [layout, setLayout] = useState<MapLayout>(() => (loadJson<MapLayout>('mapLayout') === 'random' ? 'random' : 'official'));
+  const [seed, setSeed] = useState(newSeed);
   const [speed, setSpeed] = useState<BotSpeed>('normal');
   const [level, setLevel] = useState<BotLevel>(() => loadJson<BotLevel>('botLevel') ?? 'medium');
   const [showOptions, setShowOptions] = useState(false);
@@ -166,6 +173,15 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
   const n = Math.min(Math.max(count, sc.minPlayers), sc.maxPlayers);
   const activeSeats = defaultSeats(n, online, seats).slice(0, n);
   const target = vp ?? sc.victoryPoints(n);
+  // The preview is built with exactly these options and seed, so it shows the board the game will use.
+  const options: Partial<GameOptions> = {
+    ...(vp !== null ? { victoryPoints: vp } : {}),
+    layout,
+    friendlyRobber: friendly,
+    tradeBuildMode: separate ? 'separate' : 'combined',
+    fiveSixMode: fiveSix,
+    tokenPlacement: tokens,
+  };
 
   const setSeat = (i: number, patch: Partial<Seat>) => {
     const next = defaultSeats(Math.max(seats.length, n), online, seats);
@@ -216,7 +232,21 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
                 </span>
                 {s.id === scenarioId && <span class="scenario-text">{s.description}</span>}
               </button>
-              {s.id === scenarioId && <MapPreview scenario={scenarioId} name={sc.name} players={n} options={{ tokenPlacement: tokens }} />}
+              {s.id === scenarioId && (
+                <div class="map-block">
+                  <div class="row map-row">
+                    <span>Map</span>
+                    <div class="seg" role="group" aria-label="Map">
+                      {(['official', 'random'] as MapLayout[]).map((l) => (
+                        <button type="button" key={l} class={layout === l ? 'on' : ''} aria-pressed={layout === l} onClick={() => setLayout(l)}>
+                          {l === 'official' ? 'Official' : 'Random'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <MapPreview scenario={scenarioId} name={sc.name} players={n} options={options} seed={seed} onReroll={() => setSeed(newSeed())} />
+                </div>
+              )}
             </Fragment>
           ))}
         </div>
@@ -309,7 +339,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
               <input type="checkbox" checked={separate} onChange={(e) => setSeparate((e.target as HTMLInputElement).checked)} />
               Trade before building (separate phases)
             </label>
-            {sc.id === 'base' && n <= 4 && (
+            {sc.id === 'base' && n <= 4 && layout === 'random' && (
               <label class="row check">
                 <input type="checkbox" checked={tokens === 'random'} onChange={(e) => setTokens((e.target as HTMLInputElement).checked ? 'random' : 'spiral')} />
                 Random number tokens (instead of the spiral)
@@ -347,19 +377,15 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
           onClick={() => {
             if (activeSeats[0]?.kind === 'human' && activeSeats[0].name.trim()) saveJson('playerName', activeSeats[0].name.trim());
             saveJson('botLevel', level);
+            saveJson('mapLayout', layout);
             onStart({
               scenario: scenarioId,
               seats: activeSeats.map((s, i) => ({ ...s, name: s.name.trim() || `Player ${i + 1}` })),
-              options: {
-                ...(vp !== null ? { victoryPoints: vp } : {}),
-                friendlyRobber: friendly,
-                tradeBuildMode: separate ? 'separate' : 'combined',
-                fiveSixMode: fiveSix,
-                tokenPlacement: tokens,
-              },
+              options,
               botSpeed: speed,
               botLevel: level,
-              seed: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              // the seed of the preview: the game gets the board shown there
+              seed,
             });
           }}
         >

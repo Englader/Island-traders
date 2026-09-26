@@ -1,4 +1,4 @@
-import { createGame, viewFor, type GameOptions, type GameView } from 'engine';
+import { DEFAULT_OPTIONS, createGame, getScenario, hasOfficialMap, viewFor, type GameOptions, type GameView } from 'engine';
 import { useMemo, useState } from 'preact/hooks';
 import { Board, NO_TARGETS } from '../board/Board';
 import { PLAYER_COLORS } from '../game/seats';
@@ -12,30 +12,59 @@ function sampleBoard(scenario: string, players: number, options: Partial<GameOpt
   }
 }
 
-/** True when the tiles or numbers come out differently from game to game. */
-function shuffled(a: GameView, b: GameView): boolean {
+/** What comes out differently from one game to the next: the whole map, only the harbors, or nothing. */
+function variation(a: GameView, b: GameView): 'map' | 'harbors' | 'nothing' {
   const ha = a.board.hexes;
   const hb = b.board.hexes;
-  return Object.keys(ha).some((h) => ha[h].terrain !== hb[h]?.terrain || ha[h].token !== hb[h]?.token);
+  if (Object.keys(ha).some((h) => ha[h].terrain !== hb[h]?.terrain || ha[h].token !== hb[h]?.token)) return 'map';
+  const harbors = (v: GameView) =>
+    v.board.harbors
+      .map((x) => `${x.edge}:${x.type}`)
+      .sort()
+      .join();
+  return harbors(a) !== harbors(b) ? 'harbors' : 'nothing';
 }
 
 const noPick = () => {};
 
 /**
- * What the chosen scenario's map looks like: a small picture on the
- * new-game screen that opens a full, zoomable view.
+ * The map the game will be played on: a small picture on the new-game
+ * screen, built from the same seed and options as the game, that opens a
+ * full, zoomable view. Where the map can come out differently, 🎲 deals
+ * another one (a new seed).
  */
-export function MapPreview({ scenario, name, players, options }: { scenario: string; name: string; players: number; options: Partial<GameOptions> }) {
+export function MapPreview({
+  scenario,
+  name,
+  players,
+  options,
+  seed,
+  onReroll,
+}: {
+  scenario: string;
+  name: string;
+  players: number;
+  options: Partial<GameOptions>;
+  seed: string;
+  onReroll(): void;
+}) {
   const key = `${scenario}|${players}|${JSON.stringify(options)}`;
-  const view = useMemo(() => sampleBoard(scenario, players, options, `preview-${scenario}`), [key]);
+  const view = useMemo(() => sampleBoard(scenario, players, options, seed), [key, seed]);
   const varies = useMemo(() => {
-    const other = sampleBoard(scenario, players, options, `preview-${scenario}-2`);
-    return !!(view && other && shuffled(view, other));
+    const a = sampleBoard(scenario, players, options, 'preview-a');
+    const b = sampleBoard(scenario, players, options, 'preview-b');
+    return a && b ? variation(a, b) : 'nothing';
   }, [key]);
   const [big, setBig] = useState(false);
   if (!view) return null;
-  const note = varies ? 'An example: tiles and numbers are shuffled for every game.' : 'This map is the same in every game.';
+  const printed = options.layout !== 'random' && hasOfficialMap(getScenario(scenario), players, { ...DEFAULT_OPTIONS, ...options });
   const hidden = Object.values(view.board.hexes).some((h) => h.terrain === 'fog');
+  let note: string;
+  if (!printed) note = varies === 'nothing' ? 'This map is the same in every game.' : 'Random layout — tap 🎲 for another.';
+  else if (varies === 'map') note = 'The rulebook deals this map at random — tap 🎲 for another.';
+  else if (varies === 'harbors') note = 'Official map from the rulebook. Its harbors are shuffled — tap 🎲 for another.';
+  else note = 'Official map from the rulebook.';
+  const fog = hidden ? 'Grey tiles are unexplored and shuffled: they turn over when a ship or road reaches them.' : '';
   const board = <Board view={view} colors={PLAYER_COLORS} targets={NO_TARGETS} accent="#ffffff" ghost={null} flash={null} onPick={noPick} />;
   return (
     <>
@@ -53,12 +82,23 @@ export function MapPreview({ scenario, name, players, options }: { scenario: str
         </span>
         <span class="map-thumb-hint">🔍 Tap to see the map</span>
       </div>
+      <div class="map-caption">
+        <span class="hint map-note">
+          {note}
+          {fog && ` ${fog}`}
+        </span>
+        {varies !== 'nothing' && (
+          <button type="button" class="map-reroll" onClick={onReroll}>
+            🎲 New map
+          </button>
+        )}
+      </div>
       {big && (
         <Sheet title={name} onClose={() => setBig(false)} wide>
           <div class="map-big">{board}</div>
           <p class="hint">
             {note}
-            {hidden ? ' Grey tiles are unexplored: they are turned over when a ship or road reaches them.' : ''} Pinch or use the buttons to zoom.
+            {fog && ` ${fog}`} Pinch or use the buttons to zoom.
           </p>
         </Sheet>
       )}

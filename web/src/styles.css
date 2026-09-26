@@ -2819,6 +2819,17 @@ svg.board text {
   stroke-width: 0.06;
   stroke-dasharray: 0.07 0.05;
 }
+.site {
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 0.025;
+  pointer-events: none;
+}
+.site-strait {
+  fill: #8e2a8b;
+}
+.site-wasteland {
+  fill: #6e2a24;
+}
 .fortress-chits {
   text-anchor: middle;
   fill: #fff;
@@ -3060,11 +3071,35 @@ svg.board text {
 }
 
 /* map preview on the new-game screen */
+.map-block {
+  display: flex;
+  flex-direction: column;
+}
+.map-row {
+  margin: 2px 0 0;
+}
+.map-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.map-note {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.map-reroll {
+  flex: none;
+  min-height: 38px;
+  padding: 0.3em 0.8em;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
 .map-thumb {
   cursor: pointer;
   display: block;
   width: 100%;
-  margin-top: 10px;
+  margin-top: 6px;
   padding: 0;
   border-radius: 16px;
   overflow: hidden;

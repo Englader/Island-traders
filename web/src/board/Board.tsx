@@ -363,6 +363,8 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
     const pirateIslands = ext.pirateIslands as
       | { circuit: HexId[]; fortresses: Array<{ hex: HexId; vertex: VertexId; waypoint: VertexId; chits: number; captured: boolean }> }
       | undefined;
+    // The Wonders on the rulebook's map: the printed strait and desert-wasteland intersections.
+    const wonderSites = ext.wonderSites as { strait: VertexId[]; wasteland: VertexId[] } | undefined;
 
     function renderFlash(f: Flash) {
       const col = color(f.by).fill;
@@ -435,7 +437,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               const tile = TILE[hex.terrain as Exclude<Terrain, 'sea'>];
               const top = hexPts[h];
               return (
-                <g key={h}>
+                <g key={h} data-tile={h} data-terrain={hex.terrain} data-token={hex.token ?? ''}>
                   <polygon points={polygon(shift(top, DEPTH))} fill={tile.side} class="tile-side" />
                   <polygon points={polygon(top)} fill={`url(#tile-${hex.terrain})`} class="tile-top" />
                   <polygon points={polygon(top)} fill={`url(#tex-${hex.terrain})`} class="tile-tex" />
@@ -531,6 +533,23 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                   <ellipse key={`wp${i}`} cx={vpt[f.waypoint].x} cy={vpt[f.waypoint].y} rx={0.22} ry={0.22 * TILT} class="waypoint" stroke={color(i).fill} />
                 ) : null,
               )}
+            {/* Wonders: strait (purple) and wasteland (brown) squares, as printed */}
+            {wonderSites &&
+              [...wonderSites.strait.map((v) => [v, 'strait']), ...wonderSites.wasteland.map((v) => [v, 'wasteland'])].map(([v, kind]) =>
+                vpt[v] ? (
+                  <rect key={`ws${v}`} x={vpt[v].x - 0.1} y={vpt[v].y - 0.1 * TILT} width={0.2} height={0.2 * TILT} class={`site site-${kind}`} />
+                ) : null,
+              )}
+            {wonderSites && wonderSites.strait.length === 2 && vpt[wonderSites.strait[0]] && vpt[wonderSites.strait[1]] && (
+              <T
+                x={(vpt[wonderSites.strait[0]].x + vpt[wonderSites.strait[1]].x) / 2}
+                y={(vpt[wonderSites.strait[0]].y + vpt[wonderSites.strait[1]].y) / 2}
+                s={0.34}
+                cls="marker-icon"
+              >
+                🌉
+              </T>
+            )}
             {/* Cloth villages */}
             {cloth &&
               Object.entries(cloth.villages).map(([v, vil]) => {

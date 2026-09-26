@@ -1,8 +1,10 @@
 import { TERRAIN_RESOURCE, isRed } from '../core/constants.js';
 import { nextInt, shuffle } from '../core/rng.js';
-import type { EdgeId, HarborState, HarborType, HexId, HexState, RngState, Terrain } from '../core/types.js';
+import type { EdgeId, HarborState, HarborType, HexId, HexState, RngState, Terrain, VertexId } from '../core/types.js';
 import {
   type Axial,
+  DIR_NAMES,
+  cornerVertex,
   edgeKey,
   edgeMidpoint,
   hexId,
@@ -11,6 +13,7 @@ import {
   offsetToAxial,
   parseHexId,
   ring,
+  sideEdge,
 } from './hex.js';
 import { buildTopology } from './topology.js';
 
@@ -51,14 +54,63 @@ export interface HarborSpot {
   sea: HexId;
   /** The land hex it serves. */
   land: HexId;
+  /** A harbor printed on the map; spots without a type draw one from the shuffled pool. */
+  type?: HarborType;
 }
 
 export interface HarborSpec {
   /** Fixed spots, or 'auto' (well-spread coastal spots), or 'ring' (standard base frame). */
   spots: HarborSpot[] | 'auto' | 'ring';
+  /** Harbor types shuffled onto the spots that have no printed type. */
   pool: readonly HarborType[];
   /** Restrict auto spots to coasts of these zones. */
   zones?: string[];
+}
+
+/** Hex sides, by the direction they face (pointy-top hexes, screen y down). */
+export type SideName = (typeof DIR_NAMES)[number];
+/** Hex corners: top (N), upper-right (NE), lower-right (SE), bottom (S), lower-left (SW), upper-left (NW). */
+export type CornerName = 'N' | 'NE' | 'SE' | 'S' | 'SW' | 'NW';
+/** `cornerVertex` index of each corner name. */
+const CORNER_INDEX: Record<CornerName, number> = { NE: 0, N: 1, NW: 2, SW: 3, S: 4, SE: 5 };
+
+/**
+ * A spot printed on a scenario map (a village, a gift, a fortress, a marked
+ * intersection...): a hex by odd-r offset "col,row", plus one of its corners
+ * (an intersection) or sides (a path). Scenario hooks read them at set-up.
+ */
+export interface MapMark {
+  at: string;
+  corner?: CornerName;
+  side?: SideName;
+  value?: number;
+}
+
+/** Harbor on the `side` of the land hex at offset "col,row" (the sea hex is the neighbour on that side). */
+export function harborAt(at: string, side: SideName, type?: HarborType): HarborSpot {
+  const land = offsetAxial(at);
+  const sea = neighbor(land, DIR_NAMES.indexOf(side));
+  return { sea: hexId(sea.q, sea.r), land: hexId(land.q, land.r), ...(type ? { type } : {}) };
+}
+
+function offsetAxial(at: string): Axial {
+  const [col, row] = at.split(',').map(Number);
+  return offsetToAxial(col, row);
+}
+
+export function markHex(m: MapMark): HexId {
+  const a = offsetAxial(m.at);
+  return hexId(a.q, a.r);
+}
+
+export function markVertex(m: MapMark): VertexId {
+  if (!m.corner) throw new Error(`map mark at ${m.at} has no corner`);
+  return cornerVertex(offsetAxial(m.at), CORNER_INDEX[m.corner]);
+}
+
+export function markEdge(m: MapMark): EdgeId {
+  if (!m.side) throw new Error(`map mark at ${m.at} has no side`);
+  return sideEdge(offsetAxial(m.at), DIR_NAMES.indexOf(m.side));
 }
 
 export interface MapSpec {
@@ -80,6 +132,8 @@ export interface MapSpec {
   fog?: PoolSpec;
   /** Base 3-4 board supports the official A-R spiral. */
   spiral?: boolean;
+  /** Scenario spots printed on the map, by kind (e.g. "village", "fortress"). */
+  marks?: Record<string, MapMark[]>;
 }
 
 export interface TokenRules {
@@ -95,6 +149,8 @@ export interface GeneratedMap {
   pirate: HexId | null;
   /** Remaining fog stack (terrains and tokens) for scenario state. */
   fogStack?: { terrains: Terrain[]; tokens: number[] };
+  /** The map's printed scenario spots, passed on to the scenario's `init` hook. */
+  marks?: Record<string, MapMark[]>;
 }
 
 const TERRAIN_CODES: Record<string, Terrain> = {
@@ -232,10 +288,13 @@ export function generateMap(spec: MapSpec, rng: RngState, rules: TokenRules, use
     if (spec.harbors.spots === 'ring') spots = ringHarborSpots();
     else if (spec.harbors.spots === 'auto') spots = autoHarborSpots(hexes, spec.harbors.pool.length, spec.harbors.zones);
     else spots = spec.harbors.spots;
-    const types = shuffle(rng, [...spec.harbors.pool]);
-    spots.forEach((s, i) => {
-      if (i < types.length) harbors.push({ edge: edgeKey(s.sea, s.land), type: types[i] });
-    });
+    // Printed harbors keep their type; the other spots take the shuffled pool in order.
+    const types = spots.every((s) => s.type) ? [] : shuffle(rng, [...spec.harbors.pool]);
+    let next = 0;
+    for (const s of spots) {
+      const type = s.type ?? types[next++];
+      if (type) harbors.push({ edge: edgeKey(s.sea, s.land), type });
+    }
   }
 
   // 5. robber / pirate
@@ -243,6 +302,7 @@ export function generateMap(spec: MapSpec, rng: RngState, rules: TokenRules, use
   const pirate = spec.pirate === null ? null : resolvePosition(hexes, spec.pirate, 'sea');
 
   const out: GeneratedMap = { hexes, harbors, robber, pirate };
+  if (spec.marks) out.marks = spec.marks;
   if (spec.fog) {
     out.fogStack = {
       terrains: shuffle(rng, expandTerrains(spec.fog.terrains)),

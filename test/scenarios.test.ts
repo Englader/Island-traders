@@ -690,7 +690,7 @@ describe('8 The Wonders', () => {
     const bridge = straitVertices(s)[0];
     expect(wall).toBeDefined();
     expect(bridge).toBeDefined();
-    const g = createGame({ scenario: 'seafarers-8-wonders', players: 3, seed: 2 });
+    const g = createGame({ scenario: 'seafarers-8-wonders', players: 3, seed: 2, options: { layout: 'random' } });
     const legal = legalSetupSettlements(g, currentSetupPlayer(g)!);
     expect(legal).not.toContain(wall);
     expect(legal).not.toContain(bridge);

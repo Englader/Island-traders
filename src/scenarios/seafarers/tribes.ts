@@ -1,5 +1,5 @@
 import { cornerVertex, parseHexId, sideEdge } from '../../board/hex.js';
-import type { MapSpec } from '../../board/mapSpec.js';
+import { markEdge, markVertex, type MapSpec } from '../../board/mapSpec.js';
 import { HARBORS_BASE, TERRAIN_BASE, TOKENS_28, TOKENS_BASE_SPIRAL } from '../../core/constants.js';
 import { shuffle } from '../../core/rng.js';
 import type { Action, DevCardType, EdgeId, GameState, HarborType, PlayerId, VertexId } from '../../core/types.js';
@@ -8,6 +8,7 @@ import { log, nameOf } from '../../rules/helpers.js';
 import { topo, totalVP } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply, withoutTokens } from './common.js';
+import { CLOTH_FOR_CATAN, FORGOTTEN_TRIBE } from './officialMaps.js';
 
 // 5 ---------------------------------------------------------------------------
 
@@ -48,6 +49,7 @@ export const theForgottenTribe: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 13,
+  officialMap: () => FORGOTTEN_TRIBE,
   map: (): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
@@ -67,30 +69,32 @@ export const theForgottenTribe: ScenarioDef = {
   ...seafarersSupply,
   rules: seafarersRules({ forbiddenZones: ['tribe'], robberForbiddenZones: ['tribe'], robberNeedsToken: true }),
   hooks: {
-    init(state) {
-      const tribeHexes = Object.keys(state.board.hexes)
-        .filter((h) => state.board.hexes[h].zone === 'tribe')
-        .sort();
-      const spots: EdgeId[] = [];
-      for (const h of tribeHexes) {
-        const a = parseHexId(h);
-        spots.push(sideEdge(a, 2), sideEdge(a, 3), sideEdge(a, 4)); // the three coasts facing the main island
+    init(state, map) {
+      const giftAt: Record<EdgeId, Gift> = {};
+      if (map.marks?.vp) {
+        // The rulebook's map marks where each kind of gift lies; the harbor types and cards are random.
+        for (const g of ['vp', 'devCard', 'harbor'] as const) for (const m of map.marks[g] ?? []) giftAt[markEdge(m)] = g;
+      } else {
+        const tribeHexes = Object.keys(state.board.hexes)
+          .filter((h) => state.board.hexes[h].zone === 'tribe')
+          .sort();
+        const spots: EdgeId[] = [];
+        for (const h of tribeHexes) {
+          const a = parseHexId(h);
+          spots.push(sideEdge(a, 2), sideEdge(a, 3), sideEdge(a, 4)); // the three coasts facing the main island
+        }
+        const gifts = shuffle(state.rng, [...TRIBE_GIFTS]);
+        spots.forEach((e, i) => (giftAt[e] = gifts[i % gifts.length]));
       }
-      const gifts = shuffle(state.rng, [...TRIBE_GIFTS]);
       // The top development cards are set aside, face down, for the gift spots.
       const giftCards: DevCardType[] = [];
-      for (let i = 0; i < gifts.filter((g) => g === 'devCard').length; i++) {
-        const c = state.devDeck.pop();
+      for (const g of Object.values(giftAt)) {
+        const c = g === 'devCard' ? state.devDeck.pop() : undefined;
         if (c) giftCards.push(c);
       }
       const harbors = shuffle(state.rng, [...TRIBE_HARBORS]);
       const harborAt: Record<EdgeId, HarborType> = {};
-      const giftAt: Record<EdgeId, Gift> = {};
-      spots.forEach((e, i) => {
-        const g = gifts[i % gifts.length];
-        giftAt[e] = g;
-        if (g === 'harbor') harborAt[e] = harbors.pop() ?? 'generic';
-      });
+      for (const [e, g] of Object.entries(giftAt)) if (g === 'harbor') harborAt[e] = harbors.pop() ?? 'generic';
       state.ext.tribe = { gifts: giftAt, harborAt, giftCards } satisfies TribeState;
       state.ext.heldHarbors = {};
     },
@@ -167,7 +171,7 @@ function clothOf(state: GameState): ClothState {
   return state.ext.cloth as ClothState;
 }
 
-/** Villages (intersections on the small islands) with their numbers: left and right end of each islet. */
+/** Random set-up villages (intersections on the small islands) with their numbers: left and right end of each islet. */
 const VILLAGE_TOKENS = [
   [4, 10],
   [5, 9],
@@ -198,6 +202,7 @@ export const clothTrade: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 14,
+  officialMap: () => CLOTH_FOR_CATAN,
   map: (): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
@@ -232,23 +237,28 @@ export const clothTrade: ScenarioDef = {
     ],
   }),
   hooks: {
-    init(state) {
+    init(state, map) {
       const villages: Record<VertexId, Village> = {};
-      const islets: string[][] = [];
-      for (const [h, hex] of Object.entries(state.board.hexes)) {
-        if (hex.zone !== 'isle') continue;
-        const row = islets.find((x) => state.board.hexes[x[0]].r === hex.r);
-        if (row) row.push(h);
-        else islets.push([h]);
+      if (map.marks?.village) {
+        // The rulebook's villages: number tokens on marked intersections.
+        for (const m of map.marks.village) villages[markVertex(m)] = { token: m.value ?? 0, cloth: CLOTH_PER_VILLAGE, traders: [] };
+      } else {
+        const islets: string[][] = [];
+        for (const [h, hex] of Object.entries(state.board.hexes)) {
+          if (hex.zone !== 'isle') continue;
+          const row = islets.find((x) => state.board.hexes[x[0]].r === hex.r);
+          if (row) row.push(h);
+          else islets.push([h]);
+        }
+        islets.sort((a, b) => state.board.hexes[a[0]].r - state.board.hexes[b[0]].r);
+        islets.forEach((pair, i) => {
+          pair.sort((a, b) => state.board.hexes[a].q - state.board.hexes[b].q);
+          const left = cornerVertex(parseHexId(pair[0]), 3);
+          const right = cornerVertex(parseHexId(pair[pair.length - 1]), 0);
+          villages[left] = { token: VILLAGE_TOKENS[i % 4][0], cloth: CLOTH_PER_VILLAGE, traders: [] };
+          villages[right] = { token: VILLAGE_TOKENS[i % 4][1], cloth: CLOTH_PER_VILLAGE, traders: [] };
+        });
       }
-      islets.sort((a, b) => state.board.hexes[a[0]].r - state.board.hexes[b[0]].r);
-      islets.forEach((pair, i) => {
-        pair.sort((a, b) => state.board.hexes[a].q - state.board.hexes[b].q);
-        const left = cornerVertex(parseHexId(pair[0]), 3);
-        const right = cornerVertex(parseHexId(pair[pair.length - 1]), 0);
-        villages[left] = { token: VILLAGE_TOKENS[i % 4][0], cloth: CLOTH_PER_VILLAGE, traders: [] };
-        villages[right] = { token: VILLAGE_TOKENS[i % 4][1], cloth: CLOTH_PER_VILLAGE, traders: [] };
-      });
       state.ext.cloth = { villages, general: CLOTH_GENERAL_SUPPLY, cloth: state.players.map(() => 0) } satisfies ClothState;
     },
     afterEdge(state, player, edge, kind) {

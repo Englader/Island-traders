@@ -148,9 +148,10 @@ test('pass-and-play hides hands behind a hand-over screen', async ({ page }) => 
   await expect(page.locator('svg.board')).toBeVisible();
   await expect(page.locator('.status-text')).toContainText('Place settlement 1');
   // place settlement + road, then the device must go to someone else before they see anything
-  await page.locator('[data-pick^="v:"]').first().click();
+  // (pickTarget skips targets Playwright can't click, e.g. an upright path has no width)
+  expect(await pickTarget(page, 'v')).toBe(true);
   await page.locator('.confirm-bar button.primary').click();
-  await page.locator('[data-pick^="e:"]').first().click();
+  expect(await pickTarget(page, 'e')).toBe(true);
   await page.locator('.confirm-bar button.primary').click();
   await expect(pass).toBeVisible({ timeout: 20_000 });
   expect(((await page.locator('.pass-name').textContent()) ?? '').trim()).not.toBe(first);
@@ -266,17 +267,57 @@ test('the computer level is picked for a new game, remembered, and can be change
   await expect(page.locator('.level-pick .seg button.on')).toHaveText('Hard');
 });
 
+/** The board's tiles as "hex terrain token", sorted: what a board shows, to compare two boards. */
+async function tiles(board: ReturnType<Page['locator']>): Promise<string[]> {
+  const list = await board.locator('[data-tile]').evaluateAll((els) =>
+    els.map((e) => `${e.getAttribute('data-tile')} ${e.getAttribute('data-terrain')} ${e.getAttribute('data-token')}`),
+  );
+  return list.sort();
+}
+
 test('the chosen map can be previewed before the game starts', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /New game/ }).click();
   await page.getByRole('button', { name: /Four Islands/ }).click();
+  // the rulebook's map is the default: always the same, so there is nothing to reroll
+  await expect(page.locator('.map-row .seg button.on')).toHaveText('Official');
+  await expect(page.locator('.map-note')).toHaveText('Official map from the rulebook.');
+  await expect(page.getByRole('button', { name: '🎲 New map' })).toHaveCount(0);
   const thumb = page.getByRole('button', { name: 'Show the The Four Islands map' });
   await expect(thumb).toBeVisible();
   await expect(thumb.locator('svg.board')).toBeVisible();
   await thumb.click();
   const sheet = page.locator('.sheet[aria-label="The Four Islands"]');
   await expect(sheet.locator('.map-big svg.board')).toBeVisible();
-  await expect(sheet.locator('.hint')).toContainText(/shuffled|same in every game/);
+  await expect(sheet.locator('.hint')).toContainText('Official map from the rulebook');
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  // the fog scenario keeps its unexplored tiles hidden and shuffled
+  await page.getByRole('button', { name: /Fog Islands/ }).click();
+  await expect(page.locator('.map-note')).toContainText('unexplored and shuffled');
+  await expect(page.getByRole('button', { name: '🎲 New map' })).toHaveCount(0);
+});
+
+test('a random map: the preview is the board the game is played on, and 🎲 deals another', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: /Options/ }).click();
+  await page.getByRole('button', { name: 'fast' }).click();
+  await page.locator('.map-row').getByRole('button', { name: 'Random' }).click();
+  await expect(page.locator('.map-note')).toHaveText('Random layout — tap 🎲 for another.');
+  const preview = page.locator('.map-thumb svg.board');
+  const first = await tiles(preview);
+  expect(first).toHaveLength(19); // the land hexes of the base island
+  await page.getByRole('button', { name: '🎲 New map' }).click();
+  await expect.poll(async () => (await tiles(preview)).join()).not.toBe(first.join());
+  const shown = await tiles(preview);
+  await page.getByRole('button', { name: 'Start game' }).click();
+  const board = page.locator('.board-area svg.board');
+  await expect(board).toBeVisible();
+  expect(await tiles(board)).toEqual(shown);
+  // the choice is remembered for the next new game
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await expect(page.locator('.map-row .seg button.on')).toHaveText('Random');
 });
 
 test('dice statistics count every roll, for everyone and per player', async ({ page }) => {

@@ -15,10 +15,12 @@ describe('heuristic bot', () => {
   for (const sc of BUILT_IN_SCENARIOS) {
     const counts = [...new Set([sc.minPlayers, Math.min(4, sc.maxPlayers), ...(sc.maxPlayers >= 5 ? [sc.maxPlayers] : [])])];
     for (const n of counts) {
-      it(`finishes ${sc.id} with ${n} players using only legal moves`, () => {
-        const { state } = simulateHeuristic(createGame({ scenario: sc.id, players: n, seed: `bot-${n}` }), 4000);
-        expect(state.phase.kind).toBe('gameOver');
-      });
+      for (const layout of ['official', 'random'] as const) {
+        it(`finishes ${sc.id} with ${n} players on the ${layout} map using only legal moves`, () => {
+          const { state } = simulateHeuristic(createGame({ scenario: sc.id, players: n, seed: `bot-${n}`, options: { layout } }), 4000);
+          expect(state.phase.kind).toBe('gameOver');
+        });
+      }
     }
   }
 

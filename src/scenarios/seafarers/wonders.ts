@@ -1,4 +1,4 @@
-import type { MapSpec } from '../../board/mapSpec.js';
+import { markVertex, type MapSpec } from '../../board/mapSpec.js';
 import { HARBORS_BASE, TOKENS_28 } from '../../core/constants.js';
 import { hasAtLeast } from '../../core/resources.js';
 import type { Action, GameState, PartialCounts, PlayerId, VertexId } from '../../core/types.js';
@@ -7,6 +7,7 @@ import { longestRouteLength } from '../../rules/longestRoute.js';
 import { buildingsOf, isLandHex, topo, totalVP, vertexLandHexes } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply, withoutTokens } from './common.js';
+import { WONDERS_OF_CATAN } from './officialMaps.js';
 
 /**
  * The Wonders (the rulebook's "Wonders of Catan"). Wonder requirements and
@@ -17,10 +18,12 @@ import { seafarersSupply, withoutTokens } from './common.js';
  * Win by finishing all 4 levels, or with 10 VP and more levels than anyone
  * else.
  *
- * Map markings: the desert wasteland (intersections next to a desert: Great
- * Wall), the strait (intersections next to a strait sea hex: Great Bridge)
+ * Map markings: the desert wasteland (Great Wall), the strait (Great Bridge)
  * and the intersections next to those strait sites. None of them, nor the
  * small islands, may take a starting settlement; they are open afterwards.
+ * The rulebook's map marks five wasteland and two strait intersections; the
+ * random set-up takes every intersection next to a desert, and every land
+ * intersection next to a sea hex tagged as the strait.
  */
 export const WONDER_LEVELS = 4;
 
@@ -32,15 +35,29 @@ export interface WonderDef {
   eligible(state: GameState, p: PlayerId): boolean;
 }
 
-/** Intersections next to a desert hex (the wasteland). */
+/** Intersections marked on the rulebook's map (set at the start of the game). */
+interface WonderSites {
+  strait: VertexId[];
+  wasteland: VertexId[];
+}
+
+function printedSites(state: GameState): WonderSites | undefined {
+  return state.ext.wonderSites as WonderSites | undefined;
+}
+
+/** The desert wasteland: the marked intersections, or every intersection next to a desert. */
 export function wastelandVertices(state: GameState): VertexId[] {
+  const printed = printedSites(state);
+  if (printed) return printed.wasteland;
   return topo(state).vertexIds.filter((v) =>
     topo(state).vertexHexes[v].some((h) => state.board.hexes[h].terrain === 'desert'),
   );
 }
 
-/** Land intersections next to a sea hex marked as the strait. */
+/** The strait: the marked intersections, or the land intersections next to a sea hex tagged as the strait. */
 export function straitVertices(state: GameState): VertexId[] {
+  const printed = printedSites(state);
+  if (printed) return printed.strait;
   return topo(state).vertexIds.filter(
     (v) =>
       vertexLandHexes(state, v).length > 0 &&
@@ -143,6 +160,7 @@ export const theWonders: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 10,
+  officialMap: () => WONDERS_OF_CATAN,
   map: (): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
@@ -167,11 +185,18 @@ export const theWonders: ScenarioDef = {
   ...seafarersSupply,
   rules: seafarersRules({
     pirate: false,
-    setupZones: ['west', 'east'],
-    islandBonus: { vp: 1, home: ['west', 'east'] },
+    // 'main' on the rulebook's map; 'west' and 'east' on the random one.
+    setupZones: ['main', 'west', 'east'],
+    islandBonus: { vp: 1, home: ['main', 'west', 'east'] },
   }),
   hooks: {
-    init(state) {
+    init(state, map) {
+      if (map.marks?.strait) {
+        state.ext.wonderSites = {
+          strait: map.marks.strait.map(markVertex),
+          wasteland: (map.marks.wasteland ?? []).map(markVertex),
+        } satisfies WonderSites;
+      }
       state.ext.wonders = {
         claimed: {},
         owned: state.players.map(() => null),

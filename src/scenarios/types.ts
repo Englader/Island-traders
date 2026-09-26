@@ -1,4 +1,4 @@
-import type { MapSpec } from '../board/mapSpec.js';
+import type { GeneratedMap, MapSpec } from '../board/mapSpec.js';
 import type {
   Action,
   DevCardType,
@@ -53,8 +53,8 @@ export interface EndResult {
  * only use the seeded RNG in `state.rng`.
  */
 export interface ScenarioHooks {
-  /** Set up `state.ext` after the board is generated. */
-  init?(state: GameState): void;
+  /** Set up `state.ext` after the board is generated (`map.marks` holds the map's printed spots). */
+  init?(state: GameState, map: GeneratedMap): void;
   afterSettlement?(state: GameState, player: PlayerId, vertex: VertexId, setup: boolean): void;
   afterEdge?(state: GameState, player: PlayerId, edge: EdgeId, kind: 'road' | 'ship', setup: boolean): void;
   /**
@@ -106,6 +106,12 @@ export interface ScenarioDef {
   minPlayers: number;
   maxPlayers: number;
   victoryPoints(players: number): number;
+  /**
+   * The set-up map printed in the rulebook for this player count (layout
+   * 'official'), or null when the rulebook has none; `map` is used then.
+   */
+  officialMap?(players: number, options: GameOptions): MapSpec | null;
+  /** The random set-up (layout 'random'): shuffled tiles, numbers and harbors. */
   map(players: number, options: GameOptions): MapSpec;
   bankSize(players: number): number;
   devDeck(players: number): Record<DevCardType, number>;

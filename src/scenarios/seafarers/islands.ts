@@ -2,11 +2,22 @@ import type { MapSpec } from '../../board/mapSpec.js';
 import { TERRAIN_BASE, TOKENS_28, TOKENS_BASE_SPIRAL } from '../../core/constants.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
 import { revealFogAround, seafarersHarbors, seafarersSupply } from './common.js';
+import {
+  FOG_ISLANDS_3,
+  FOG_ISLANDS_4,
+  FOUR_ISLANDS_3,
+  FOUR_ISLANDS_4,
+  NEW_SHORES_3,
+  NEW_SHORES_4,
+  THROUGH_THE_DESERT_3,
+  THROUGH_THE_DESERT_4,
+} from './officialMaps.js';
 
 /*
- * Maps below are original layouts that follow each scenario's structure (main
- * island + outlying islands, desert barrier, fog area, ...). Official
- * layouts can be dropped in as MapSpec data without code changes.
+ * Each scenario has the rulebook's map for 3 and for 4 players
+ * (`officialMap`, see officialMaps.ts) and a random set-up (`map`): original
+ * layouts that follow the scenario's structure (main island + outlying
+ * islands, desert barrier, fog area, ...) with shuffled tiles and numbers.
  */
 
 // 1 ---------------------------------------------------------------------------
@@ -20,6 +31,7 @@ export const headingForNewShores: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 14,
+  officialMap: (players) => (players <= 3 ? NEW_SHORES_3 : NEW_SHORES_4),
   map: (players): MapSpec => ({
     rows: [
       '~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~',
@@ -54,6 +66,7 @@ export const theFourIslands: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 13,
+  officialMap: (players) => (players <= 3 ? FOUR_ISLANDS_3 : FOUR_ISLANDS_4),
   map: (players): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
@@ -90,10 +103,11 @@ export const theFogIslands: ScenarioDef = {
   name: 'The Fog Islands',
   expansion: 'seafarers',
   description:
-    'The east is unexplored. A road or ship reaching a fog hex reveals it; new land gets a random number and pays the discoverer 1 card. 12 VP to win.',
+    'Part of the sea is unexplored. A road or ship reaching a fog hex reveals it; new land gets a random number and pays the discoverer 1 card. 12 VP to win.',
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 12,
+  officialMap: (players) => (players <= 3 ? FOG_ISLANDS_3 : FOG_ISLANDS_4),
   map: (players): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
@@ -139,6 +153,7 @@ export const throughTheDesert: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 14,
+  officialMap: (players) => (players <= 3 ? THROUGH_THE_DESERT_3 : THROUGH_THE_DESERT_4),
   map: (players): MapSpec => ({
     rows: [
       '~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~',

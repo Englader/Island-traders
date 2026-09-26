@@ -1,16 +1,17 @@
 import { cornerVertex, offsetId, parseHexId, sideEdge } from '../../board/hex.js';
-import type { MapSpec } from '../../board/mapSpec.js';
+import { markEdge, markHex, markVertex, type MapSpec } from '../../board/mapSpec.js';
 import { BANK_BASE, DEV_DECK_BASE, TOKENS_28 } from '../../core/constants.js';
 import { rollDie } from '../../core/rng.js';
 import type { Action, DevCardType, EdgeId, GameState, HexId, Phase, PlayerId, VertexId } from '../../core/types.js';
 import { discardRandom, log, nameOf, stealRandom } from '../../rules/helpers.js';
 import { buildingsOf, edgeAllowsShip, handSize, topo, vertexZones } from '../../rules/queries.js';
 import { seafarersRules, type ScenarioDef } from '../types.js';
+import { PIRATE_ISLANDS } from './officialMaps.js';
 
 /**
  * The Pirate Islands (5th-edition Seafarers rulebook, scenario 7):
  *
- * - Fixed map, no robber. Each player starts with a pre-placed coastal
+ * - No robber. Each player starts with a pre-placed coastal
  *   settlement and ship on the main (east) island, then places two more
  *   settlements in the usual snake draft.
  * - Every roll, before production or the 7, the pirate fleet sails clockwise
@@ -34,14 +35,14 @@ import { seafarersRules, type ScenarioDef } from '../types.js';
  */
 export const FORTRESS_STRENGTH = 3;
 
-/** Per seat (odd-r offsets): fortress islet, marked intersection islet, main-island start hex. */
+/** Random set-up, per seat (odd-r offsets): fortress islet, marked intersection islet, main-island start hex. */
 const SEATS = [
   { fort: '1,1', way: '3,1', start: '7,1' },
   { fort: '1,7', way: '3,7', start: '7,7' },
   { fort: '1,3', way: '3,3', start: '7,3' },
   { fort: '1,5', way: '3,5', start: '7,5' },
 ];
-/** Clockwise circuit around the two desert islets (odd-r offsets). */
+/** Random set-up: clockwise circuit around the two desert islets (odd-r offsets). */
 const CIRCUIT = ['5,2', '6,2', '6,3', '7,4', '6,5', '6,6', '5,6', '4,5', '4,4', '4,3', '4,2'];
 
 interface Fortress {
@@ -193,6 +194,7 @@ export const thePirateIslands: ScenarioDef = {
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 10,
+  officialMap: () => PIRATE_ISLANDS,
   map: (): MapSpec => ({
     rows: [
       '~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~',
@@ -225,30 +227,42 @@ export const thePirateIslands: ScenarioDef = {
     robberForbiddenZones: ['fort', 'desert'],
   }),
   hooks: {
-    init(state) {
+    init(state, map) {
+      const m = map.marks;
+      // Per seat: fortress hex and intersection, marked intersection, pre-placed settlement and ship.
+      const seats = m?.fortress
+        ? m.fortress.map((f, i) => ({
+            hex: markHex(f),
+            vertex: markVertex(f),
+            waypoint: markVertex(m.waypoint[i]),
+            home: markVertex(m.start[i]),
+            ship: markEdge(m.startShip[i]),
+          }))
+        : SEATS.map((seat) => {
+            const start = parseHexId(off(seat.start));
+            return {
+              hex: off(seat.fort),
+              vertex: cornerVertex(parseHexId(off(seat.fort)), 0),
+              waypoint: cornerVertex(parseHexId(off(seat.way)), 3),
+              home: cornerVertex(start, 2),
+              ship: sideEdge(start, 3),
+            };
+          });
       const fortresses: Fortress[] = state.players.map((pl, i) => {
-        const seat = SEATS[i];
-        const hex = off(seat.fort);
+        const seat = seats[i];
         // The fortress is one of the player's own settlements, stacked on 3 chits.
         pl.supply.settlements--;
         // Pre-placed coastal settlement and ship on the main island.
-        const start = parseHexId(off(seat.start));
-        const home = cornerVertex(start, 2);
-        state.board.buildings[home] = { owner: i, type: 'settlement' };
+        state.board.buildings[seat.home] = { owner: i, type: 'settlement' };
         pl.supply.settlements--;
-        state.board.pieces[sideEdge(start, 3)] = { owner: i, type: 'ship', placedPart: 0 };
+        state.board.pieces[seat.ship] = { owner: i, type: 'ship', placedPart: 0 };
         pl.supply.ships--;
-        return {
-          hex,
-          vertex: cornerVertex(parseHexId(hex), 0),
-          waypoint: cornerVertex(parseHexId(off(seat.way)), 3),
-          chits: FORTRESS_STRENGTH,
-          captured: false,
-        };
+        return { hex: seat.hex, vertex: seat.vertex, waypoint: seat.waypoint, chits: FORTRESS_STRENGTH, captured: false };
       });
-      state.ext.pirateIslands = { circuit: CIRCUIT.map(off), fleetIndex: 0, fortresses } satisfies PirateIslandsState;
+      const circuit = m?.circuit ? m.circuit.map(markHex) : CIRCUIT.map(off);
+      state.ext.pirateIslands = { circuit, fleetIndex: 0, fortresses } satisfies PirateIslandsState;
       state.ext.blockedVertices = fortresses.map((f) => f.vertex);
-      state.board.pirate = off(CIRCUIT[0]);
+      state.board.pirate = circuit[0];
     },
     beforeProduction(state, dice) {
       const st = pi(state);

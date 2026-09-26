@@ -1,11 +1,12 @@
 // Plays computer players of different levels against each other and counts wins:
-//   npx vite-node scripts/bot-league.ts [games-per-scenario] [scenario,...]
+//   npx vite-node scripts/bot-league.ts [games-per-scenario] [scenario,...] [official|random]
 // Every table has one easy, one medium and one hard player; seats rotate so
 // nobody always goes first.
-import { BOT_LEVELS, createGame, simulateHeuristic, totalVP, type BotLevel } from '../src/index.js';
+import { BOT_LEVELS, createGame, simulateHeuristic, totalVP, type BotLevel, type MapLayout } from '../src/index.js';
 
 const games = Number(process.argv[2] ?? 30);
 const scenarios = (process.argv[3] ?? 'base,seafarers-1-new-shores,seafarers-2-four-islands').split(',');
+const layout: MapLayout = process.argv[4] === 'random' ? 'random' : 'official';
 const orders: BotLevel[][] = [
   ['easy', 'medium', 'hard'],
   ['medium', 'hard', 'easy'],
@@ -22,7 +23,7 @@ for (const scenario of scenarios) {
   const t0 = Date.now();
   for (let g = 0; g < games; g++) {
     const levels = orders[g % orders.length];
-    const start = createGame({ scenario, players: 3, seed: `league-${scenario}-${g}`, options: { firstPlayer: 0 } });
+    const start = createGame({ scenario, players: 3, seed: `league-${scenario}-${g}`, options: { firstPlayer: 0, layout } });
     const { state } = simulateHeuristic(start, 6000, levels);
     if (state.phase.kind !== 'gameOver') {
       unfinished++;

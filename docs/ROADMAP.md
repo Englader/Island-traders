@@ -23,8 +23,9 @@ already matched. Fixed:
 - Four Islands / Fog Islands: no desert, the robber starts on a 12. Fog is
   revealed by roads and ships only. Harbor counts per player count.
 
-The beginner setup (Illustration A) was not added: it is a printed map, and
-published maps stay original.
+Official maps (later): every scenario now starts on its rulebook's set-up
+map by default, including the base game's beginners' set-ups; the shuffled
+set-ups stay available as the random layout.
 
 ## 2. Browser game on one device (done)
 
@@ -94,7 +95,8 @@ The site is `https://englader.github.io/Island-traders/`.
   on pull requests.
 - Branding: **Island Traders** everywhere users see it. "Catan" appears only
   as a factual reference to the rules it follows, with the not-affiliated
-  notice. No official maps or art.
+  notice. No official art; the official maps are game data (which terrain
+  and number go where), drawn with the game's own art.
 - Fallback if the repo goes private again: Cloudflare Pages.
 
 ## 5. Next steps
@@ -103,4 +105,3 @@ The site is `https://englader.github.io/Island-traders/`.
   World support 5–6 players today).
 - Let bots make domestic trade offers (they only answer them now).
 - Online option B (a server that keeps games alive without the host).
-- Official maps as `MapSpec` data if they are verified and licensed.
