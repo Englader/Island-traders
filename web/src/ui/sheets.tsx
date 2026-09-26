@@ -19,6 +19,7 @@ import { Cost, ResIcon, ResourcePicker, Sheet, cleanCounts, sumCounts } from './
 import { Counts } from './icons';
 import { DevCardView, ResourceCard } from './cards';
 import { TradeRow, TradeSummary } from './TradeRow';
+import { LogLine, logItems } from './GameLog';
 import { bankCheck, rowKind, rowOf, rowSides, type BoxRule, type SignedCounts } from '../game/trade';
 
 export interface SheetProps {
@@ -777,22 +778,22 @@ export function ScenarioSheet({ view, legal, seat, colors, send, close, placeHar
 
 // --- log & end ----------------------------------------------------------------------------
 
-export function LogSheet({ view, close }: { view: GameView; close(): void }) {
-  const entries = view.log.slice(-200);
+export function LogSheet({ view, colors, close }: { view: GameView; colors: PlayerColor[]; close(): void }) {
+  const items = logItems(view, 200);
   return (
     <Sheet title="Game log" onClose={close}>
-      <ol
+      <div
         class="log"
         ref={(el) => {
           if (el) el.scrollTop = el.scrollHeight;
         }}
       >
-        {entries.map((e, i) => (
-          <li key={i} class={e.msg.startsWith('---') ? 'turn-line' : e.visibleTo ? 'private' : ''}>
-            {e.msg.replace(/^---\s*|\s*---$/g, '')}
-          </li>
-        ))}
-      </ol>
+        <ol class="glog-list">
+          {items.map((it) => (
+            <LogLine key={it.key} item={it} view={view} colors={colors} />
+          ))}
+        </ol>
+      </div>
     </Sheet>
   );
 }

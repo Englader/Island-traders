@@ -1,15 +1,21 @@
 import { getScenario, type Action, type GameView, type PlayerId } from 'engine';
 import type { JSX } from 'preact';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
+import { loadJson, saveJson } from '../game/storage';
 import { FxOverlay, fxFor, type FxEvent } from './Fx';
 import { DiceRoll, type RollInfo } from './DiceRoll';
 import { DiceStatsSheet } from './DiceStats';
+import { ActionDeck, BUILD_KEYS, buildOrder, CheckIcon, EndIcon, notNowReason, StarIcon, TradeIcon, type DeckButton } from './ActionDeck';
+import { DockedLog, RichText, type LogPrefs } from './GameLog';
+import { landBox, roomForLog } from './boardRoom';
 import { DevCardView, ResourceCard } from './cards';
 import type { Flash } from './flash';
-import { Die, Sheet } from './common';
+import { Die, Sheet, useMedia } from './common';
+import { ResGlyph } from './icons';
+import { PieceGlyph } from './pieces';
 import {
   BuildSheet,
   CardsSheet,
@@ -56,9 +62,34 @@ type Mode =
 
 type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice';
 
+/** Wide screens: build tiles and bigger buttons on the side panel, and keyboard shortcuts. */
+const DESK = '(min-width: 900px) and (min-height: 620px)';
+/** Wider still: the game log docked in the bottom-left corner of the board. */
+const DOCK = '(min-width: 1100px) and (min-height: 620px)';
+/** Where the docked log's size and folded state are kept. */
+const LOG_PREFS = 'ui:log';
+
+function loadLogPrefs(): LogPrefs {
+  const p = loadJson<LogPrefs>(LOG_PREFS);
+  if (!p || typeof p.open !== 'boolean') return { open: true };
+  const px = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.round(n) : undefined);
+  return { open: p.open, w: px(p.w), h: px(p.h) };
+}
+
 interface Pending {
   key: string;
   actions: Action[];
+}
+
+const BUILD_ACTION: Record<BuildPiece, Action['type']> = { road: 'buildRoad', ship: 'buildShip', settlement: 'buildSettlement', city: 'buildCity' };
+
+function RollIcon() {
+  return (
+    <span class="roll-icon">
+      <Die n={5} />
+      <Die n={3} red />
+    </span>
+  );
 }
 
 /** Which board spots are clickable, and the moves available at each. */
@@ -216,6 +247,35 @@ export function GameScreen(props: GameScreenProps) {
   const sc = getScenario(view.scenario);
   const ph = view.phase;
   const me = seat !== null ? view.players[seat] : null;
+  const desk = useMedia(DESK);
+  const dock = useMedia(DOCK);
+  const [logPrefs, setLogPrefsState] = useState<LogPrefs>(loadLogPrefs);
+  const setLogPrefs = (p: LogPrefs) => {
+    setLogPrefsState(p);
+    saveJson(LOG_PREFS, p);
+  };
+  // Move the board's frame off the docked log where the board has room to spare.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const land = useMemo(() => landBox(view), [view.board.layoutKey]);
+  const [room, setRoom] = useState<{ left: number; bottom: number } | null>(null);
+  useLayoutEffect(() => {
+    const area = areaRef.current;
+    if (!dock || !logPrefs.open || !area || typeof ResizeObserver === 'undefined') {
+      setRoom(null);
+      return;
+    }
+    const update = () => {
+      const log = area.querySelector<HTMLElement>('.glog');
+      if (!log) return;
+      // the log, its 12px margin and a little air
+      const next = roomForLog({ w: area.clientWidth, h: area.clientHeight }, land, { w: log.offsetWidth + 20, h: log.offsetHeight + 20 });
+      setRoom((r) => (r && r.left === next.left && r.bottom === next.bottom ? r : next));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(area);
+    return () => ro.disconnect();
+  }, [dock, logPrefs.open, logPrefs.w, logPrefs.h, land]);
 
   // Reset transient UI when the phase or turn part changes.
   const phaseKey = `${ph.kind}:${view.turn.part}:${ph.kind === 'setup' ? `${ph.round}.${ph.index}.${ph.step}` : ''}`;
@@ -382,6 +442,157 @@ export function GameScreen(props: GameScreenProps) {
     if (ph.kind === 'robber' && isActor && robberPieces.length > 1 && mode?.kind !== 'robber') setMode({ kind: 'robber', piece: robberPieces[0] });
   }, [ph.kind, isActor, robberPieces.length]);
 
+  // --- wide screens: the action deck ------------------------------------------------------
+  const later = seat !== null ? notNowReason(view, seat) : null;
+  const moving = mode?.kind === 'moveFrom' || mode?.kind === 'moveTo';
+  const buildMode = mode?.kind === 'build' ? mode.piece : null;
+  const toggleBuild = (piece: BuildPiece) => {
+    setPending(null);
+    setMode(buildMode === piece ? null : { kind: 'build', piece });
+  };
+  const roll = isActor && canAct && ph.kind === 'preRoll' ? () => doSend({ type: 'rollDice', player: seat! }) : null;
+  const finish =
+    isActor && canAct && !gameOver
+      ? (ph.kind === 'main' || ph.kind === 'specialBuild') && has('endTurn')
+        ? () => doSend({ type: 'endTurn', player: seat! })
+        : ph.kind === 'roadBuilding'
+          ? () => doSend({ type: 'endRoadBuilding', player: seat! })
+          : null
+      : null;
+  const tradeWhy =
+    later ??
+    (ph.kind !== 'main'
+      ? 'No trading in the special build phase'
+      : view.options.tradeBuildMode === 'separate' && view.turn.buildingStarted
+        ? 'No more trading once you have built this turn'
+        : null);
+  const primary: DeckButton[] = [];
+  const secondary: DeckButton[] = [];
+  if (desk && seat !== null && me?.resources && !gameOver) {
+    if (roll) primary.push({ key: 'roll', label: 'Roll', icon: <RollIcon />, kbd: 'R', tone: 'roll', title: 'Roll the dice', onClick: roll });
+    else if (finish && ph.kind === 'roadBuilding')
+      primary.push({ key: 'done', label: 'Done building', icon: <CheckIcon />, kbd: 'E', tone: 'end', title: 'Stop placing free roads', onClick: finish });
+    else if (finish) primary.push({ key: 'end', label: 'End turn', icon: <EndIcon />, kbd: 'E', tone: 'end', title: 'Pass the dice to the next player', onClick: finish });
+    else if (isActor && ph.kind === 'robber' && robberPieces.length > 1) {
+      for (const piece of robberPieces)
+        primary.push({
+          key: piece,
+          label: piece === 'robber' ? 'Robber' : 'Pirate',
+          icon: piece === 'robber' ? '🥷' : '🏴‍☠️',
+          tone: 'plain',
+          on: (mode?.kind === 'robber' ? mode.piece : robberPieces[0]) === piece,
+          title: piece === 'robber' ? 'Move the robber to a land tile' : 'Move the pirate to a sea tile',
+          onClick: () => {
+            setPending(null);
+            setMode({ kind: 'robber', piece });
+          },
+        });
+    }
+    secondary.push({
+      key: 'trade',
+      label: 'Trade',
+      icon: <TradeIcon />,
+      kbd: 'T',
+      badge: tradeWhy === null ? counters : 0,
+      why: tradeWhy,
+      title: 'Trade with other players or the bank',
+      onClick: () => setSheet('trade'),
+    });
+    secondary.push({
+      key: 'cards',
+      label: 'Play card',
+      icon: <PieceGlyph kind="dev" fill="#6a48c4" stroke="#3b2273" />,
+      kbd: 'C',
+      badge: devCount,
+      why: devCount > 0 ? null : 'No development cards yet: buy one with the Dev card tile',
+      title: 'Your development cards',
+      onClick: () => setSheet('cards'),
+    });
+    if (isActor && ph.kind === 'main' && has('moveShip'))
+      secondary.push({
+        key: 'move',
+        label: moving ? 'Cancel move' : 'Move ship',
+        icon: <PieceGlyph kind="ship" fill={colors[seat].fill} stroke={colors[seat].stroke} />,
+        on: moving,
+        title: 'Move one of your open-ended ships',
+        onClick: () => setMode(moving ? null : { kind: 'moveFrom' }),
+      });
+    if (showScenario)
+      secondary.push({
+        key: 'scen',
+        label: 'Special',
+        icon: <StarIcon />,
+        glow: scenarioActions.length > 0 || heldHarbors.length > 0,
+        title: sc.name,
+        onClick: () => setSheet('scenario'),
+      });
+  }
+
+  // A short side panel lists the players two by two so the main button stays on screen.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [tight, setTight] = useState(false);
+  const roomy = useRef(0);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!desk || !el || typeof ResizeObserver === 'undefined') {
+      setTight(false);
+      return;
+    }
+    const check = () => {
+      if (!tight) {
+        if (el.scrollHeight > el.clientHeight + 1) {
+          // remember how tall the roomy layout was, to go back once there is room
+          roomy.current = el.scrollHeight;
+          setTight(true);
+        }
+      } else if (el.clientHeight >= roomy.current) setTight(false);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [desk, tight, view.players.length, sc.id, primary.length, secondary.length]);
+
+  // Keyboard: Esc closes a sheet or cancels a move; on wide screens R rolls, E ends
+  // the turn, T trades, C shows the development cards, B goes to the build tiles
+  // and 1-5 pick one.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const covered = document.querySelector('.sheet-backdrop') !== null;
+      if (e.key === 'Escape') {
+        if (sheet) setSheet(null);
+        else if (covered) return;
+        else if (pending) setPending(null);
+        else if (mode && mode.kind !== 'robber') setMode(null);
+        else return;
+        e.preventDefault();
+        return;
+      }
+      if (!desk || e.repeat || covered || document.querySelector('.roll-overlay')) return;
+      const k = e.key.toLowerCase();
+      const slot = BUILD_KEYS.indexOf(k);
+      const piece = slot >= 0 ? buildOrder(view)[slot] : undefined;
+      if (k === 'r' && roll) roll();
+      else if (k === 'e' && finish) finish();
+      else if (k === 't' && seat !== null && tradeWhy === null) setSheet('trade');
+      else if (k === 'c' && seat !== null && devCount > 0) setSheet('cards');
+      else if (k === 'b' && seat !== null) {
+        // the build tiles are the build menu here: move the keyboard focus to them
+        const tile = document.querySelector<HTMLElement>('.bgrid .btile.ready') ?? document.querySelector<HTMLElement>('.bgrid .btile');
+        if (!tile) return;
+        tile.focus();
+      } else if (piece === 'dev' && has('buyDevCard')) doSend({ type: 'buyDevCard', player: seat! });
+      else if (piece && piece !== 'dev' && has(BUILD_ACTION[piece])) toggleBuild(piece);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const dice = view.turn.dice;
   // A new roll plays the dice animation; the header dice, the glowing tiles
   // and the event feed wait until the dice have landed. A roll that was
@@ -411,16 +622,20 @@ export function GameScreen(props: GameScreenProps) {
     if (dice && !reduced) setRolling({ key: rollFlash.key, dice: [dice[0], dice[1]] });
   }, [rollFlash?.key]);
   // The latest few events, each marked with the colour of the player it is about.
-  const feed = view.log
-    .map((e, i) => ({ msg: e.msg, i }))
-    .filter((e) => !e.msg.startsWith('---'))
-    .slice(-3)
-    .map((e) => {
-      const who = view.players.find((p) => e.msg.startsWith(p.name + ' ') || e.msg.startsWith('(' + p.name + ' '));
-      return { ...e, color: who ? colors[who.id]?.fill : undefined };
-    });
+  // (Wide screens show the whole log in the corner instead.)
+  const feed = dock
+    ? []
+    : view.log
+        .map((e, i) => ({ msg: e.msg, i }))
+        .filter((e) => !e.msg.startsWith('---'))
+        .slice(-3)
+        .map((e) => {
+          const who = view.players.find((p) => e.msg.startsWith(p.name + ' ') || e.msg.startsWith('(' + p.name + ' '));
+          return { ...e, color: who ? colors[who.id]?.fill : undefined };
+        });
   const nextSpeed: Record<BotSpeed, BotSpeed> = { slow: 'normal', normal: 'fast', fast: 'slow' };
   const speedShort: Record<BotSpeed, string> = { slow: '½×', normal: '1×', fast: '2×' };
+  const tap = desk ? 'Click' : 'Tap';
 
   return (
     <div class="game">
@@ -467,7 +682,20 @@ export function GameScreen(props: GameScreenProps) {
         </div>
       )}
 
-      <div class="board-area">
+      <div
+        ref={areaRef}
+        class={dock ? 'board-area docked' : 'board-area'}
+        style={
+          dock
+            ? ({
+                '--log-w': logPrefs.w ? `${logPrefs.w}px` : undefined,
+                '--log-h': logPrefs.h ? `${logPrefs.h}px` : undefined,
+                '--fit-left': room ? `${room.left}px` : undefined,
+                '--fit-bottom': room ? `${room.bottom}px` : undefined,
+              } as Record<string, string>)
+            : undefined
+        }
+      >
         <Board
           view={view}
           colors={colors}
@@ -489,7 +717,13 @@ export function GameScreen(props: GameScreenProps) {
                   {speedShort[props.speed]}
                 </button>
               )}
-              <button type="button" class="log-chip" onClick={() => setSheet('log')} aria-label="Game log" title="Game log">
+              <button
+                type="button"
+                class="log-chip"
+                onClick={() => (dock ? setLogPrefs({ ...logPrefs, open: !logPrefs.open }) : setSheet('log'))}
+                aria-label="Game log"
+                title="Game log"
+              >
                 📜
               </button>
               <button
@@ -512,11 +746,14 @@ export function GameScreen(props: GameScreenProps) {
             {feed.map((e, k) => (
               <span key={e.i} class={`feed-line age-${feed.length - 1 - k}`}>
                 <span class="feed-dot" style={{ background: e.color ?? 'transparent' }} />
-                {e.msg}
+                <span class="feed-text">
+                  <RichText msg={e.msg} view={view} colors={colors} />
+                </span>
               </span>
             ))}
           </div>
         )}
+        {dock && <DockedLog view={view} colors={colors} prefs={logPrefs} onPrefs={setLogPrefs} />}
         {pending && (
           <div class="confirm-bar">
             <span>{pending.actions.length === 1 ? describeAction(pending.actions[0], view) : 'Choose:'}</span>
@@ -540,18 +777,45 @@ export function GameScreen(props: GameScreenProps) {
         )}
         {!pending && mode && mode.kind !== 'robber' && (
           <div class="mode-hint">
-            {mode.kind === 'build' && `Tap a highlighted spot to build a ${mode.piece}`}
-            {mode.kind === 'moveFrom' && 'Tap the ship to move'}
-            {mode.kind === 'moveTo' && 'Tap where the ship should go'}
-            {mode.kind === 'harbor' && 'Tap a coast next to your settlement'}
+            {mode.kind === 'build'
+              ? `${tap} a highlighted spot to build a ${mode.piece}`
+              : mode.kind === 'moveFrom'
+                ? `${tap} the ship to move`
+                : mode.kind === 'moveTo'
+                  ? `${tap} where the ship should go`
+                  : `${tap} a coast next to your settlement`}
+            {desk ? ' · Esc cancels' : ''}
           </div>
         )}
       </div>
 
-      <div class="panel">
-        <Players view={view} colors={colors} kinds={kinds} seat={seat} onOpen={() => setSheet('scores')} />
-        {me?.resources && <Hand view={view} seat={seat!} onCards={() => setSheet('cards')} />}
-        <nav class="action-bar">{bar}</nav>
+      <div ref={panelRef} class={desk ? (tight ? 'panel desk tight' : 'panel desk') : 'panel'}>
+        <Players view={view} colors={colors} kinds={kinds} seat={seat} desk={desk} onOpen={() => setSheet('scores')} />
+        {desk && me?.resources ? (
+          <div class="tray">
+            <Hand view={view} seat={seat!} desk onCards={() => setSheet('cards')} />
+            {!gameOver && (
+              <ActionDeck
+                view={view}
+                legal={legal}
+                seat={seat!}
+                colors={colors}
+                building={buildMode}
+                onBuild={toggleBuild}
+                onBuyDev={() => doSend({ type: 'buyDevCard', player: seat! })}
+                primary={primary}
+                secondary={secondary}
+                status={status}
+                waiting={!canAct && waitingFor.length > 0}
+              />
+            )}
+          </div>
+        ) : (
+          <>
+            {me?.resources && <Hand view={view} seat={seat!} desk={false} onCards={() => setSheet('cards')} />}
+            <nav class="action-bar">{bar}</nav>
+          </>
+        )}
       </div>
 
       {sheet === 'build' && seat !== null && (
@@ -581,7 +845,7 @@ export function GameScreen(props: GameScreenProps) {
           placeHarbor={() => setMode({ kind: 'harbor' })}
         />
       )}
-      {sheet === 'log' && <LogSheet view={view} close={() => setSheet(null)} />}
+      {sheet === 'log' && <LogSheet view={view} colors={colors} close={() => setSheet(null)} />}
       {sheet === 'scores' && (
         <ScoresSheet
           view={view}
@@ -607,12 +871,14 @@ function Players({
   colors,
   kinds,
   seat,
+  desk,
   onOpen,
 }: {
   view: GameView;
   colors: PlayerColor[];
   kinds: SeatKind[];
   seat: PlayerId | null;
+  desk: boolean;
   onOpen(): void;
 }) {
   return (
@@ -636,11 +902,37 @@ function Players({
                 {p.name}
                 {p.id === seat && <span class="you">you</span>}
               </span>
-              <span class="pmeta">
-                🎴 {p.resourceCount}
-                {view.longestRoute.holder === p.id && <span title="Longest route"> 🛣️</span>}
-                {view.largestArmy.holder === p.id && <span title="Largest army"> ⚔️</span>}
-              </span>
+              {desk ? (
+                <span class="pmeta">
+                  <span class="pm" title="Resource cards">
+                    <CardsIcon /> {p.resourceCount}
+                  </span>
+                  <span class="pm" title="Development cards">
+                    <CardsIcon dev /> {p.devCardCount}
+                  </span>
+                  {p.playedKnights > 0 && (
+                    <span class="pm" title="Knights played">
+                      ⚔️ {p.playedKnights}
+                    </span>
+                  )}
+                  {view.longestRoute.holder === p.id && (
+                    <span class="pm award" title="Longest route">
+                      🛣️
+                    </span>
+                  )}
+                  {view.largestArmy.holder === p.id && (
+                    <span class="pm award" title="Largest army">
+                      🏆
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span class="pmeta">
+                  🎴 {p.resourceCount}
+                  {view.longestRoute.holder === p.id && <span title="Longest route"> 🛣️</span>}
+                  {view.largestArmy.holder === p.id && <span title="Largest army"> ⚔️</span>}
+                </span>
+              )}
             </span>
             <span class="pvp" title="Victory points">
               {vp}
@@ -710,21 +1002,70 @@ function ScoresSheet({
   );
 }
 
-function Hand({ view, seat, onCards }: { view: GameView; seat: PlayerId; onCards(): void }) {
+function Hand({ view, seat, desk, onCards }: { view: GameView; seat: PlayerId; desk: boolean; onCards(): void }) {
   const me = view.players[seat];
   const res = me.resources!;
   const cards = me.devCards ?? [];
+  if (!desk) {
+    return (
+      <div class="hand">
+        {RESOURCE_LIST.map((r) => (
+          <ResourceCard key={r} r={r} n={res[r]} look="tile" empty={res[r] === 0} />
+        ))}
+        <button type="button" class={cards.length === 0 ? 'rtile dev empty' : 'rtile dev'} onClick={onCards} aria-label="Development cards">
+          <span class="rtile-art">
+            <DevCardView type={null} back look="tile" />
+          </span>
+          <span class="rtile-n">{cards.length}</span>
+        </button>
+      </div>
+    );
+  }
+  // Wide screens: the cards themselves, held ones standing out from empty slots.
+  const total = RESOURCE_LIST.reduce((n, r) => n + res[r], 0);
+  const limit = view.options.discardLimit;
+  const pile = (n: number) => (n === 0 ? ' empty' : n > 1 ? ' many' : '');
   return (
-    <div class="hand">
-      {RESOURCE_LIST.map((r) => (
-        <ResourceCard key={r} r={r} n={res[r]} look="tile" empty={res[r] === 0} />
-      ))}
-      <button type="button" class={cards.length === 0 ? 'rtile dev empty' : 'rtile dev'} onClick={onCards} aria-label="Development cards">
-        <span class="rtile-art">
-          <DevCardView type={null} back look="tile" />
+    <section class="hand-block" aria-label="Your hand">
+      <div class="panel-cap">
+        <span>Your hand</span>
+        <span class={total > limit ? 'hand-total over' : 'hand-total'} title={total > limit ? `More than ${limit} cards: on a 7 you discard half` : undefined}>
+          {total} card{total === 1 ? '' : 's'}
+          {total > limit ? ' · discard on a 7' : ''}
         </span>
-        <span class="rtile-n">{cards.length}</span>
-      </button>
-    </div>
+      </div>
+      <div class="hand cards">
+        {RESOURCE_LIST.map((r) => (
+          <span key={r} class={`rtile hcard r-${r}${pile(res[r])}`} title={`${RESOURCE_INFO[r].label}: ${res[r]}`}>
+            {res[r] > 0 ? <ResourceCard r={r} look="mini" /> : <span class="hcard-slot" />}
+            <span class="hcard-icon">
+              <ResGlyph r={r} />
+            </span>
+            <span class="rtile-n">{res[r]}</span>
+          </span>
+        ))}
+        <button
+          type="button"
+          class={`rtile hcard dev${pile(cards.length)}`}
+          onClick={onCards}
+          aria-label="Development cards"
+          title={`Development cards: ${cards.length}`}
+        >
+          {cards.length > 0 ? <DevCardView type={null} back look="mini" /> : <span class="hcard-slot" />}
+          <span class="rtile-n">{cards.length}</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** A small stack of cards (hand size in the players list). */
+function CardsIcon({ dev }: { dev?: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" class="pm-icon" aria-hidden="true">
+      <rect x="5.2" y="1.6" width="8.4" height="11.4" rx="1.6" transform="rotate(12 9.4 7.3)" fill={dev ? '#4a2f94' : '#e2c98f'} stroke={dev ? '#2b1a5c' : '#7a5a2e'} stroke-width="1" />
+      <rect x="2.4" y="3" width="8.4" height="11.4" rx="1.6" fill={dev ? '#7b58d4' : '#fbf0d0'} stroke={dev ? '#2b1a5c' : '#7a5a2e'} stroke-width="1" />
+      {dev && <circle cx="6.6" cy="8.7" r="2" fill="#f1c140" />}
+    </svg>
   );
 }

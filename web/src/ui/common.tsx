@@ -1,7 +1,25 @@
 import type { ComponentChildren } from 'preact';
+import { useEffect, useState } from 'preact/hooks';
 import type { PartialCounts, Resource } from 'engine';
 import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
 import { ResGlyph } from './icons';
+
+/** Whether a CSS media query matches, following changes (window resized, device turned). */
+export function useMedia(query: string): boolean {
+  const test = () => typeof matchMedia === 'function' && matchMedia(query).matches;
+  const [on, setOn] = useState(test);
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const mq = matchMedia(query);
+    const update = () => setOn(mq.matches);
+    update();
+    // older Safari only has addListener
+    if (mq.addEventListener) mq.addEventListener('change', update);
+    else mq.addListener(update);
+    return () => (mq.removeEventListener ? mq.removeEventListener('change', update) : mq.removeListener(update));
+  }, [query]);
+  return on;
+}
 
 export function Sheet({
   title,
