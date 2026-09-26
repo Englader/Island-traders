@@ -55,6 +55,7 @@ export function App() {
   useEffect(() => () => ctrl?.destroy(), [ctrl]);
 
   const host = useHostNetwork(ctrl && ctrl.record.mode === 'host' ? ctrl : null);
+  useWakeLock(route.name === 'game' || route.name === 'guest' || route.name === 'lobby');
 
   const startController = (record: GameRecord) => {
     ctrl?.destroy();
@@ -164,6 +165,8 @@ export function App() {
           error={ctrl.error}
           clearError={() => ctrl.clearError()}
           flash={flashOf(ctrl.last?.action, ctrl.last?.at ?? 0)}
+          speed={ctrl.record.botSpeed}
+          onSpeed={(sp) => ctrl.setBotSpeed(sp)}
           onMenu={() => setMenu(true)}
           onHome={goHome}
           onRematch={
@@ -213,6 +216,34 @@ export function App() {
       )}
     </>
   );
+}
+
+/** Keeps the phone screen on while a game is open (ignored where unsupported). */
+function useWakeLock(active: boolean): void {
+  useEffect(() => {
+    if (!active) return;
+    type Sentinel = { release(): Promise<void> };
+    const wl = (navigator as { wakeLock?: { request(type: 'screen'): Promise<Sentinel> } }).wakeLock;
+    if (!wl) return;
+    let sentinel: Sentinel | null = null;
+    let stopped = false;
+    const acquire = () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      wl.request('screen')
+        .then((s) => {
+          if (stopped) s.release().catch(() => undefined);
+          else sentinel = s;
+        })
+        .catch(() => undefined);
+    };
+    acquire();
+    document.addEventListener('visibilitychange', acquire);
+    return () => {
+      stopped = true;
+      document.removeEventListener('visibilitychange', acquire);
+      sentinel?.release().catch(() => undefined);
+    };
+  }, [active]);
 }
 
 function GameMenu({

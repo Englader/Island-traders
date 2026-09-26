@@ -1,4 +1,4 @@
-import type { GameState, GameView, PlayerId } from 'engine';
+import type { Action, GameState, GameView, PlayerId } from 'engine';
 
 export type SeatKind = 'human' | 'bot' | 'remote';
 
@@ -29,7 +29,22 @@ export const PLAYER_COLORS: PlayerColor[] = [
 export const BOT_NAMES = ['Ada', 'Björn', 'Chen', 'Dara', 'Emil', 'Farah', 'Gus', 'Hana'];
 
 export type BotSpeed = 'slow' | 'normal' | 'fast';
-export const BOT_DELAY: Record<BotSpeed, number> = { slow: 1000, normal: 550, fast: 150 };
+/** Pause before each computer move, in ms (longer after a roll or at a new turn, see botDelay). */
+export const BOT_DELAY: Record<BotSpeed, number> = { slow: 1900, normal: 1150, fast: 450 };
+
+export const SPEED_LABEL: Record<BotSpeed, string> = { slow: 'Slow', normal: 'Normal', fast: 'Fast' };
+
+/**
+ * How long to wait before the next computer move: players need time to see
+ * what a roll produced and whose turn it is now.
+ */
+export function botDelay(speed: BotSpeed, last: Action | null): number {
+  const base = BOT_DELAY[speed];
+  if (!last) return base;
+  if (last.type === 'rollDice') return base * 1.8;
+  if (last.type === 'endTurn') return base * 1.4;
+  return base;
+}
 
 /**
  * Players who must act now, most urgent first. While the active player's

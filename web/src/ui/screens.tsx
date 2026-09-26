@@ -1,7 +1,7 @@
 import { COSTS, listScenarios, type GameOptions, type ScenarioDef } from 'engine';
 import { useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, PLAYER_COLORS, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
-import { loadJson } from '../game/storage';
+import { loadJson, saveJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
 
 /** Builds for sandboxed previews (no WebSocket or WebRTC) set VITE_NO_ONLINE. */
@@ -10,14 +10,40 @@ export const ONLINE = !import.meta.env.VITE_NO_ONLINE;
 export function Logo() {
   return (
     <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
-      <path d="M32 4 56 18v28L32 60 8 46V18Z" fill="#1d5f8a" />
-      <path d="M32 10 51 21v22L32 54 13 43V21Z" fill="#e8c35a" />
-      <path d="M32 17 45 24.5v15L32 47 19 39.5v-15Z" fill="#3f8f4a" />
-      <path d="M25 38h14l-2.5 4h-9Z" fill="#fff" />
-      <path d="M31 24h2v14h-2Z" fill="#fff" />
-      <path d="M33 25c4.5 2.2 6.5 6.5 5.5 11H33Z" fill="#fff" />
+      <defs>
+        <radialGradient id="logo-sea" cx="50%" cy="38%" r="72%">
+          <stop offset="0" stop-color="#4c9dd8" />
+          <stop offset="1" stop-color="#16497a" />
+        </radialGradient>
+        <linearGradient id="logo-land" x1="0" y1="0" x2="0.3" y2="1">
+          <stop offset="0" stop-color="#8fd06e" />
+          <stop offset="1" stop-color="#3f8f45" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="14" fill="url(#logo-sea)" />
+      <ellipse cx="32" cy="36" rx="25" ry="15" fill="#9fdcf7" opacity="0.35" />
+      <path d="M11 30 21 17h22l10 13v6L43 49H21L11 36Z" fill="#245a2a" />
+      <path d="M11 30 21 17h22l10 13-10 13H21Z" fill="url(#logo-land)" stroke="#d9f5c8" stroke-opacity="0.5" stroke-width="0.8" />
+      <path d="M19 34l3-5 3 5ZM41 26l3-5 3 5ZM38 38l2.5-4 2.5 4Z" fill="#1d4f25" opacity="0.6" />
+      <path d="M36.5 35v-8l-4.8-4.8-4.8 4.8v8Z" fill="#e0453b" stroke="#7c1d18" stroke-width="0.8" stroke-linejoin="round" />
+      <path d="M36.5 35l3-2v-7.5l-3 1.5ZM31.7 22.2l3.2-1.8 4.6 5.1-3 1.5Z" fill="#a52a22" stroke="#7c1d18" stroke-width="0.8" stroke-linejoin="round" />
     </svg>
   );
+}
+
+/** Phones not yet running the game as an installed app get a one-line tip. */
+function installTip(): string | null {
+  try {
+    const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+    const touch = matchMedia('(pointer: coarse)').matches;
+    if (standalone || !touch || !ONLINE) return null;
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    return ios
+      ? 'Tip: tap Share → "Add to Home Screen" to play full screen, even offline.'
+      : 'Tip: use the browser menu → "Add to Home screen" to play full screen, even offline.';
+  } catch {
+    return null;
+  }
 }
 
 export function HomeScreen({
@@ -68,6 +94,7 @@ export function HomeScreen({
           <button type="button" class="link" onClick={onRules}>
             How to play
           </button>
+          {installTip() && <p class="install-tip">{installTip()}</p>}
         </div>
       </div>
       <footer class="disclaimer">
@@ -94,8 +121,8 @@ function defaultSeats(n: number, online: boolean, prev: Seat[] = []): Seat[] {
       continue;
     }
     const kind: SeatKind = i === 0 ? 'human' : online ? 'remote' : 'bot';
-    // Online, everyone sees the host's name, so "You" would be confusing.
-    const hostName = online ? loadJson<string>('playerName') || 'Host' : 'You';
+    // The log reads "<name> rolls 8", so the first seat gets a real name: the one used last time.
+    const hostName = loadJson<string>('playerName') || (online ? 'Host' : 'Player 1');
     out.push({ name: i === 0 ? hostName : kind === 'remote' ? `Friend ${i}` : BOT_NAMES[i - 1], kind, color: i });
   }
   return out;
@@ -208,12 +235,10 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
                           s.kind === k
                             ? s.name
                             : k === 'bot'
-                              ? BOT_NAMES[i] ?? `Bot ${i + 1}`
+                              ? BOT_NAMES.find((n) => !activeSeats.some((o, j) => j !== i && o.name === n)) ?? `Bot ${i + 1}`
                               : k === 'remote'
                                 ? `Friend ${i}`
-                                : i === 0
-                                  ? 'You'
-                                  : `Player ${i + 1}`,
+                                : `Player ${i + 1}`,
                       })
                     }
                   >
@@ -281,7 +306,8 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
           type="button"
           class="primary big wide"
           disabled={!valid}
-          onClick={() =>
+          onClick={() => {
+            if (activeSeats[0]?.kind === 'human' && activeSeats[0].name.trim()) saveJson('playerName', activeSeats[0].name.trim());
             onStart({
               scenario: scenarioId,
               seats: activeSeats.map((s, i) => ({ ...s, name: s.name.trim() || `Player ${i + 1}` })),
@@ -294,8 +320,8 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
               },
               botSpeed: speed,
               seed: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            })
-          }
+            });
+          }}
         >
           {online ? 'Open the room' : 'Start game'}
         </button>

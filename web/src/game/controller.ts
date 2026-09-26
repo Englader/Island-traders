@@ -8,7 +8,7 @@ import {
   type GameView,
   type PlayerId,
 } from 'engine';
-import { BOT_DELAY, mustAct, type BotSpeed, type Seat } from './seats';
+import { botDelay, mustAct, type BotSpeed, type Seat } from './seats';
 import { removeKey, saveJson } from './storage';
 
 export type GameMode = 'local' | 'host';
@@ -157,6 +157,8 @@ export class GameController {
   setBotSpeed(speed: BotSpeed): void {
     this.record = { ...this.record, botSpeed: speed };
     this.save();
+    // apply the new pace to the move that is waiting
+    this.scheduleBots(mustAct(this.state));
     this.emit();
   }
 
@@ -195,7 +197,7 @@ export class GameController {
     this.timer = null;
     const bot = need.find((p) => this.seats[p].kind === 'bot');
     if (bot === undefined || this.state.phase.kind === 'gameOver') return;
-    this.timer = setTimeout(() => this.botStep(bot), BOT_DELAY[this.record.botSpeed]);
+    this.timer = setTimeout(() => this.botStep(bot), botDelay(this.record.botSpeed, this.last?.action ?? null));
   }
 
   private botStep(p: PlayerId): void {

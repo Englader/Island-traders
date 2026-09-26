@@ -55,8 +55,8 @@ test('a friend joins with the room code and both play the setup', async ({ brows
     if (!a && !b) await host.waitForTimeout(250);
   }
   // 3 players x 2 settlements, seen the same on both devices
-  await expect(host.locator('polygon.building')).toHaveCount(6);
-  await expect(guest.locator('polygon.building')).toHaveCount(6);
+  await expect(host.locator('g.building')).toHaveCount(6);
+  await expect(guest.locator('g.building')).toHaveCount(6);
   // the guest sees their own hand but only card counts for others
   await expect(guest.locator('.player', { hasText: 'Guesty' })).toContainText('you');
   await hostCtx.close();

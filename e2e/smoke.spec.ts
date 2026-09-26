@@ -23,7 +23,7 @@ async function confirm(page: Page): Promise<void> {
 }
 
 async function turnNumber(page: Page): Promise<number> {
-  const text = (await page.locator('.topbar .sub').textContent()) ?? '';
+  const text = (await page.locator('.hud .sub').textContent()) ?? '';
   return Number(/Turn (\d+)/.exec(text)?.[1] ?? 0);
 }
 
@@ -111,7 +111,7 @@ test('start a game against the computer, play a few turns, resume after reload',
   const turn = await turnNumber(page);
   expect(turn).toBeGreaterThan(3);
   // our pieces are on the board
-  expect(await page.locator('polygon.building').count()).toBeGreaterThanOrEqual(6);
+  expect(await page.locator('g.building').count()).toBeGreaterThanOrEqual(6);
 
   // the game is saved: reload and continue
   await page.reload();
@@ -129,7 +129,7 @@ test('Seafarers scenario renders ships and the pirate', async ({ page }) => {
   await page.getByRole('button', { name: 'fast' }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
   await expect(page.locator('svg.board')).toBeVisible();
-  await expect(page.locator('.hex.t-gold').first()).toBeVisible();
+  await expect(page.locator('[fill="url(#tile-gold)"]').first()).toBeVisible();
   await expect(page.locator('.status-text')).toContainText(/Place|placing/);
 });
 
@@ -154,4 +154,31 @@ test('pass-and-play hides hands behind a hand-over screen', async ({ page }) => 
   await page.locator('.confirm-bar button.primary').click();
   await expect(pass).toBeVisible({ timeout: 20_000 });
   expect(((await page.locator('.pass-name').textContent()) ?? '').trim()).not.toBe(first);
+});
+
+test('a tap near a highlighted spot selects it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  const spot = page.locator('.target-vertex').nth(4);
+  await expect(spot).toBeVisible({ timeout: 20_000 });
+  const b = (await spot.boundingBox())!;
+  // a finger landing 16px beside the dot still picks it
+  await page.touchscreen.tap(b.x + b.width / 2 + 16, b.y + b.height / 2 + 4);
+  await expect(page.locator('.confirm-bar')).toBeVisible();
+});
+
+test.describe('phone held sideways', () => {
+  test.use({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+  test('the board gets most of the screen and nothing scrolls sideways', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /New game/ }).click();
+    await page.getByRole('button', { name: 'Start game' }).click();
+    const board = (await page.locator('.board-area').boundingBox())!;
+    const panel = (await page.locator('.panel').boundingBox())!;
+    expect(board.width).toBeGreaterThan(470);
+    expect(board.height).toBeGreaterThan(300);
+    expect(panel.x).toBeGreaterThanOrEqual(board.x + board.width - 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(844);
+  });
 });
