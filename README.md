@@ -26,7 +26,10 @@ GitHub Actions)
 - Computer players (a heuristic bot that plans builds and trades with the bank)
 - Online play with friends: the host opens a room and friends join with a
   5-letter code or an invite link
-- Phone-first layout; the game is saved in the browser after every move
+- Made for phones: tap-friendly board, portrait and sideways layouts, and
+  "Add to Home Screen" for full-screen play (games against the computer
+  also work offline)
+- The game is saved in the browser after every move
 
 ```bash
 npm run web:dev        # dev server with hot reload

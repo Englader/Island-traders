@@ -50,6 +50,9 @@ published maps stay original.
   finish games in every scenario (tested).
 - **Save and resume:** the whole game record is in `localStorage` after
   every move.
+- **Phones:** taps snap to the nearest highlighted spot; a sideways layout;
+  installable to the home screen with a service worker, so games against
+  the computer work offline; the screen stays awake during a game.
 - **Tests:** Playwright on a phone viewport (`npm run test:e2e`).
 
 ## 3. Playing online with friends (done: peer-to-peer)
@@ -91,5 +94,4 @@ The site is `https://englader.github.io/Island-traders/`.
   World support 5–6 players today).
 - Let bots make domestic trade offers (they only answer them now).
 - Online option B (a server that keeps games alive without the host).
-- Installable offline app (a service worker; the manifest is in place).
 - Official maps as `MapSpec` data if they are verified and licensed.
