@@ -3,8 +3,18 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 // local room server and relay broker (see playwright.config.ts)
 const BASE = '/?peer=127.0.0.1:9000/broker&mqtt=ws://127.0.0.1:9001';
 
+/** The yes button: of the "Ask before building" dialog (pieces), or of the confirm bar (the robber). */
+const yesButton = (page: Page) => page.locator('.confirm-dialog button.primary, .confirm-bar button.primary').first();
+
 /** Places a starting piece if this page is asked to. */
 async function place(page: Page): Promise<boolean> {
+  // a dialog still up from an earlier try is answered first (it covers the board)
+  if (await page.locator('.confirm-dialog').isVisible()) {
+    await yesButton(page)
+      .click({ timeout: 2000 })
+      .catch(() => page.keyboard.press('Escape'));
+    return true;
+  }
   const status = (await page.locator('.status-text').textContent()) ?? '';
   const kind = /Place settlement/.test(status) ? 'v' : /Place a road/.test(status) ? 'e' : null;
   if (!kind) return false;
@@ -15,10 +25,16 @@ async function place(page: Page): Promise<boolean> {
     const i = (Math.floor(n / 2) + k) % n;
     try {
       await targets.nth(i).click({ timeout: 800 });
-      await page.locator('.confirm-bar button.primary').first().click({ timeout: 2000 });
-      return true;
     } catch {
       // covered or already gone: try the next one
+      continue;
+    }
+    try {
+      await yesButton(page).click({ timeout: 2000 });
+      return true;
+    } catch {
+      // the game moved on meanwhile: close the dialog if it is still up, then try again
+      if (await page.locator('.confirm-dialog').isVisible()) await page.keyboard.press('Escape');
     }
   }
   return false;
@@ -164,7 +180,7 @@ test('open trade: the active player asks what a friend would give for a card; th
       }
       if (/Move the robber/.test((await a.locator('.status-text').textContent()) ?? '')) {
         await a.locator('[data-pick^="h:"]').first().click();
-        await a.locator('.confirm-bar button.primary').first().click();
+        await yesButton(a).click();
       }
       if (await a.getByRole('button', { name: /Trade/ }).first().isVisible()) {
         // early hands are small (and can be empty after a second settlement by the desert or
@@ -389,6 +405,8 @@ async function boxes(p: Page, selectors: string[]): Promise<Array<{ sel: string;
 
 test('the chat keeps clear of the board tools, the log and the panels, on a computer and on a phone', async ({ browser }) => {
   const hostCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
+  // the host doesn't ask before building (the menu setting): a picked spot shows the confirm bar
+  await hostCtx.addInitScript(() => localStorage.setItem('island-traders:v1:ui:askBuild', 'false'));
   const guestCtx = await browser.newContext();
   const host = await hostCtx.newPage();
   const guest = await guestCtx.newPage();
