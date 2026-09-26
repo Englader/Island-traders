@@ -32,6 +32,8 @@ GitHub Actions)
   chart of every total rolled against fair-dice odds, for everyone or one
   player
 - Drawn resource icons that look the same on every device
+- Illustrated cards: original painted scenes for the five resources and the
+  development cards, in a parchment frame with a name ribbon
 - Animations: new roads and ships pop into place, settlements and cities drop
   onto the board, trades show the cards sliding between the two sides, and
   development cards fly in and turn over when bought or played (tap to skip)

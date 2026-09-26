@@ -17,6 +17,7 @@ import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST, WONDER_INFO, countsText, harbor
 import type { PlayerColor } from '../game/seats';
 import { Cost, ResIcon, ResourcePicker, Sheet, cleanCounts, sumCounts } from './common';
 import { Counts, ResGlyph } from './icons';
+import { DevCardView, ResourceCard } from './cards';
 
 export interface SheetProps {
   view: GameView;
@@ -87,12 +88,7 @@ function YourCards({ hand }: { hand: PartialCounts }) {
       <span class="your-cards-label">Your cards</span>
       <div class="your-cards-row">
         {RESOURCE_LIST.map((r) => (
-          <span key={r} class={(hand[r] ?? 0) > 0 ? `rcard r-${r}` : `rcard r-${r} empty`} title={RESOURCE_INFO[r].label}>
-            <span class="rc-icon">
-              <ResGlyph r={r} />
-            </span>
-            <span class="rc-n">{hand[r] ?? 0}</span>
-          </span>
+          <ResourceCard key={r} r={r} n={hand[r] ?? 0} look="tile" empty={!(hand[r] ?? 0)} />
         ))}
       </div>
     </div>
@@ -593,7 +589,9 @@ export function CardsSheet({ view, legal, seat, send, close }: SheetProps) {
       <div class="card-list">
         {[...counts.entries()].map(([type, c]) => (
           <div class="dev-card" key={type}>
-            <span class="dev-icon">{DEV_INFO[type].icon}</span>
+            <span class="dev-thumb">
+              <DevCardView type={type} look="mini" />
+            </span>
             <div class="dev-text">
               <strong>
                 {DEV_INFO[type].label} ×{c.total}
