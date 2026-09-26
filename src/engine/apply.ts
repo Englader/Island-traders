@@ -568,7 +568,7 @@ function buildEdge(s: GameState, p: PlayerId, e: EdgeId, kind: 'road' | 'ship'):
   return null;
 }
 
-/** First settlement in a foreign zone earns Catan chits (Seafarers island bonus). */
+/** First settlement in a foreign zone earns VP chits (Seafarers island bonus). */
 function islandBonus(s: GameState, p: PlayerId, v: VertexId): void {
   const bonus = scenarioOf(s).rules.islandBonus;
   if (!bonus) return;

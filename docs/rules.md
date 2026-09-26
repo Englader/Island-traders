@@ -157,7 +157,7 @@ changes hands only for strictly more.
   built.
 - **Pirate.** The pirate blocks building and moving ships on its hex's paths.
   It robs ship owners only. It never blocks roads, settlements or harbors.
-- **Island bonus** (`rules.islandBonus`). You get Catan chits for your first
+- **Island bonus** (`rules.islandBonus`). You get VP chits (the rulebook's "Catan chits") for your first
   settlement in each foreign zone. "Home" is either fixed zones or the zones
   of your starting settlements.
 
@@ -196,10 +196,10 @@ Where sources give a number it is used. Where none do, the choice is marked
 | Scenario | Rules implemented | Source |
 |---|---|---|
 | Fog Islands | A road, ship **or settlement** touching a fog hex reveals it. New land gets a random number and pays the discoverer 1 card (gold: a free choice). Stacks are hidden | spec; JSettlers2 (settlements also reveal) |
-| Forgotten Tribe | **18 gift spots:** 8 Catan chits (1 VP each), 4 development cards set aside face down from the deck, 6 harbors. A ship built **or moved** onto a marked path takes the gift. A card works like a bought one. A harbor **must be placed at once** next to your coastal settlement/city if possible (a mandatory placement step), otherwise it is set aside and placed later on your turn. The tribe islands can't be settled | UltraBoardGames excerpts; JSettlers2 |
-| Cloth for Catan | **8 villages on intersections** of 4 small islands (left and right end of each), each with a distinct number and **5 cloth**, plus a **general supply of 10**. A ship reaching a village establishes trade and pays **1 cloth at once**. The village's number pays each trader 1 more (current player first, then order of arrival); when the village is short, cloth comes from the general supply. 2 cloth = 1 VP. A route linking your settlement to a village is **closed**. You can't move the pirate until you have reached a village; **the pirate may steal cloth** instead of a card. **3 starting settlements** (forward, reverse, forward; resources for the third). No Longest Trade Route. The game ends **as soon as fewer than 4 villages have cloth**: most VP wins, then most cloth (*engine choice* for further ties: turn order from the current player) | UltraBoardGames excerpts; JSettlers2 |
+| Forgotten Tribe | **18 gift spots:** 8 VP chits (1 VP each), 4 development cards set aside face down from the deck, 6 harbors. A ship built **or moved** onto a marked path takes the gift. A card works like a bought one. A harbor **must be placed at once** next to your coastal settlement/city if possible (a mandatory placement step), otherwise it is set aside and placed later on your turn. The tribe islands can't be settled | UltraBoardGames excerpts; JSettlers2 |
+| Cloth Trade ("Cloth for Catan") | **8 villages on intersections** of 4 small islands (left and right end of each), each with a distinct number and **5 cloth**, plus a **general supply of 10**. A ship reaching a village establishes trade and pays **1 cloth at once**. The village's number pays each trader 1 more (current player first, then order of arrival); when the village is short, cloth comes from the general supply. 2 cloth = 1 VP. A route linking your settlement to a village is **closed**. You can't move the pirate until you have reached a village; **the pirate may steal cloth** instead of a card. **3 starting settlements** (forward, reverse, forward; resources for the third). No Longest Trade Route. The game ends **as soon as fewer than 4 villages have cloth**: most VP wins, then most cloth (*engine choice* for further ties: turn order from the current player) | UltraBoardGames excerpts; JSettlers2 |
 | Pirate Islands | See below | UltraBoardGames excerpts; BoardGameGeek; JSettlers2 |
-| Wonders | See below | UltraBoardGames excerpts; JSettlers2 `SOCSpecialItem` |
+| The Wonders ("The Wonders of Catan") | See below | UltraBoardGames excerpts; JSettlers2 `SOCSpecialItem` |
 | New World | Random archipelago; **players place the harbor tokens before the starting placement**, in turn order from the start player; start on any island(s); +1 VP per foreign island; 12 VP | spec; UltraBoardGames excerpt |
 | New Shores (3p) | The rulebook's "pirate on hills 12" is read as the robber; this map starts the robber on the desert | spec |
 

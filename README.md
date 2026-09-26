@@ -1,8 +1,10 @@
-# Claude-catan
+# Island Traders
 
-A data-driven rules engine for Catan-style games: the base game (3–4 and 5–6
-players) and the Seafarers expansion with nine scenarios. It is written in
-TypeScript and has no runtime dependencies.
+An unofficial, data-driven rules engine for Catan-style island trading games.
+It covers the base game (3–4 and 5–6 players) and the nine scenarios of the
+Seafarers expansion. It is written in TypeScript and has no runtime
+dependencies. It is not affiliated with or endorsed by Catan GmbH (see
+[Intellectual property](#intellectual-property)).
 
 The engine is a pure function:
 
@@ -115,9 +117,9 @@ In summary:
 | `seafarers-3-fog-islands` | The Fog Islands | 12 | Hidden fog stack. Roads, ships and settlements reveal hexes; the discoverer is paid |
 | `seafarers-4-through-the-desert` | Through the Desert | 14 | Three deserts wall off a strip; +2 VP per foreign area |
 | `seafarers-5-forgotten-tribe` | The Forgotten Tribe | 13 | 18 gift paths (8 VP chits, 4 dev cards, 6 harbors). Gifted harbors must be placed at once if possible |
-| `seafarers-6-cloth-for-catan` | Cloth for Catan | 14 | 3 starting settlements. 8 villages on intersections with 5 cloth each plus a supply of 10. The pirate steals cloth. Ends when fewer than 4 villages have cloth |
+| `seafarers-6-cloth-trade` | Cloth Trade (rulebook: "Cloth for Catan") | 14 | 3 starting settlements. 8 villages on intersections with 5 cloth each plus a supply of 10. The pirate steals cloth. Ends when fewer than 4 villages have cloth |
 | `seafarers-7-pirate-islands` | The Pirate Islands | 10 + fortress | Pre-placed pieces. Fleet moves and attacks by the lower die. A 7 lets the roller rob anyone. Single route via a marked intersection. Warships from knights; fortress battles |
-| `seafarers-8-wonders` | The Wonders of Catan | 4 levels, or 10 + most levels | Theater, Great Bridge, Monument, Great Wall and Cathedral with their card requirements and costs; a ship marks the claim |
+| `seafarers-8-wonders` | The Wonders (rulebook: "The Wonders of Catan") | 4 levels, or 10 + most levels | Theater, Great Bridge, Monument, Great Wall and Cathedral with their card requirements and costs; a ship marks the claim |
 | `seafarers-9-new-world` | New World | 12 | Random archipelago; players place the harbors first; +1 VP per foreign island; 3–6 players |
 
 The rules for scenarios 5–9 come from rules summaries and the open-source
@@ -167,7 +169,10 @@ The next steps are in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
 ## Intellectual property
 
-"Catan" and its artwork, names and maps are trademarks and copyrighted material
-of Catan GmbH. This project implements game mechanics for private and
-educational use. A public or commercial release that uses the name, art or
-rule text needs a license from Catan GmbH (ip@catan.com).
+"Catan" and its artwork, names and maps are trademarks and copyrighted
+material of Catan GmbH. Island Traders is an independent, non-commercial fan
+project that implements game mechanics. It uses its own name and original
+maps, and mentions Catan only to say which rules it follows. It is not
+affiliated with or endorsed by Catan GmbH. A commercial release, or one that
+uses the Catan name, art or rule text, needs a license from Catan GmbH
+(ip@catan.com).

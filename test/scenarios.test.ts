@@ -251,7 +251,7 @@ describe('5 The Forgotten Tribe', () => {
   });
 });
 
-describe('6 Cloth for Catan', () => {
+describe('6 Cloth Trade', () => {
   type Cloth = { villages: Record<string, { token: number; cloth: number; traders: number[] }>; general: number; cloth: number[] };
   const clothOf = (s: GameState) => s.ext.cloth as Cloth;
 
@@ -266,7 +266,7 @@ describe('6 Cloth for Catan', () => {
   }
 
   it('8 villages on intersections with distinct numbers, 5 cloth each, plus a general supply of 10', () => {
-    const s = blank('seafarers-6-cloth-for-catan', 3);
+    const s = blank('seafarers-6-cloth-trade', 3);
     const c = clothOf(s);
     const villages = Object.values(c.villages);
     expect(villages).toHaveLength(8);
@@ -277,7 +277,7 @@ describe('6 Cloth for Catan', () => {
   });
 
   it('three starting settlements; only the third pays starting resources', () => {
-    let s = createGame({ scenario: 'seafarers-6-cloth-for-catan', players: 3, seed: 'c', options: { firstPlayer: 0 } });
+    let s = createGame({ scenario: 'seafarers-6-cloth-trade', players: 3, seed: 'c', options: { firstPlayer: 0 } });
     const third: Record<number, string> = {};
     let placed = 0;
     while (s.phase.kind === 'setup') {
@@ -301,7 +301,7 @@ describe('6 Cloth for Catan', () => {
   });
 
   it('reaching a village pays 1 cloth; its number pays 1 more, current player first, then the general supply', () => {
-    let s = blank('seafarers-6-cloth-for-catan', 3);
+    let s = blank('seafarers-6-cloth-trade', 3);
     const { village, arrival, feeder } = approach(s, 8);
     ship(s, feeder, 0);
     give(s, 0, { lumber: 1, wool: 1 });
@@ -321,7 +321,7 @@ describe('6 Cloth for Catan', () => {
   });
 
   it('a route linking your settlement to a village is closed: its ships cannot move', () => {
-    const s = blank('seafarers-6-cloth-for-catan', 3);
+    const s = blank('seafarers-6-cloth-trade', 3);
     const t = topo(s);
     const { village } = approach(s, 8);
     // breadth-first ship path from a west-island coast to the village
@@ -351,7 +351,7 @@ describe('6 Cloth for Catan', () => {
   });
 
   it('the pirate moves only after you reach a village, and may steal cloth', () => {
-    let s = blank('seafarers-6-cloth-for-catan', 3);
+    let s = blank('seafarers-6-cloth-trade', 3);
     const { village, arrival } = approach(s, 8);
     ship(s, arrival, 1);
     clothOf(s).cloth[1] = 2;
@@ -364,7 +364,7 @@ describe('6 Cloth for Catan', () => {
   });
 
   it('settlements on the village islands are forbidden and there is no Longest Trade Route', () => {
-    const s = blank('seafarers-6-cloth-for-catan', 3);
+    const s = blank('seafarers-6-cloth-trade', 3);
     expect(s.longestRoute.holder).toBeNull();
     const v = coastalVertexIn(s, 'isle', Object.keys(clothOf(s).villages));
     ship(s, shipEdgeAt(s, v), 0);
@@ -373,7 +373,7 @@ describe('6 Cloth for Catan', () => {
   });
 
   it('the game ends as soon as fewer than 4 villages have cloth: most VP wins (ties: most cloth)', () => {
-    let s = blank('seafarers-6-cloth-for-catan', 3);
+    let s = blank('seafarers-6-cloth-trade', 3);
     const ids = Object.keys(clothOf(s).villages);
     for (const id of ids.slice(0, 4)) clothOf(s).villages[id].cloth = 0;
     put(s, coastalVertexIn(s, 'east'), 2, 'city');
@@ -551,7 +551,7 @@ describe('7 The Pirate Islands', () => {
   });
 });
 
-describe('8 The Wonders of Catan', () => {
+describe('8 The Wonders', () => {
   it('the five wonders: requirements and costs from the wonder cards', () => {
     expect(WONDERS.map((w) => w.id)).toEqual(['theater', 'greatBridge', 'monument', 'greatWall', 'cathedral']);
     for (const w of WONDERS) expect(Object.values(w.cost).reduce((a, b) => a + (b ?? 0), 0)).toBe(5);

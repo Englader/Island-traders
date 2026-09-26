@@ -65,24 +65,24 @@ information per seat.
 
 Plan: build A first, then add B if games need to survive disconnects.
 
-## 4. Free hosting
+## 4. Free hosting (decided: public repo + GitHub Pages)
 
-The repository is **private**. [GitHub Pages](https://docs.github.com/get-started/learning-about-github/githubs-products)
-works from private repositories only on paid plans (GitHub Pro, Team,
-Enterprise). On GitHub Free it works only for public repositories.
+The repository is being renamed to `island-traders` and made public. GitHub
+Pages is free for public repositories, so the site will live at
+`https://englader.github.io/island-traders/`.
 
-- **Keep the repo private:** use **Cloudflare Pages** on its free plan. It
-  deploys from private GitHub repos, allows 500 builds a month, and has
-  unmetered static bandwidth. Connect the repo once in the Cloudflare
-  dashboard, with build command `npm ci && npm run build:web` and output
-  `web/dist`. The same account can host the Durable Object server for
-  option B.
-- **Make the repo public:** GitHub Pages through a GitHub Actions workflow
-  (`npm ci` → `npm test` → `vite build` → `actions/deploy-pages`). This is
-  also free.
-- **Before publishing:** a public site should not use the name "Catan" or
-  its art. Pick a neutral title or keep the link private; see the IP notice
-  in the README.
+- One-time setting: **Settings → Pages → Source: GitHub Actions**.
+- Workflow `.github/workflows/pages.yml`, on every push to `main`: `npm ci`,
+  then `npm test`, then the Vite build of `web/`, then `actions/upload-pages-artifact`
+  and `actions/deploy-pages`.
+- Set Vite's `base` to `/island-traders/` so asset paths work under the
+  repository path.
+- Branding: the game is called **Island Traders** everywhere users see it
+  (site title, UI, README). "Catan" appears only as a factual reference to
+  the rules it follows, with the not-affiliated notice. No official maps or
+  art.
+- Fallback if the repo goes private again: Cloudflare Pages (free, deploys
+  from private repos).
 
 ## 5. Engine follow-ups
 

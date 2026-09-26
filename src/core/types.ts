@@ -93,7 +93,7 @@ export interface PlayerState {
   /** Progress cards that have been played (they leave the game). */
   playedProgress: DevCardType[];
   supply: PieceSupply;
-  /** Catan chits and other scenario bonus VP. */
+  /** VP chits and other scenario bonus VP. */
   bonusVP: number;
   /** Zones for which this player has already received the island/area bonus. */
   bonusZones: string[];

@@ -16,7 +16,7 @@ export const headingForNewShores: ScenarioDef = {
   name: 'Heading for New Shores',
   expansion: 'seafarers',
   description:
-    'Start on the main island. Your first settlement on each small island earns 2 VP (Catan chits). 14 VP to win.',
+    'Start on the main island. Your first settlement on each small island earns 2 VP (VP chits). 14 VP to win.',
   minPlayers: 3,
   maxPlayers: 4,
   victoryPoints: () => 14,

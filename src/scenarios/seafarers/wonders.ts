@@ -9,7 +9,7 @@ import { seafarersRules, type ScenarioDef } from '../types.js';
 import { seafarersSupply, withoutTokens } from './common.js';
 
 /**
- * The Wonders of Catan. Wonder requirements and per-level costs follow the
+ * The Wonders (the rulebook's "Wonders of Catan"). Wonder requirements and per-level costs follow the
  * wonder cards as encoded by JSettlers2 (Theater, Great Bridge, Monument,
  * Great Wall, Cathedral). You claim a wonder by meeting its requirement and
  * putting one of your unplaced ships on its card. Each of its 4 levels costs
@@ -134,9 +134,9 @@ function buildError(state: GameState, p: PlayerId): string | null {
   return null;
 }
 
-export const theWondersOfCatan: ScenarioDef = {
+export const theWonders: ScenarioDef = {
   id: 'seafarers-8-wonders',
-  name: 'The Wonders of Catan',
+  name: 'The Wonders',
   expansion: 'seafarers',
   description:
     "Meet a wonder's requirement and mark it with a ship to claim it, then build its four levels. Finish a wonder, or reach 10 VP with more levels than anyone else, to win. No pirate.",

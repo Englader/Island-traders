@@ -3,8 +3,8 @@ import { registerScenario } from './registry.js';
 import { headingForNewShores, theFogIslands, theFourIslands, throughTheDesert } from './seafarers/islands.js';
 import { newWorld } from './seafarers/newWorld.js';
 import { thePirateIslands } from './seafarers/pirateIslands.js';
-import { clothForCatan, theForgottenTribe } from './seafarers/tribes.js';
-import { theWondersOfCatan } from './seafarers/wonders.js';
+import { clothTrade, theForgottenTribe } from './seafarers/tribes.js';
+import { theWonders } from './seafarers/wonders.js';
 
 export const BUILT_IN_SCENARIOS = [
   baseGame,
@@ -13,9 +13,9 @@ export const BUILT_IN_SCENARIOS = [
   theFogIslands,
   throughTheDesert,
   theForgottenTribe,
-  clothForCatan,
+  clothTrade,
   thePirateIslands,
-  theWondersOfCatan,
+  theWonders,
   newWorld,
 ];
 

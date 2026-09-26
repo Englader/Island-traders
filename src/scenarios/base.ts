@@ -20,7 +20,7 @@ import { baseRules, type ScenarioDef } from './types.js';
  */
 export const baseGame: ScenarioDef = {
   id: 'base',
-  name: 'Catan (base game)',
+  name: 'Base game',
   expansion: 'base',
   description: 'Standard island with variable setup. 10 VP to win.',
   minPlayers: 3,

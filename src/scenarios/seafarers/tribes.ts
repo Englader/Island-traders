@@ -22,7 +22,7 @@ interface TribeState {
   giftHarbors: HarborType[];
 }
 
-/** 8 Catan chits (1 VP each), 4 development cards and 6 harbors. */
+/** 8 VP chits (1 VP each), 4 development cards and 6 harbors. */
 export const TRIBE_GIFTS: Gift[] = [
   ...Array<Gift>(8).fill('vp'),
   ...Array<Gift>(4).fill('devCard'),
@@ -175,9 +175,10 @@ function giveCloth(state: GameState, p: PlayerId, village: Village, allowGeneral
   return true;
 }
 
-export const clothForCatan: ScenarioDef = {
-  id: 'seafarers-6-cloth-for-catan',
-  name: 'Cloth for Catan',
+/** The rulebook's "Cloth for Catan". */
+export const clothTrade: ScenarioDef = {
+  id: 'seafarers-6-cloth-trade',
+  name: 'Cloth Trade',
   expansion: 'seafarers',
   description:
     'Three starting settlements. Reach the villages of the small islands with ships to trade for cloth: 1 on arrival and 1 whenever the village number is rolled. Every 2 cloth is 1 VP. The pirate may steal cloth. No Longest Trade Route. 14 VP, or most VP once fewer than 4 villages have cloth.',

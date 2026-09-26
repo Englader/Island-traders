@@ -33,7 +33,7 @@ export interface ScenarioRules {
   /** Zones the robber may not be moved to. */
   robberForbiddenZones: string[];
   /**
-   * Catan chits for the first settlement in each foreign zone. `home` is either
+   * VP chits for the first settlement in each foreign zone. `home` is either
    * a fixed list of home zones or 'setup' (zones of each player's starting settlements).
    */
   islandBonus: { vp: number; home: 'setup' | string[] } | null;
