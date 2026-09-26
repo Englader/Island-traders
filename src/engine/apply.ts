@@ -47,6 +47,7 @@ import {
 import { moveShipError } from '../rules/ships.js';
 import { scenarioOf } from '../scenarios/registry.js';
 import { legalEdgePlacements, legalRoads, legalSetupSettlements, legalShips } from './placements.js';
+import { noteProduction, recordStats } from './stats.js';
 
 type A<T extends Action['type']> = Extract<Action, { type: T }>;
 
@@ -78,6 +79,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
   const error = dispatch(s, action);
   if (error) return { ok: false, error };
   settle(s);
+  recordStats(state, s, action);
   return { ok: true, state: s };
 }
 
@@ -461,6 +463,7 @@ function rollDice(s: GameState, a: A<'rollDice'>): string | null {
   } else {
     s.phase = { kind: 'main' };
     const prod = produce(s, sum);
+    noteProduction(s, prod.dealt);
     const gold: Record<number, number> = { ...prod.gold };
     for (const [p, n] of Object.entries(owed)) gold[Number(p)] = (gold[Number(p)] ?? 0) + n;
     addGoldChoice(s, gold);

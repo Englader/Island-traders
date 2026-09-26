@@ -223,6 +223,46 @@ export interface DiceRoll {
   turn: number;
 }
 
+/**
+ * Per-player counters for the end-of-game statistics, kept by applyAction
+ * (engine/stats.ts). Card counts are numbers of resource cards.
+ */
+export interface PlayerStats {
+  /** Cards from dice production, gold-field picks included, by resource. */
+  produced: ResourceCounts;
+  /** What the dice should have produced on average (sum over rolls), in 36ths of a card. */
+  expected36: number;
+  /** Cards received from and given to other players in trades. */
+  tradeIn: number;
+  tradeOut: number;
+  /** Cards received from and given to the bank in maritime trades. */
+  bankIn: number;
+  bankOut: number;
+  /** Cards taken from others with the robber, the pirate or Monopoly, and cards lost to them. */
+  stole: number;
+  stolen: number;
+  /** Cards discarded on a 7. */
+  discarded: number;
+  /** Cards lost to the bank in other ways (pirate fleet raids). */
+  lost: number;
+  /** Cards paid for pieces, development cards and scenario builds. */
+  spent: number;
+  /** Cards received in other ways: starting resources, Year of Plenty, discoveries. */
+  other: number;
+  /** Trades completed with other players, and with the bank. */
+  trades: number;
+  bankTrades: number;
+  devBought: number;
+  devPlayed: number;
+  knights: number;
+  /** VP (VP cards included) after the setup and after every turn; the last entry is the final score. */
+  vp: number[];
+}
+
+export interface GameStats {
+  players: PlayerStats[];
+}
+
 export interface GameState {
   version: 1;
   scenario: string;
@@ -237,6 +277,8 @@ export interface GameState {
   devDeck: DevCardType[];
   /** Every roll of the dice, in order (public; older saves may lack it). */
   rolls?: DiceRoll[];
+  /** End-of-game statistics (hidden until the game is over; older saves lack it). */
+  stats?: GameStats;
   longestRoute: { holder: PlayerId | null; lengths: number[] };
   largestArmy: { holder: PlayerId | null };
   turn: TurnState;
