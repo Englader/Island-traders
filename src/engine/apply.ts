@@ -172,6 +172,7 @@ function beginPart(s: GameState, p: PlayerId, role: TurnRole): void {
   s.turn.shipMoved = false;
   s.turn.buildingStarted = false;
   s.turn.trades = [];
+  s.turn.offers = 0;
 }
 
 function startTurn(s: GameState, p: PlayerId): void {
@@ -798,6 +799,7 @@ function proposeTrade(s: GameState, a: A<'proposeTrade'>): string | null {
     answers.accepted = answers.accepted.filter((p) => p !== a.player);
   }
   s.turn.trades.push(offer);
+  if (a.player === actor) s.turn.offers = (s.turn.offers ?? 0) + 1;
   if (open === 'give') log(s, `${nameOf(s, a.player)} asks for ${describeCounts(a.get)}: what will you give?`);
   else if (open === 'get') log(s, `${nameOf(s, a.player)} offers ${describeCounts(a.give)}: what will you give for it?`);
   else log(s, `${nameOf(s, a.player)} offers ${describeCounts(a.give)} for ${describeCounts(a.get)}`);

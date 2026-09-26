@@ -23,8 +23,8 @@ GitHub Actions)
 
 - Base game (3–6 players) and the nine Seafarers scenarios
 - Pass-and-play on one device: a hand-over screen keeps hands hidden
-- Computer players (a heuristic bot that plans builds and trades with the bank)
-  at an adjustable pace, with a feed of their moves
+- Computer players at three levels (easy, medium, hard) and an adjustable
+  pace, with a feed of their moves
 - Trading with players, including open offers ("who gives me a brick?" or
   "what will you give for my brick?") that the others answer with
   counter-offers; the trade menu shows your cards
@@ -45,6 +45,39 @@ npm run web:dev        # dev server with hot reload
 npm run web:build      # static site in web/dist (BASE_PATH=/Island-traders/ for Pages)
 npm run test:e2e       # Playwright tests on a phone viewport (builds and serves the site)
 ```
+
+### Computer players
+
+A rule-based player (`src/bots/heuristicBot.ts`) that scores its options. It
+doesn't look ahead by searching and doesn't see hidden cards, except that
+when answering an open trade offer it prefers to ask for a card the
+proposer actually holds. The level is chosen when starting a game and can
+be changed from the menu:
+
+| | Easy | Medium | Hard |
+|---|---|---|---|
+| Building spots | often not the best | sometimes not the best | the best it sees |
+| Goals | none: builds whatever it can afford, roads to nowhere included | saves for a settlement, city, road or card and trades with the bank and harbors to get there | same, and trades a big hand down before a 7 can cost it |
+| Robber | anyone, a bit at random | whoever it hurts most, leaning to the leader | the leader; plays knights to keep it there and to win Largest Army |
+| Taking offers | takes even slightly bad deals | takes deals that help it | only clearly good deals |
+| Near-winners | trades with anyone | no trades with someone 2 VP from winning | no trades with someone 3 VP from winning |
+| Its own offers | none | one per turn, one card for the one it needs | up to two, the second one two cards for one |
+| Answering open offers | generous, card for card | card for card when it gains | asks for up to one card more |
+
+`npm run bots:league -- [games] [scenarios]` seats one player of
+each level at a table, rotates the seats and counts wins. Over 60 base games,
+hard won 68%, medium 28% and easy 3%. Over the nine Seafarers scenarios
+(30–60 games each), hard won 55%, medium 44% and easy 1%.
+
+### Dice
+
+Each roll is two independent fair six-sided dice from a seeded random
+number generator (mulberry32 in `src/core/rng.ts`). Every game gets a fresh
+seed, so a 7 comes up 6 times in 36 on average and a 2 or 12 once in 36,
+with the usual streaks. The generator's state lives inside the game state,
+so a saved game continues with the same future rolls. It is stripped from
+what players see, so nobody can predict a roll. Online, only the host's
+browser rolls.
 
 ### Online play
 

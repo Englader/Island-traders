@@ -127,6 +127,9 @@ test('open trade: the active player asks what a friend would give for a card; th
       [host, guest],
       [guest, host],
     ] as const) {
+      // the computer player may offer a trade on its turn: not now, thanks
+      const botOffer = a.locator('.sheet[aria-label="Trade offer"]');
+      if (await botOffer.isVisible()) await botOffer.getByRole('button', { name: 'No thanks' }).first().click();
       const roll = a.getByRole('button', { name: /Roll/ });
       if (await roll.isVisible()) {
         await roll.click();
