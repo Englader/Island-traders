@@ -157,6 +157,14 @@ code changes.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 
+## Roadmap
+
+The next steps are in [`docs/ROADMAP.md`](docs/ROADMAP.md):
+- check the rules against the official rulebooks
+- a browser game for one device
+- online play with friends (peer-to-peer first)
+- free hosting
+
 ## Intellectual property
 
 "Catan" and its artwork, names and maps are trademarks and copyrighted material
