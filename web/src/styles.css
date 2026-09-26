@@ -3112,6 +3112,10 @@ svg.board text {
   height: 210px;
   pointer-events: none;
 }
+/* a map turned a quarter turn (tall screens, as in the game) is taller than wide */
+.map-thumb.turned .map-thumb-board {
+  height: 300px;
+}
 .map-thumb-board .zoom-controls,
 .map-big .zoom-controls .speed-chip {
   display: none;

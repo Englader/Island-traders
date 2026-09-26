@@ -34,10 +34,10 @@ const noPick = () => {};
 
 function Tiles() {
   const view = tileBoard();
-  const board = <Board view={view} colors={PLAYER_COLORS} targets={NO_TARGETS} accent="#ffffff" ghost={null} flash={null} onPick={noPick} />;
+  // turned in the tall box and flat in the others, whatever the screen
   const box = (w: number, h: number) => (
     <div class="board-area" style={{ width: `${w}px`, height: `${h}px`, position: 'relative', borderRadius: '12px', overflow: 'hidden' }}>
-      {board}
+      <Board view={view} colors={PLAYER_COLORS} targets={NO_TARGETS} accent="#ffffff" ghost={null} flash={null} onPick={noPick} turned={h > w} />
     </div>
   );
   return (

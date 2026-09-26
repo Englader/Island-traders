@@ -16,6 +16,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { RESOURCE_INFO } from '../game/names';
 import type { PlayerColor } from '../game/seats';
+import { useMedia } from '../ui/common';
 import type { Flash } from '../ui/flash';
 import { ResGlyph } from '../ui/icons';
 import { GOLD_TILE, GoldFieldDefs } from './gold';
@@ -46,6 +47,8 @@ interface Props {
   onPick(kind: PickKind, id: string): void;
   /** Extra round buttons shown under the zoom buttons (speed, log). */
   tools?: ComponentChildren;
+  /** Draws the map a quarter turn round, or not; by default the screen's shape decides (see useTurned). */
+  turned?: boolean;
 }
 
 interface Pt {
@@ -159,7 +162,21 @@ function unrotatedAspect(layoutKey: string): number {
   return (maxX - minX + 2) / ((maxY - minY + 2) * TILT);
 }
 
-export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools }: Props) {
+/** A screen at least 10% taller than wide: a phone held upright, a tablet in portrait. */
+const TALL_SCREEN = '(max-aspect-ratio: 10/11)';
+
+/**
+ * Whether a map is drawn a quarter turn round: wide maps on tall screens.
+ * The screen decides, not the box the board is drawn in, so a map looks the
+ * same in the new-game preview, in its full view and in the game.
+ */
+export function useTurned(layoutKey: string | null): boolean {
+  const tall = useMedia(TALL_SCREEN);
+  const aspect = useMemo(() => (layoutKey ? unrotatedAspect(layoutKey) : 0), [layoutKey]);
+  return tall && aspect > 1.15;
+}
+
+export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 360, h: 360 });
@@ -174,8 +191,8 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
   }, []);
 
   const layoutKey = view.board.layoutKey;
-  const aspect = useMemo(() => unrotatedAspect(layoutKey), [layoutKey]);
-  const rotate = aspect > 1.15 && size.h > size.w * 1.1;
+  const onScreen = useTurned(layoutKey);
+  const rotate = turned ?? onScreen;
   const g = useGeometry(layoutKey, rotate);
 
   // --- pan & zoom ------------------------------------------------------------
@@ -495,7 +512,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               const p = { x: m.x + (sc.x - m.x) * 0.5, y: m.y + (sc.y - m.y) * 0.5 };
               const [a, c] = edgeEnds(hb.edge);
               return (
-                <g key={`hb${hb.edge}`} class="harbor">
+                <g key={`hb${hb.edge}`} class="harbor" data-harbor={hb.edge} data-harbor-type={hb.type}>
                   <line x1={p.x} y1={p.y} x2={a.x} y2={a.y} class="pier" />
                   <line x1={p.x} y1={p.y} x2={c.x} y2={c.y} class="pier" />
                   <ellipse cx={p.x + 0.02} cy={p.y + 0.06} rx={0.21} ry={0.21 * TILT} class="token-shadow" />
@@ -660,6 +677,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
         onWheel={onWheel}
         role="img"
         aria-label="Game board"
+        data-turned={rotate ? 'true' : 'false'}
       >
         {content}
       </svg>
