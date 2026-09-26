@@ -932,6 +932,8 @@ svg.board {
   display: none;
 }
 .player {
+  /* anything placed inside a chip stays inside the scrolling strip */
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -4344,9 +4346,6 @@ button.chat-send {
   font-size: 0.8rem;
 }
 /* two players to a row: no room beside the name, so the turn's time hangs on the chip's frame */
-.panel.desk.tight .player {
-  position: relative;
-}
 .panel.desk.tight .players {
   row-gap: 10px;
 }

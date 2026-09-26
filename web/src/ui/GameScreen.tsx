@@ -932,7 +932,6 @@ function Players({
         const turnTime = active && clock?.sum.current?.player === p.id && (
           <span class="pm pturn" title="This turn so far">
             <ClockIcon />
-            <span class="sr-only">This turn: </span>
             <LiveTime feed={clock} pick={(c) => (c.current?.player === p.id ? c.current.ms : null)} />
           </span>
         );

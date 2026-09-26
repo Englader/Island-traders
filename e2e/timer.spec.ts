@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { SAVE_KEY } from './tradeState.js';
+import { clockFor } from './endgameState.js';
+import { SAVE_KEY, tradeGame } from './tradeState.js';
 
 /** The game time in the header, in seconds (m:ss or h:mm:ss). */
 async function gameTime(page: Page): Promise<number> {
@@ -91,4 +92,28 @@ test('the clock pauses while the page is hidden or closed, and carries on from i
   expect(after).toBeGreaterThanOrEqual(before);
   expect(after).toBeLessThanOrEqual(before + 2);
   await expect.poll(() => gameTime(page), { timeout: 5000 }).toBeGreaterThan(after);
+});
+
+test("the turn time of a player at the far end of the players strip doesn't make the page scroll sideways", async ({ page }) => {
+  // the last of three players (long names) is on turn, and the only human: nobody else moves
+  const game = tradeGame({ actor: 2, hand: { brick: 1 } });
+  const names = ['Samantha', 'Adalbert', 'Björn Borg'];
+  const state = { ...game.record.state, players: game.record.state.players.map((p, i) => ({ ...p, name: names[i] })) };
+  const record = {
+    ...game.record,
+    state,
+    seats: game.record.seats.map((s, i) => ({ ...s, name: names[i], kind: i === 2 ? 'human' : 'bot' })),
+    clock: clockFor(state, 2),
+  };
+  await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [SAVE_KEY, JSON.stringify(record)] as const);
+  await page.goto('/');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  const chip = page.locator('.player.active');
+  await expect(chip).toContainText('Björn Borg');
+  await expect(chip.locator('.pturn')).toHaveText(/\d+:\d\d$/);
+  const width = page.viewportSize()!.width;
+  // the reading is out of view in the strip, and stays there: not in the page
+  expect((await chip.locator('.pturn').boundingBox())!.x).toBeGreaterThan(width);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
 });
