@@ -217,3 +217,204 @@ test('open trade: the active player asks what a friend would give for a card; th
   await hostCtx.close();
   await guestCtx.close();
 });
+
+// --- chat ------------------------------------------------------------------------------------------
+
+const chatButton = (p: Page) => p.getByRole('button', { name: /^Chat/ });
+const chatWindow = (p: Page) => p.getByRole('dialog', { name: 'Chat' });
+
+/** The host starts the game once the friend is seated; both see the board. */
+async function startWithFriend(host: Page, guest: Page) {
+  await expect(guest.locator('main')).toContainText('Waiting for');
+  await expect(host.locator('.lobby-seat').nth(1)).toContainText('online');
+  await host.getByRole('button', { name: /Start/ }).click();
+  await expect(host.locator('svg.board')).toBeVisible();
+  await expect(guest.locator('svg.board')).toBeVisible();
+}
+
+async function openChat(p: Page) {
+  const win = chatWindow(p);
+  if (!(await win.isVisible())) await chatButton(p).click();
+  await expect(win).toBeVisible();
+  return win;
+}
+
+/** Types a message and sends it with Enter; it shows as ours once the host has passed it on. */
+async function say(p: Page, text: string) {
+  const win = await openChat(p);
+  const box = win.getByRole('textbox', { name: 'Message' });
+  await box.fill(text);
+  await box.press('Enter');
+  await expect(box).toHaveValue('');
+  await expect(win.locator('.chat-msg.mine .chat-text').last()).toHaveText(text);
+}
+
+/** The friend reloads the page and joins again with the name the page remembers. */
+async function rejoin(guest: Page, code: string) {
+  await guest.reload();
+  await expect(guest.locator('.code-input')).toHaveValue(code);
+  await guest.getByRole('button', { name: 'Join' }).click();
+  await expect(guest.locator('svg.board')).toBeVisible();
+}
+
+test('friends chat during an online game: unread badge, replies, quick phrases, history after a reload', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  await join(guest, code, 'Chatty');
+  await startWithFriend(host, guest);
+
+  // the friend writes (markup stays plain text)
+  const hello = 'Hi! <b>Anyone</b> have wood?';
+  // the host gets a preview by the button for a few seconds: watch for it while the message goes out
+  await Promise.all([say(guest, hello), expect(host.locator('.chat-peek')).toContainText(hello)]);
+
+  // and a badge until the chat is opened
+  await expect(chatButton(host)).toHaveAccessibleName('Chat, 1 unread message');
+  await expect(host.locator('.chat-badge')).toHaveText('1');
+  const hostWin = await openChat(host);
+  await expect(host.locator('.chat-badge')).toHaveCount(0);
+  const theirs = hostWin.locator('.chat-msg:not(.mine)').last();
+  await expect(theirs).toContainText('Chatty');
+  await expect(theirs.locator('.chat-text')).toHaveText(hello);
+  await expect(hostWin.locator('.chat-text b')).toHaveCount(0);
+
+  // the host answers with the send button; the friend sees it with the host's name
+  await hostWin.getByRole('textbox', { name: 'Message' }).fill('Sorry, no wood here');
+  await hostWin.getByRole('button', { name: 'Send' }).click();
+  await expect(hostWin.locator('.chat-msg.mine .chat-text').last()).toHaveText('Sorry, no wood here');
+  const guestWin = chatWindow(guest);
+  await expect(guestWin.locator('.chat-msg:not(.mine)').last()).toContainText('Host');
+  await expect(guestWin.locator('.chat-text').last()).toHaveText('Sorry, no wood here');
+
+  // quick phrases
+  await guestWin.getByRole('button', { name: 'Deal!' }).click();
+  await guestWin.getByRole('button', { name: '👍' }).click();
+  const all = [hello, 'Sorry, no wood here', 'Deal!', '👍'];
+  await expect(hostWin.locator('.chat-text')).toHaveText(all);
+  await expect(guestWin.locator('.chat-text')).toHaveText(all);
+
+  // Escape closes the window
+  await guestWin.getByRole('textbox', { name: 'Message' }).press('Escape');
+  await expect(guestWin).toHaveCount(0);
+
+  // after a reload the friend gets the chat so far back, already read
+  await rejoin(guest, code);
+  await expect(chatButton(guest)).toHaveAccessibleName('Chat');
+  const again = await openChat(guest);
+  await expect(again.locator('.chat-text')).toHaveText(all);
+  await say(host, 'Welcome back');
+  await expect(again.locator('.chat-text').last()).toHaveText('Welcome back');
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test('chat goes through the relay too, and comes back after a reload', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  await join(guest, code, 'Relayer', '&link=relay');
+  await startWithFriend(host, guest);
+  await expect(guest.locator('.hud')).toContainText('via relay');
+
+  await say(guest, 'Over the relay');
+  await expect(host.locator('.chat-badge')).toHaveText('1');
+  const hostWin = await openChat(host);
+  await expect(hostWin.locator('.chat-text').last()).toHaveText('Over the relay');
+  await say(host, 'Loud and clear');
+  const guestWin = chatWindow(guest);
+  await expect(guestWin.locator('.chat-text').last()).toHaveText('Loud and clear');
+  await guestWin.getByRole('button', { name: 'Good game' }).click();
+  await expect(hostWin.locator('.chat-text').last()).toHaveText('Good game');
+
+  await rejoin(guest, code);
+  await expect(guest.locator('.hud')).toContainText('via relay');
+  const again = await openChat(guest);
+  await expect(again.locator('.chat-text')).toHaveText(['Over the relay', 'Loud and clear', 'Good game']);
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test('games on this device have no chat', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  await expect(page.locator('.chat-fab')).toHaveCount(0);
+});
+
+type Box = { x: number; y: number; width: number; height: number };
+const overlap = (a: Box, b: Box) => a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1 && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1;
+const within = (a: Box, b: Box) => a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1;
+
+/** Boxes of what is on screen for these selectors. */
+async function boxes(p: Page, selectors: string[]): Promise<Array<{ sel: string; box: Box }>> {
+  const out: Array<{ sel: string; box: Box }> = [];
+  for (const sel of selectors)
+    for (const el of await p.locator(sel).all()) {
+      const box = (await el.isVisible()) ? await el.boundingBox() : null;
+      if (box) out.push({ sel, box });
+    }
+  return out;
+}
+
+test('the chat keeps clear of the board tools, the log and the panels, on a computer and on a phone', async ({ browser }) => {
+  const hostCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
+  const guestCtx = await browser.newContext();
+  const host = await hostCtx.newPage();
+  const guest = await guestCtx.newPage();
+  const code = await openRoom(host);
+  await join(guest, code, 'Layout');
+  await startWithFriend(host, guest);
+  // the host picks a spot for its first settlement: a confirm bar at the bottom of the board too
+  // (a roll decides who starts: the friend may place first, the computer places by itself)
+  await expect(async () => {
+    await place(guest);
+    await expect(host.locator('.status-text')).toContainText('Place settlement', { timeout: 1000 });
+  }).toPass({ timeout: 60_000 });
+  await expect(async () => {
+    const spots = host.locator('[data-pick^="v:"]');
+    const n = await spots.count();
+    // from the middle of the board: a spot no panel covers
+    for (let k = 0; k < n && !(await host.locator('.confirm-bar').isVisible()); k++)
+      await spots
+        .nth((Math.floor(n / 2) + k) % n)
+        .click({ timeout: 800 })
+        .catch(() => {});
+    await expect(host.locator('.confirm-bar')).toBeVisible({ timeout: 1000 });
+  }).toPass();
+
+  for (const p of [host, guest]) {
+    const board = (await p.locator('.board-area').boundingBox())!;
+    const fab = (await chatButton(p).boundingBox())!;
+    // the bottom-right corner of the board
+    expect(within(fab, board)).toBe(true);
+    expect(board.x + board.width - (fab.x + fab.width)).toBeLessThan(24);
+    expect(board.y + board.height - (fab.y + fab.height)).toBeLessThan(24);
+    for (const { sel, box } of await boxes(p, ['.hud', '.panel', '.zoom-controls', '.glog', '.feed', '.confirm-bar', '.mode-hint']))
+      expect(overlap(fab, box), `chat button over ${sel}`).toBe(false);
+
+    // the window opens over the board, never over the panels or the board tools
+    const win = await openChat(p);
+    // measured once the opening animation is over
+    await win.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    const w = (await win.boundingBox())!;
+    expect(within(w, board)).toBe(true);
+    for (const { sel, box } of await boxes(p, ['.hud', '.panel', '.zoom-controls', '.glog']))
+      expect(overlap(w, box), `chat window over ${sel}`).toBe(false);
+    if (p === host) {
+      // a computer: a compact window above the button
+      expect(w.width).toBeGreaterThanOrEqual(300);
+      expect(w.width).toBeLessThanOrEqual(340);
+      expect(w.height).toBeGreaterThanOrEqual(340);
+      expect(w.height).toBeLessThanOrEqual(400);
+      expect(w.y + w.height).toBeLessThanOrEqual(fab.y);
+    } else {
+      // a phone: along the bottom of the board, the top of the board still in view
+      expect(w.y - board.y).toBeGreaterThan(board.height * 0.3);
+    }
+    await win.getByRole('button', { name: 'Close chat' }).click();
+    await expect(win).toHaveCount(0);
+    await expect(chatButton(p)).toBeFocused();
+  }
+  await hostCtx.close();
+  await guestCtx.close();
+});

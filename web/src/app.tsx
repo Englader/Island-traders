@@ -4,6 +4,7 @@ import { GameController, SAVE_KEY, newGameId, type GameRecord } from './game/con
 import { LEVEL_LABEL, PLAYER_COLORS, mustAct, type BotLevel, type BotSpeed } from './game/seats';
 import { loadJson } from './game/storage';
 import { Sheet } from './ui/common';
+import { ChatWindow } from './ui/ChatWindow';
 import { GameScreen } from './ui/GameScreen';
 import { flashOf } from './ui/flash';
 import { HomeScreen, NewGameScreen, ONLINE, PassScreen, RulesSheet, type NewGameConfig } from './ui/screens';
@@ -179,6 +180,11 @@ export function App() {
               : undefined
           }
           note={ctrl.record.mode === 'host' ? host.status : undefined}
+          chat={
+            ctrl.record.mode === 'host' && ctrl.record.room ? (
+              <ChatWindow messages={host.chat} seat={seat} colors={colors} room={ctrl.record.room} onSend={host.sendChat} />
+            ) : undefined
+          }
         />
       );
     }

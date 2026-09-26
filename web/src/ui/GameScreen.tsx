@@ -1,5 +1,5 @@
 import { getScenario, type Action, type GameView, type PlayerId } from 'engine';
-import type { JSX } from 'preact';
+import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
@@ -50,6 +50,8 @@ export interface GameScreenProps {
   onRematch?: () => void;
   /** Extra line under the status (e.g. online connection state). */
   note?: string;
+  /** Online games: the chat button and window, shown over the board. */
+  chat?: ComponentChildren;
 }
 
 type Mode =
@@ -787,6 +789,7 @@ export function GameScreen(props: GameScreenProps) {
             {desk ? ' · Esc cancels' : ''}
           </div>
         )}
+        {props.chat}
       </div>
 
       <div ref={panelRef} class={desk ? (tight ? 'panel desk tight' : 'panel desk') : 'panel'}>
