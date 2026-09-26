@@ -2,9 +2,9 @@ import { getScenario, type Action, type GameView, type PlayerId } from 'engine';
 import type { JSX } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
-import { DEV_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
+import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
 import { mustAct, type PlayerColor, type SeatKind } from '../game/seats';
-import { Die, ResIcon } from './common';
+import { Die, Sheet } from './common';
 import {
   BuildSheet,
   CardsSheet,
@@ -44,7 +44,7 @@ type Mode =
   | { kind: 'harbor' }
   | { kind: 'robber'; piece: 'robber' | 'pirate' };
 
-type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log';
+type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores';
 
 interface Pending {
   key: string;
@@ -190,7 +190,7 @@ export function statusText(view: GameView, seat: PlayerId | null, legal: Action[
         return offered ? 'You have a trade offer' : `${name(view.turn.actor)}'s turn`;
       }
       if (!mine) return `${name(view.turn.actor)}'s turn`;
-      return view.turn.role === 'paired' ? 'Paired turn: build, play a card or trade with the bank' : 'Build, trade, play a card or end your turn';
+      return view.turn.role === 'paired' ? 'Your paired turn' : 'Your turn';
     }
     default:
       return '';
@@ -372,22 +372,23 @@ export function GameScreen(props: GameScreenProps) {
   }, [ph.kind, isActor, robberPieces.length]);
 
   const dice = view.turn.dice;
+  const lastEvent = [...view.log].reverse().find((e) => !e.msg.startsWith('---'))?.msg ?? null;
 
   return (
     <div class="game">
-      <header class="topbar">
+      <header class="hud" style={{ '--pc': colors[view.turn.actor]?.fill } as Record<string, string>}>
         <button type="button" class="icon-btn" aria-label="Menu" onClick={props.onMenu}>
           ☰
         </button>
-        <div class="title-block">
-          <div class="scenario-name">{sc.name}</div>
+        <div class="hud-main">
+          <div class="status-text">
+            {status}
+            {!canAct && !gameOver && waitingFor.length > 0 && <span class="spinner" aria-hidden="true" />}
+          </div>
           <div class="sub">
-            Turn {view.turn.number} · {view.victoryTarget} VP to win
+            {sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP{props.note ? ` · ${props.note}` : ''}
           </div>
         </div>
-        <button type="button" class="icon-btn" aria-label="Game log" onClick={() => setSheet('log')}>
-          📜
-        </button>
         <div class="dice" aria-label={dice ? `rolled ${dice[0] + dice[1]}` : 'no roll yet'}>
           {dice ? (
             <>
@@ -397,12 +398,6 @@ export function GameScreen(props: GameScreenProps) {
           ) : null}
         </div>
       </header>
-
-      <div class="status" style={{ borderColor: colors[view.turn.actor]?.fill }}>
-        <span class="status-text">{status}</span>
-        {!canAct && !gameOver && waitingFor.length > 0 && <span class="spinner" aria-hidden="true" />}
-        {props.note && <span class="note">{props.note}</span>}
-      </div>
       {props.error && (
         <div class="toast" role="alert" onClick={props.clearError}>
           {props.error}
@@ -411,6 +406,11 @@ export function GameScreen(props: GameScreenProps) {
 
       <div class="board-area">
         <Board view={view} colors={colors} targets={targets} accent={accent} ghost={ghost} flash={props.flash} onPick={onPick} />
+        {lastEvent && (
+          <button type="button" class="ticker" onClick={() => setSheet('log')} aria-label="Game log">
+            {lastEvent}
+          </button>
+        )}
         {pending && (
           <div class="confirm-bar">
             <span>{pending.actions.length === 1 ? describeAction(pending.actions[0], view) : 'Choose:'}</span>
@@ -443,7 +443,7 @@ export function GameScreen(props: GameScreenProps) {
       </div>
 
       <div class="panel">
-        <Players view={view} colors={colors} kinds={kinds} seat={seat} />
+        <Players view={view} colors={colors} kinds={kinds} seat={seat} onOpen={() => setSheet('scores')} />
         {me?.resources && <Hand view={view} seat={seat!} onCards={() => setSheet('cards')} />}
         <nav class="action-bar">{bar}</nav>
       </div>
@@ -476,56 +476,109 @@ export function GameScreen(props: GameScreenProps) {
         />
       )}
       {sheet === 'log' && <LogSheet view={view} close={() => setSheet(null)} />}
+      {sheet === 'scores' && <ScoresSheet view={view} colors={colors} kinds={kinds} seat={seat} close={() => setSheet(null)} />}
       {!sheet && forced}
       {gameOver && !sheet && <GameOverSheet view={view} colors={colors} onHome={props.onHome} onRematch={props.onRematch} />}
     </div>
   );
 }
 
-function Players({ view, colors, kinds, seat }: { view: GameView; colors: PlayerColor[]; kinds: SeatKind[]; seat: PlayerId | null }) {
+function Players({
+  view,
+  colors,
+  kinds,
+  seat,
+  onOpen,
+}: {
+  view: GameView;
+  colors: PlayerColor[];
+  kinds: SeatKind[];
+  seat: PlayerId | null;
+  onOpen(): void;
+}) {
+  return (
+    <div class="players" role="list">
+      {view.players.map((p) => {
+        const active = view.turn.actor === p.id && view.phase.kind !== 'gameOver';
+        const vp = p.totalVP ?? p.publicVP;
+        return (
+          <button
+            type="button"
+            role="listitem"
+            key={p.id}
+            class={active ? 'player active' : 'player'}
+            style={{ '--pc': colors[p.id].fill, '--pcs': colors[p.id].stroke } as Record<string, string>}
+            onClick={onOpen}
+            aria-label={`${p.name}: ${vp} victory points, ${p.resourceCount} cards`}
+          >
+            <span class="avatar">{kinds[p.id] === 'bot' ? '🤖' : kinds[p.id] === 'remote' ? '🌐' : p.name.slice(0, 1).toUpperCase()}</span>
+            <span class="pinfo">
+              <span class="pname">
+                {p.name}
+                {p.id === seat && <span class="you">you</span>}
+              </span>
+              <span class="pmeta">
+                🎴 {p.resourceCount}
+                {view.longestRoute.holder === p.id && <span title="Longest route"> 🛣️</span>}
+                {view.largestArmy.holder === p.id && <span title="Largest army"> ⚔️</span>}
+              </span>
+            </span>
+            <span class="pvp" title="Victory points">
+              {vp}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoresSheet({
+  view,
+  colors,
+  kinds,
+  seat,
+  close,
+}: {
+  view: GameView;
+  colors: PlayerColor[];
+  kinds: SeatKind[];
+  seat: PlayerId | null;
+  close(): void;
+}) {
   const ext = view.ext as Record<string, unknown>;
   const cloth = (ext.cloth as { cloth: number[] } | undefined)?.cloth;
   const levels = (ext.wonders as { levels: number[] } | undefined)?.levels;
   const forts = (ext.pirateIslands as { fortresses: Array<{ chits: number; captured: boolean }> } | undefined)?.fortresses;
   const sc = getScenario(view.scenario);
   return (
-    <div class="players">
-      {view.players.map((p) => {
-        const active = view.turn.actor === p.id && view.phase.kind !== 'gameOver';
-        const vp = p.totalVP ?? p.publicVP;
-        return (
-          <div
-            key={p.id}
-            class={active ? 'player active' : 'player'}
-            style={{ borderColor: colors[p.id].fill, '--pc': colors[p.id].fill } as Record<string, string>}
-          >
-            <div class="player-name">
+    <Sheet title="Players" onClose={close} wide>
+      <div class="scores">
+        {view.players.map((p) => (
+          <div class="score-row" key={p.id} style={{ '--pc': colors[p.id].fill } as Record<string, string>}>
+            <div class="score-head">
               <span class="dot" style={{ background: colors[p.id].fill, borderColor: colors[p.id].stroke }} />
-              {p.name}
-              {kinds[p.id] === 'bot' && <span title="Computer player"> 🤖</span>}
-              {kinds[p.id] === 'remote' && <span title="Online player"> 🌐</span>}
+              <strong>{p.name}</strong>
+              {kinds[p.id] === 'bot' && <span class="tag">computer</span>}
+              {kinds[p.id] === 'remote' && <span class="tag">online</span>}
               {p.id === seat && <span class="you">you</span>}
+              <span class="score-vp">{p.totalVP ?? p.publicVP} VP</span>
             </div>
-            <div class="player-stats">
-              <span class="vp" title="Victory points">
-                🏆 {vp}
-              </span>
-              <span title="Resource cards">🎴 {p.resourceCount}</span>
-              <span title="Development cards">🃏 {p.devCardCount}</span>
-              {sc.rules.largestArmy && <span title="Knights played">⚔️ {p.playedKnights}</span>}
-              {sc.rules.longestRoute && <span title="Longest route">🛣️ {view.longestRoute.lengths[p.id] ?? 0}</span>}
-              {cloth && <span title="Cloth">🧵 {cloth[p.id]}</span>}
-              {levels && <span title="Wonder level">🏛️ {levels[p.id]}</span>}
-              {forts && <span title="Fortress">{forts[p.id].captured ? '🏰✅' : `🏴 ${forts[p.id].chits}`}</span>}
-            </div>
-            <div class="badges">
+            <div class="score-stats">
+              <span>🎴 {p.resourceCount} cards</span>
+              <span>🃏 {p.devCardCount} development</span>
+              {sc.rules.largestArmy && <span>⚔️ {p.playedKnights} knights</span>}
+              {sc.rules.longestRoute && <span>🛣️ route {view.longestRoute.lengths[p.id] ?? 0}</span>}
+              {cloth && <span>🧵 {cloth[p.id]} cloth</span>}
+              {levels && <span>🏛️ wonder level {levels[p.id]}</span>}
+              {forts && <span>{forts[p.id].captured ? '🏰 fortress conquered' : `🏴 fortress ${forts[p.id].chits}/3`}</span>}
               {view.longestRoute.holder === p.id && <span class="badge">{sc.rules.ships ? 'Longest Trade Route' : 'Longest Road'}</span>}
               {view.largestArmy.holder === p.id && <span class="badge">Largest Army</span>}
             </div>
           </div>
-        );
-      })}
-    </div>
+        ))}
+      </div>
+    </Sheet>
   );
 }
 
@@ -533,21 +586,18 @@ function Hand({ view, seat, onCards }: { view: GameView; seat: PlayerId; onCards
   const me = view.players[seat];
   const res = me.resources!;
   const cards = me.devCards ?? [];
-  const vpCards = cards.filter((c) => c.type === 'victoryPoint').length;
   return (
     <div class="hand">
-      <div class="hand-res">
-        {RESOURCE_LIST.map((r) => (
-          <ResIcon key={r} r={r} n={res[r]} />
-        ))}
-      </div>
-      <button type="button" class="hand-cards" onClick={onCards} aria-label="Development cards">
-        {cards.length === 0 ? '🃏 0' : cards.map((c, i) => <span key={i}>{DEV_INFO[c.type].icon}</span>)}
-        {vpCards > 0 && <span class="hint"> (+{vpCards} VP)</span>}
+      {RESOURCE_LIST.map((r) => (
+        <div key={r} class={res[r] === 0 ? `rcard r-${r} empty` : `rcard r-${r}`} title={RESOURCE_INFO[r].label}>
+          <span class="rc-icon">{RESOURCE_INFO[r].icon}</span>
+          <span class="rc-n">{res[r]}</span>
+        </div>
+      ))}
+      <button type="button" class={cards.length === 0 ? 'rcard dev empty' : 'rcard dev'} onClick={onCards} aria-label="Development cards">
+        <span class="rc-icon">🃏</span>
+        <span class="rc-n">{cards.length}</span>
       </button>
-      <div class="supply" title="Pieces left">
-        🛤️{me.supply.roads} {getScenario(view.scenario).rules.ships ? `⛵${me.supply.ships} ` : ''}🏠{me.supply.settlements} 🏰{me.supply.cities}
-      </div>
     </div>
   );
 }

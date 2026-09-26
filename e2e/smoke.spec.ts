@@ -23,7 +23,7 @@ async function confirm(page: Page): Promise<void> {
 }
 
 async function turnNumber(page: Page): Promise<number> {
-  const text = (await page.locator('.topbar .sub').textContent()) ?? '';
+  const text = (await page.locator('.hud .sub').textContent()) ?? '';
   return Number(/Turn (\d+)/.exec(text)?.[1] ?? 0);
 }
 
@@ -111,7 +111,7 @@ test('start a game against the computer, play a few turns, resume after reload',
   const turn = await turnNumber(page);
   expect(turn).toBeGreaterThan(3);
   // our pieces are on the board
-  expect(await page.locator('polygon.building').count()).toBeGreaterThanOrEqual(6);
+  expect(await page.locator('g.building').count()).toBeGreaterThanOrEqual(6);
 
   // the game is saved: reload and continue
   await page.reload();
@@ -129,7 +129,7 @@ test('Seafarers scenario renders ships and the pirate', async ({ page }) => {
   await page.getByRole('button', { name: 'fast' }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
   await expect(page.locator('svg.board')).toBeVisible();
-  await expect(page.locator('.hex.t-gold').first()).toBeVisible();
+  await expect(page.locator('[fill="url(#tile-gold)"]').first()).toBeVisible();
   await expect(page.locator('.status-text')).toContainText(/Place|placing/);
 });
 
