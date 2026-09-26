@@ -593,6 +593,106 @@ input {
 .die.red .die-pip {
   fill: #fff;
 }
+
+/* The dice roll: two 3D dice tumble in the middle, then fly to the header. */
+.roll-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: rgba(8, 22, 36, 0.24);
+  transition: background-color 0.3s ease;
+  animation: fade 0.15s ease-out;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.roll-overlay.leaving {
+  background: rgba(8, 22, 36, 0);
+}
+.roll-stage {
+  display: flex;
+  gap: 34px;
+}
+.cube-wrap {
+  --size: 70px;
+  --half: 35px;
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  perspective: 620px;
+}
+.cube-wrap::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -18px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.38), transparent);
+  transition: opacity 0.2s;
+}
+.roll-overlay.leaving .cube-wrap::after {
+  opacity: 0;
+}
+.cube {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+.cube-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 14%;
+  background: linear-gradient(145deg, #fffef9, #ece2cc);
+  border: 2px solid #cfc4ad;
+  box-shadow: inset 0 -5px 10px rgba(0, 0, 0, 0.08);
+  backface-visibility: hidden;
+}
+.cube-wrap.red .cube-face {
+  background: linear-gradient(145deg, #f0625a, #c42f28);
+  border-color: #9b231d;
+  box-shadow: inset 0 -5px 10px rgba(0, 0, 0, 0.16);
+}
+.die-pips {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cube-wrap.red .die-pip {
+  fill: #fff;
+}
+.roll-sum {
+  min-width: 2.2em;
+  padding: 6px 16px 4px;
+  border-radius: 999px;
+  background: rgba(6, 26, 44, 0.78);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--display);
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.roll-overlay.landed .roll-sum {
+  opacity: 1;
+  transform: scale(1);
+}
+.roll-overlay.leaving .roll-sum {
+  opacity: 0;
+  transform: scale(1);
+}
 .toast {
   position: fixed;
   top: 70px;
@@ -647,7 +747,11 @@ svg.board {
   user-select: none;
   -webkit-user-select: none;
 }
+.feed.hushed {
+  opacity: 0;
+}
 .feed {
+  transition: opacity 0.25s;
   position: absolute;
   left: 8px;
   top: 8px;
@@ -1252,6 +1356,66 @@ svg.board {
 .chip.on {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+.your-cards {
+  margin-bottom: 10px;
+}
+.your-cards-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.your-cards-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.your-cards-row .rcard {
+  height: 46px;
+}
+.res-have {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.fixed-side {
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.offer.open {
+  border: 2px dashed var(--line);
+}
+.answers {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.answers .hint {
+  margin: 0;
+}
+.answer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--chip);
+}
+.answer-text {
+  font-weight: 600;
+}
+.answer-actions {
+  display: flex;
+  gap: 6px;
 }
 .offers {
   margin-bottom: 10px;

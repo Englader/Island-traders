@@ -1,9 +1,10 @@
 import { getScenario, type Action, type GameView, type PlayerId } from 'engine';
 import type { JSX } from 'preact';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
 import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
-import { mustAct, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
+import { mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
+import { DiceRoll, type RollInfo } from './DiceRoll';
 import type { Flash } from './flash';
 import { Die, Sheet } from './common';
 import {
@@ -376,6 +377,19 @@ export function GameScreen(props: GameScreenProps) {
   }, [ph.kind, isActor, robberPieces.length]);
 
   const dice = view.turn.dice;
+  // A new roll plays the dice animation; the header dice, the glowing tiles
+  // and the event feed wait until the dice have landed. A roll that was
+  // already there when the screen opened is not replayed.
+  const rollFlash = props.flash?.kind === 'roll' ? props.flash : null;
+  const seenRoll = useRef<number | null>(rollFlash?.key ?? null);
+  const headerDice = useRef<HTMLDivElement>(null);
+  const [rolling, setRolling] = useState<RollInfo | null>(null);
+  useEffect(() => {
+    if (!rollFlash || rollFlash.key === seenRoll.current) return;
+    seenRoll.current = rollFlash.key;
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (dice && !reduced) setRolling({ key: rollFlash.key, dice: [dice[0], dice[1]] });
+  }, [rollFlash?.key]);
   // The latest few events, each marked with the colour of the player it is about.
   const feed = view.log
     .map((e, i) => ({ msg: e.msg, i }))
@@ -405,6 +419,8 @@ export function GameScreen(props: GameScreenProps) {
         </div>
         <div
           class="dice"
+          ref={headerDice}
+          style={rolling ? { visibility: 'hidden' } : undefined}
           key={dice ? `${view.turn.number}-${dice[0]}-${dice[1]}` : 'none'}
           aria-label={dice ? `rolled ${dice[0] + dice[1]}` : 'no roll yet'}
         >
@@ -416,6 +432,14 @@ export function GameScreen(props: GameScreenProps) {
           ) : null}
         </div>
       </header>
+      {rolling && (
+        <DiceRoll
+          roll={rolling}
+          timing={ROLL_TIMING[props.speed ?? 'normal']}
+          targets={() => Array.from(headerDice.current?.querySelectorAll('.die') ?? [])}
+          onDone={() => setRolling(null)}
+        />
+      )}
       {props.error && (
         <div class="toast" role="alert" onClick={props.clearError}>
           {props.error}
@@ -429,7 +453,7 @@ export function GameScreen(props: GameScreenProps) {
           targets={targets}
           accent={accent}
           ghost={ghost}
-          flash={props.flash}
+          flash={rolling && rollFlash ? null : props.flash}
           onPick={onPick}
           tools={
             <>
@@ -451,7 +475,7 @@ export function GameScreen(props: GameScreenProps) {
           }
         />
         {feed.length > 0 && (
-          <div class="feed" aria-live="polite">
+          <div class={rolling ? 'feed hushed' : 'feed'} aria-live="polite">
             {feed.map((e, k) => (
               <span key={e.i} class={`feed-line age-${feed.length - 1 - k}`}>
                 <span class="feed-dot" style={{ background: e.color ?? 'transparent' }} />

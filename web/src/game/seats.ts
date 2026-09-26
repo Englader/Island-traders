@@ -34,6 +34,22 @@ export const BOT_DELAY: Record<BotSpeed, number> = { slow: 1900, normal: 1150, f
 
 export const SPEED_LABEL: Record<BotSpeed, string> = { slow: 'Slow', normal: 'Normal', fast: 'Fast' };
 
+/** The dice animation, in ms: tumbling in the middle, resting, then flying to the header. */
+export interface RollTiming {
+  tumble: number;
+  hold: number;
+  flight: number;
+}
+export const ROLL_TIMING: Record<BotSpeed, RollTiming> = {
+  slow: { tumble: 1150, hold: 450, flight: 450 },
+  normal: { tumble: 1000, hold: 350, flight: 450 },
+  fast: { tumble: 550, hold: 150, flight: 300 },
+};
+export function rollDuration(speed: BotSpeed): number {
+  const t = ROLL_TIMING[speed];
+  return t.tumble + t.hold + t.flight;
+}
+
 /**
  * How long to wait before the next computer move: players need time to see
  * what a roll produced and whose turn it is now.
@@ -41,7 +57,8 @@ export const SPEED_LABEL: Record<BotSpeed, string> = { slow: 'Slow', normal: 'No
 export function botDelay(speed: BotSpeed, last: Action | null): number {
   const base = BOT_DELAY[speed];
   if (!last) return base;
-  if (last.type === 'rollDice') return base * 1.8;
+  // the dice animation, then a moment to see what the roll produced
+  if (last.type === 'rollDice') return rollDuration(speed) + base * 0.8;
   if (last.type === 'endTurn') return base * 1.4;
   return base;
 }

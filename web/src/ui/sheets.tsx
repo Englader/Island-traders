@@ -79,6 +79,36 @@ export function BuildSheet({ view, legal, seat, send, close, choose }: SheetProp
 
 // --- trade -----------------------------------------------------------------------
 
+/** The player's cards, one tile per resource with the count. */
+function YourCards({ hand }: { hand: PartialCounts }) {
+  return (
+    <div class="your-cards" aria-label="Your cards">
+      <span class="your-cards-label">Your cards</span>
+      <div class="your-cards-row">
+        {RESOURCE_LIST.map((r) => (
+          <span key={r} class={(hand[r] ?? 0) > 0 ? `rcard r-${r}` : `rcard r-${r} empty`} title={RESOURCE_INFO[r].label}>
+            <span class="rc-icon">{RESOURCE_INFO[r].icon}</span>
+            <span class="rc-n">{hand[r] ?? 0}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** How a player's offer reads to others, including open offers. */
+function offerText(t: TradeOffer, view: GameView, seat: PlayerId): string {
+  if (t.from === seat) {
+    if (t.open === 'give') return `You want ${countsText(t.get)}: what will they give?`;
+    if (t.open === 'get') return `You give ${countsText(t.give)}: what will they give for it?`;
+    return `You give ${countsText(t.give)} for ${countsText(t.get)}`;
+  }
+  const who = nameOf(view, t.from);
+  if (t.open === 'give') return `${who} wants ${countsText(t.get)}. What would you like for it?`;
+  if (t.open === 'get') return `${who} gives ${countsText(t.give)}. What will you give for it?`;
+  return `${who} gives ${countsText(t.give)} for your ${countsText(t.get)}`;
+}
+
 export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProps) {
   const me = view.players[seat];
   const hand = me.resources!;
@@ -103,11 +133,36 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
   const others = view.players.filter((p) => p.id !== seat).map((p) => p.id);
   const [to, setTo] = useState<PlayerId[]>(others);
   const mine = view.turn.trades.filter((t) => t.from === seat);
-  const counters = view.turn.trades.filter((t) => t.from !== seat && t.to.includes(seat));
-  const giveOk = sumCounts(offerGive) > 0 && sumCounts(offerGet) > 0 && to.length > 0 && RESOURCE_LIST.every((r) => !((offerGive[r] ?? 0) > 0 && (offerGet[r] ?? 0) > 0));
+  const openIds = new Set(mine.filter((t) => t.open).map((t) => t.id));
+  // answers to an open offer are listed under it; other counter-offers on their own
+  const counters = view.turn.trades.filter((t) => t.from !== seat && t.to.includes(seat) && !(t.replyTo !== undefined && openIds.has(t.replyTo)));
+  const answers = (id: number) => view.turn.trades.filter((t) => t.replyTo === id && t.from !== seat);
+  const giveN = sumCounts(offerGive);
+  const getN = sumCounts(offerGet);
+  const same = RESOURCE_LIST.some((r) => (offerGive[r] ?? 0) > 0 && (offerGet[r] ?? 0) > 0);
+  const kind = giveN > 0 && getN > 0 ? 'offer' : giveN > 0 ? 'open-get' : getN > 0 ? 'open-give' : null;
+  const offerOk = kind !== null && to.length > 0 && !same;
+  const offerLabel =
+    kind === 'open-give' ? `Ask who gives ${countsText(offerGet)}` : kind === 'open-get' ? `Ask what they'd give for ${countsText(offerGive)}` : 'Make offer';
+  const accept = (t: TradeOffer) => (
+    <>
+      <button
+        type="button"
+        class="primary"
+        disabled={!legal.some((a) => a.type === 'acceptTrade' && a.tradeId === t.id)}
+        onClick={() => send({ type: 'acceptTrade', player: seat, tradeId: t.id })}
+      >
+        Accept
+      </button>
+      <button type="button" onClick={() => send({ type: 'rejectTrade', player: seat, tradeId: t.id })}>
+        No thanks
+      </button>
+    </>
+  );
 
   return (
     <Sheet title="Trade" onClose={close} wide>
+      <YourCards hand={hand} />
       {domestic && (
         <div class="tabs" role="tablist">
           <button type="button" class={tab === 'players' ? 'tab on' : 'tab'} onClick={() => setTab('players')}>
@@ -193,17 +248,7 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
               <h3>Offers to you</h3>
               {counters.map((t) => (
                 <OfferRow key={t.id} t={t} view={view} colors={colors} seat={seat}>
-                  <button
-                    type="button"
-                    class="primary"
-                    disabled={!legal.some((a) => a.type === 'acceptTrade' && a.tradeId === t.id)}
-                    onClick={() => send({ type: 'acceptTrade', player: seat, tradeId: t.id })}
-                  >
-                    Accept
-                  </button>
-                  <button type="button" onClick={() => send({ type: 'rejectTrade', player: seat, tradeId: t.id })}>
-                    Decline
-                  </button>
+                  {accept(t)}
                 </OfferRow>
               ))}
             </div>
@@ -218,6 +263,22 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
                       Trade with {nameOf(view, p)}
                     </button>
                   ))}
+                  {t.open && (
+                    <div class="answers">
+                      {answers(t.id).length === 0 ? (
+                        <p class="hint">Waiting for offers…</p>
+                      ) : (
+                        answers(t.id).map((c) => (
+                          <div class="answer" key={c.id}>
+                            <span class="answer-text">
+                              <Dot color={colors[c.from]} /> {nameOf(view, c.from)} gives {countsText(c.give)} for your {countsText(c.get)}
+                            </span>
+                            <span class="answer-actions">{accept(c)}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                   <button type="button" onClick={() => send({ type: 'cancelTrade', player: seat, tradeId: t.id })}>
                     Withdraw
                   </button>
@@ -226,9 +287,10 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
             </div>
           )}
           <h3>You give</h3>
-          <ResourcePicker value={offerGive} max={hand} onChange={setOfferGive} />
+          <ResourcePicker value={offerGive} max={hand} have={hand} onChange={setOfferGive} />
           <h3>You get</h3>
-          <ResourcePicker value={offerGet} max={{ brick: 9, lumber: 9, wool: 9, grain: 9, ore: 9 }} onChange={setOfferGet} />
+          <ResourcePicker value={offerGet} max={{ brick: 9, lumber: 9, wool: 9, grain: 9, ore: 9 }} have={hand} onChange={setOfferGet} />
+          <p class="hint">Leave one side empty to ask the others what they would trade.</p>
           <h3>Offer to</h3>
           <div class="chips">
             {others.map((p) => (
@@ -245,14 +307,21 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
           <button
             type="button"
             class="primary wide"
-            disabled={!giveOk}
+            disabled={!offerOk}
             onClick={() => {
-              send({ type: 'proposeTrade', player: seat, give: cleanCounts(offerGive), get: cleanCounts(offerGet), to });
+              send({
+                type: 'proposeTrade',
+                player: seat,
+                give: cleanCounts(offerGive),
+                get: cleanCounts(offerGet),
+                to,
+                ...(kind === 'offer' ? {} : { open: true }),
+              });
               setOfferGive({});
               setOfferGet({});
             }}
           >
-            Make offer
+            {offerLabel}
           </button>
         </div>
       )}
@@ -274,24 +343,18 @@ function OfferRow({
   children: ComponentChildren;
 }) {
   const mineOffer = t.from === seat;
+  const answered = (p: PlayerId) => view.turn.trades.some((c) => c.replyTo === t.id && c.from === p);
   return (
-    <div class="offer">
+    <div class={t.open ? 'offer open' : 'offer'}>
       <div class="offer-text">
-        {mineOffer ? (
-          <>
-            You give {countsText(t.give)} for {countsText(t.get)}
-          </>
-        ) : (
-          <>
-            <Dot color={colors[t.from]} /> {nameOf(view, t.from)} gives {countsText(t.give)} for your {countsText(t.get)}
-          </>
-        )}
+        {!mineOffer && <Dot color={colors[t.from]} />} {offerText(t, view, seat)}
       </div>
       {mineOffer && (
         <div class="offer-status">
           {t.to.map((p) => (
             <span key={p} class="status-chip">
-              <Dot color={colors[p]} /> {nameOf(view, p)}: {t.accepted.includes(p) ? '✅ yes' : t.rejected.includes(p) ? '❌ no' : '… waiting'}
+              <Dot color={colors[p]} /> {nameOf(view, p)}:{' '}
+              {t.accepted.includes(p) ? '✅ yes' : answered(p) ? '💬 made an offer' : t.rejected.includes(p) ? '❌ no' : '… waiting'}
             </span>
           ))}
         </div>
@@ -301,7 +364,7 @@ function OfferRow({
   );
 }
 
-/** A player answers the active player's offer (and may counter it). */
+/** A player answers the active player's offer: accept, decline, or make a counter-offer. */
 export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProps, 'close'>) {
   const offers = view.turn.trades.filter((t) => t.to.includes(seat) && t.from === view.turn.actor && !t.accepted.includes(seat) && !t.rejected.includes(seat));
   const [counter, setCounter] = useState<TradeOffer | null>(null);
@@ -310,56 +373,96 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
   const hand = view.players[seat].resources!;
   if (offers.length === 0) return null;
   if (counter) {
-    const ok = sumCounts(cGive) > 0 && sumCounts(cGet) > 0 && RESOURCE_LIST.every((r) => !((cGive[r] ?? 0) > 0 && (cGet[r] ?? 0) > 0));
+    // an open offer fixes one side: the other player's request or card stays as it is
+    const fixedGive = counter.open === 'give';
+    const fixedGet = counter.open === 'get';
+    const fixed = fixedGive ? counter.get : counter.give;
+    const others = RESOURCE_LIST.filter((r) => !((fixed[r] ?? 0) > 0));
+    const ok =
+      sumCounts(cGive) > 0 &&
+      sumCounts(cGet) > 0 &&
+      RESOURCE_LIST.every((r) => !((cGive[r] ?? 0) > 0 && (cGet[r] ?? 0) > 0)) &&
+      RESOURCE_LIST.every((r) => (cGive[r] ?? 0) <= (hand[r] ?? 0));
     return (
-      <Sheet title={`Counter-offer to ${nameOf(view, counter.from)}`} onClose={() => setCounter(null)} wide>
+      <Sheet title={counter.open ? `Your offer to ${nameOf(view, counter.from)}` : `Counter-offer to ${nameOf(view, counter.from)}`} onClose={() => setCounter(null)} wide>
+        <YourCards hand={hand} />
         <h3>You give</h3>
-        <ResourcePicker value={cGive} max={hand} onChange={setCGive} />
+        {fixedGive ? (
+          <p class="fixed-side">{countsText(fixed)}</p>
+        ) : (
+          <ResourcePicker value={cGive} max={hand} have={hand} only={fixedGet ? others : undefined} onChange={setCGive} />
+        )}
         <h3>You get</h3>
-        <ResourcePicker value={cGet} max={{ brick: 9, lumber: 9, wool: 9, grain: 9, ore: 9 }} onChange={setCGet} />
+        {fixedGet ? (
+          <p class="fixed-side">{countsText(fixed)}</p>
+        ) : (
+          <ResourcePicker
+            value={cGet}
+            max={{ brick: 9, lumber: 9, wool: 9, grain: 9, ore: 9 }}
+            have={hand}
+            only={fixedGive ? others : undefined}
+            onChange={setCGet}
+          />
+        )}
         <button
           type="button"
           class="primary wide"
           disabled={!ok}
           onClick={() => {
-            send({ type: 'proposeTrade', player: seat, give: cleanCounts(cGive), get: cleanCounts(cGet), to: [counter.from] });
-            send({ type: 'rejectTrade', player: seat, tradeId: counter.id });
+            send({ type: 'proposeTrade', player: seat, give: cleanCounts(cGive), get: cleanCounts(cGet), to: [counter.from], replyTo: counter.id });
             setCounter(null);
           }}
         >
-          Send counter-offer
+          Send offer
         </button>
       </Sheet>
     );
   }
   return (
     <Sheet title="Trade offer">
+      <YourCards hand={hand} />
       {offers.map((t) => (
         <OfferRow key={t.id} t={t} view={view} colors={colors} seat={seat}>
-          <button
-            type="button"
-            class="primary"
-            disabled={!legal.some((a) => a.type === 'acceptTrade' && a.tradeId === t.id)}
-            onClick={() => send({ type: 'acceptTrade', player: seat, tradeId: t.id })}
-          >
-            Accept
-          </button>
+          {t.open ? (
+            <button
+              type="button"
+              class="primary"
+              disabled={t.open === 'give' && !RESOURCE_LIST.every((r) => (t.get[r] ?? 0) <= (hand[r] ?? 0))}
+              onClick={() => {
+                setCGive(t.open === 'give' ? { ...t.get } : {});
+                setCGet(t.open === 'get' ? { ...t.give } : {});
+                setCounter(t);
+              }}
+            >
+              Make an offer…
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                class="primary"
+                disabled={!legal.some((a) => a.type === 'acceptTrade' && a.tradeId === t.id)}
+                onClick={() => send({ type: 'acceptTrade', player: seat, tradeId: t.id })}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCGive({ ...t.get });
+                  setCGet({ ...t.give });
+                  setCounter(t);
+                }}
+              >
+                Counter…
+              </button>
+            </>
+          )}
           <button type="button" onClick={() => send({ type: 'rejectTrade', player: seat, tradeId: t.id })}>
-            Decline
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCGive({ ...t.get });
-              setCGet({ ...t.give });
-              setCounter(t);
-            }}
-          >
-            Counter…
+            No thanks
           </button>
         </OfferRow>
       ))}
-      <p class="hint">Your hand: {countsText(hand)}</p>
     </Sheet>
   );
 }

@@ -1,5 +1,5 @@
 import { COSTS, listScenarios, type GameOptions, type ScenarioDef } from 'engine';
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, PLAYER_COLORS, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
@@ -46,6 +46,21 @@ function installTip(): string | null {
   }
 }
 
+/** Whether the device has a network connection, kept up to date. */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => navigator.onLine !== false);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine !== false);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
+}
+
 export function HomeScreen({
   saved,
   onContinue,
@@ -61,6 +76,7 @@ export function HomeScreen({
   onJoin(): void;
   onRules(): void;
 }) {
+  const online = useOnline();
   return (
     <main class="home">
       <div class="home-card">
@@ -80,13 +96,14 @@ export function HomeScreen({
           </button>
           {ONLINE ? (
             <>
-              <button type="button" class="big" onClick={onHost}>
+              <button type="button" class="big" onClick={onHost} disabled={!online}>
                 Host online game
-                <span class="btn-sub">Friends join with a room code</span>
+                <span class="btn-sub">{online ? 'Friends join with a room code' : 'Needs an internet connection'}</span>
               </button>
-              <button type="button" class="big" onClick={onJoin}>
+              <button type="button" class="big" onClick={onJoin} disabled={!online}>
                 Join online game
               </button>
+              {!online && <p class="hint">You're offline. Games on this device, against the computer or pass-and-play, still work.</p>}
             </>
           ) : (
             <p class="hint">Online play with friends is available on the hosted version of the game.</p>

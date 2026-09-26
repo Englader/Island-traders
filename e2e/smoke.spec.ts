@@ -182,3 +182,67 @@ test.describe('phone held sideways', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(844);
   });
 });
+
+test('after one visit the game starts offline; online play says it needs a connection', async ({ page, context }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /New game/ })).toBeVisible();
+  // wait until the service worker has stored the game
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    for (let i = 0; i < 50; i++) {
+      const keys = await (await caches.open('island-traders-v1')).keys();
+      if (keys.some((r) => r.url.includes('/assets/') && r.url.endsWith('.js'))) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error('the game was not stored for offline use');
+  });
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Host online game/ })).toBeDisabled();
+  await expect(page.locator('.home')).toContainText("You're offline");
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: /^Start/ }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+  await context.setOffline(false);
+});
+
+test('a roll plays the dice animation, then the dice sit in the header; a tap skips it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New game/ }).click();
+  await page.getByRole('button', { name: 'less' }).first().click();
+  await page.getByRole('button', { name: /Options/ }).click();
+  await page.getByRole('button', { name: 'fast' }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('svg.board')).toBeVisible();
+
+  // play the setup until it is our turn to roll
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline && !(await page.getByRole('button', { name: /Roll/ }).isVisible())) {
+    if (!(await step(page))) await page.waitForTimeout(200);
+  }
+  await page.getByRole('button', { name: /Roll/ }).click();
+
+  // the dice tumble in the middle of the screen, the header dice wait
+  const overlay = page.locator('.roll-overlay');
+  await expect(overlay).toBeVisible();
+  await expect(page.locator('.hud .dice')).toBeHidden();
+  const sum = Number(await page.locator('.roll-sum').textContent());
+  expect((await overlay.getAttribute('aria-label')) ?? '').toMatch(new RegExp(`: ${sum}$`));
+  expect(sum).toBeGreaterThanOrEqual(2);
+  expect(sum).toBeLessThanOrEqual(12);
+  // ...then fly into the header, showing the same roll
+  await expect(overlay).toHaveCount(0, { timeout: 4000 });
+  await expect(page.locator('.hud .dice')).toBeVisible();
+  await expect(page.locator('.hud .dice')).toHaveAttribute('aria-label', `rolled ${sum}`);
+
+  // a computer player's roll can be skipped with a tap (after a 7, move the robber first)
+  const end = page.getByRole('button', { name: /End turn/ });
+  while (Date.now() < deadline + 60_000 && !(await end.isVisible())) {
+    if (!(await step(page))) await page.waitForTimeout(200);
+  }
+  await end.click();
+  await expect(overlay).toBeVisible({ timeout: 30_000 });
+  await overlay.click();
+  await expect(overlay).toHaveCount(0, { timeout: 500 });
+  await expect(page.locator('.hud .dice')).toBeVisible();
+});

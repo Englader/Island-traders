@@ -12,7 +12,7 @@ import { loadJson, saveJson } from '../game/storage';
  */
 
 /** Bumped when messages change; a host turns away guests on another version. */
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 
 /** Room codes avoid easily confused characters (0/O, 1/I). */
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

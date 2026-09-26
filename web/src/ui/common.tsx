@@ -82,18 +82,27 @@ export function ResourcePicker({
   max,
   onChange,
   step,
+  have,
+  only,
 }: {
   value: PartialCounts;
   max: PartialCounts;
   onChange(v: PartialCounts): void;
   step?: PartialCounts;
+  /** The player's own cards, shown next to each resource. */
+  have?: PartialCounts;
+  /** Only these resources can be picked (the others are left out). */
+  only?: Resource[];
 }) {
   return (
     <div class="res-picker">
-      {RESOURCE_LIST.map((r) => (
+      {RESOURCE_LIST.filter((r) => !only || only.includes(r)).map((r) => (
         <div class="res-picker-row" key={r}>
           <ResIcon r={r} />
-          <span class="res-label">{RESOURCE_INFO[r].label}</span>
+          <span class="res-label">
+            {RESOURCE_INFO[r].label}
+            {have && <span class="res-have"> · you have {have[r] ?? 0}</span>}
+          </span>
           <Stepper
             label={RESOURCE_INFO[r].label}
             value={value[r] ?? 0}
@@ -150,6 +159,17 @@ const PIP_LAYOUT: Record<number, Array<[number, number]>> = {
     [0.72, 0.76],
   ],
 };
+
+/** Just the pips of a die face (the rolling dice draw their own faces). */
+export function DiePips({ n }: { n: number }) {
+  return (
+    <svg class="die-pips" viewBox="0 0 1 1" aria-hidden="true">
+      {(PIP_LAYOUT[n] ?? []).map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r="0.09" class="die-pip" />
+      ))}
+    </svg>
+  );
+}
 
 export function Die({ n, red }: { n: number; red?: boolean }) {
   return (

@@ -24,11 +24,20 @@ GitHub Actions)
 - Base game (3–6 players) and the nine Seafarers scenarios
 - Pass-and-play on one device: a hand-over screen keeps hands hidden
 - Computer players (a heuristic bot that plans builds and trades with the bank)
+  at an adjustable pace, with a feed of their moves
+- Trading with players, including open offers ("who gives me a brick?" or
+  "what will you give for my brick?") that the others answer with
+  counter-offers; the trade menu shows your cards
+- Dice rolls are animated: two 3D dice tumble in the middle of the screen,
+  show the total, then fly into the header (about 2 s; tap to skip)
 - Online play with friends: the host opens a room and friends join with a
   5-letter code or an invite link
 - Made for phones: tap-friendly board, portrait and sideways layouts, and
-  "Add to Home Screen" for full-screen play (games against the computer
-  also work offline)
+  "Add to Home Screen" for full-screen play
+- Plays offline: after one visit with a connection, games on the device
+  (against the computer and pass-and-play) start without internet. A service
+  worker (`web/public/sw.js`) stores the game when it installs. Online play
+  still needs a connection, and the home screen says so when there is none.
 - The game is saved in the browser after every move
 
 ```bash
