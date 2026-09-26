@@ -128,6 +128,7 @@ export function createGame(config: GameConfig): GameState {
     firstPlayer,
     ext: {},
     log: logLines.map((msg) => ({ turn: 0, msg })),
+    rolls: [],
   };
   if (map.fogStack) state.ext.fog = map.fogStack;
   scenario.hooks.init?.(state);

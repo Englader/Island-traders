@@ -449,6 +449,7 @@ function rollDice(s: GameState, a: A<'rollDice'>): string | null {
   if (!isActor(s, a.player)) return 'it is not your turn';
   const dice: [number, number] = [rollDie(s.rng), rollDie(s.rng)];
   s.turn.dice = dice;
+  (s.rolls ??= []).push({ by: a.player, dice: [dice[0], dice[1]], turn: s.turn.number });
   const sum = dice[0] + dice[1];
   log(s, `${nameOf(s, a.player)} rolls ${sum} (${dice[0]}+${dice[1]})`);
   const owed = scenarioOf(s).hooks.beforeProduction?.(s, dice) ?? {};

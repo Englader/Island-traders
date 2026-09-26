@@ -16,6 +16,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST, WONDER_INFO, countsText, harborLabel } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import { Cost, ResIcon, ResourcePicker, Sheet, cleanCounts, sumCounts } from './common';
+import { Counts, ResGlyph } from './icons';
 
 export interface SheetProps {
   view: GameView;
@@ -87,7 +88,9 @@ function YourCards({ hand }: { hand: PartialCounts }) {
       <div class="your-cards-row">
         {RESOURCE_LIST.map((r) => (
           <span key={r} class={(hand[r] ?? 0) > 0 ? `rcard r-${r}` : `rcard r-${r} empty`} title={RESOURCE_INFO[r].label}>
-            <span class="rc-icon">{RESOURCE_INFO[r].icon}</span>
+            <span class="rc-icon">
+              <ResGlyph r={r} />
+            </span>
             <span class="rc-n">{hand[r] ?? 0}</span>
           </span>
         ))}
@@ -97,16 +100,44 @@ function YourCards({ hand }: { hand: PartialCounts }) {
 }
 
 /** How a player's offer reads to others, including open offers. */
-function offerText(t: TradeOffer, view: GameView, seat: PlayerId): string {
+function offerText(t: TradeOffer, view: GameView, seat: PlayerId): ComponentChildren {
   if (t.from === seat) {
-    if (t.open === 'give') return `You want ${countsText(t.get)}: what will they give?`;
-    if (t.open === 'get') return `You give ${countsText(t.give)}: what will they give for it?`;
-    return `You give ${countsText(t.give)} for ${countsText(t.get)}`;
+    if (t.open === 'give')
+      return (
+        <>
+          You want <Counts c={t.get} />: what will they give?
+        </>
+      );
+    if (t.open === 'get')
+      return (
+        <>
+          You give <Counts c={t.give} />: what will they give for it?
+        </>
+      );
+    return (
+      <>
+        You give <Counts c={t.give} /> for <Counts c={t.get} />
+      </>
+    );
   }
   const who = nameOf(view, t.from);
-  if (t.open === 'give') return `${who} wants ${countsText(t.get)}. What would you like for it?`;
-  if (t.open === 'get') return `${who} gives ${countsText(t.give)}. What will you give for it?`;
-  return `${who} gives ${countsText(t.give)} for your ${countsText(t.get)}`;
+  if (t.open === 'give')
+    return (
+      <>
+        {who} wants <Counts c={t.get} />. What would you like for it?
+      </>
+    );
+  if (t.open === 'get')
+    return (
+      <>
+        {who} gives <Counts c={t.give} />. What will you give for it?
+      </>
+    );
+  return (
+    <>
+      {who} gives <Counts c={t.give} /> for your <Counts c={t.get} />
+    </>
+  );
 }
 
 export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProps) {
@@ -143,7 +174,17 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
   const kind = giveN > 0 && getN > 0 ? 'offer' : giveN > 0 ? 'open-get' : getN > 0 ? 'open-give' : null;
   const offerOk = kind !== null && to.length > 0 && !same;
   const offerLabel =
-    kind === 'open-give' ? `Ask who gives ${countsText(offerGet)}` : kind === 'open-get' ? `Ask what they'd give for ${countsText(offerGive)}` : 'Make offer';
+    kind === 'open-give' ? (
+      <>
+        Ask who gives <Counts c={offerGet} />
+      </>
+    ) : kind === 'open-get' ? (
+      <>
+        Ask what they'd give for <Counts c={offerGive} />
+      </>
+    ) : (
+      'Make offer'
+    );
   const accept = (t: TradeOffer) => (
     <>
       <button
@@ -220,8 +261,8 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
               </button>
               <span>
                 {lots * rates[give]}
-                {RESOURCE_INFO[give].icon} → {lots}
-                {RESOURCE_INFO[get].icon}
+                <ResGlyph r={give} /> → {lots}
+                <ResGlyph r={get} />
               </span>
               <button type="button" class="small-btn" disabled={lots >= maxLots} onClick={() => setLots(lots + 1)}>
                 +
@@ -271,7 +312,7 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
                         answers(t.id).map((c) => (
                           <div class="answer" key={c.id}>
                             <span class="answer-text">
-                              <Dot color={colors[c.from]} /> {nameOf(view, c.from)} gives {countsText(c.give)} for your {countsText(c.get)}
+                              <Dot color={colors[c.from]} /> {nameOf(view, c.from)} gives <Counts c={c.give} /> for your <Counts c={c.get} />
                             </span>
                             <span class="answer-actions">{accept(c)}</span>
                           </div>
@@ -388,13 +429,17 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
         <YourCards hand={hand} />
         <h3>You give</h3>
         {fixedGive ? (
-          <p class="fixed-side">{countsText(fixed)}</p>
+          <p class="fixed-side">
+            <Counts c={fixed} />
+          </p>
         ) : (
           <ResourcePicker value={cGive} max={hand} have={hand} only={fixedGet ? others : undefined} onChange={setCGive} />
         )}
         <h3>You get</h3>
         {fixedGet ? (
-          <p class="fixed-side">{countsText(fixed)}</p>
+          <p class="fixed-side">
+            <Counts c={fixed} />
+          </p>
         ) : (
           <ResourcePicker
             value={cGet}

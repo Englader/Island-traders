@@ -28,6 +28,10 @@ GitHub Actions)
 - Trading with players, including open offers ("who gives me a brick?" or
   "what will you give for my brick?") that the others answer with
   counter-offers; the trade menu shows your cards
+- A preview of each map on the new-game screen, and dice statistics: a bar
+  chart of every total rolled against fair-dice odds, for everyone or one
+  player
+- Drawn resource icons that look the same on every device
 - Dice rolls are animated: two 3D dice tumble in the middle of the screen,
   show the total, then fly into the header (about 2 s; tap to skip)
 - Online play with friends: the host opens a room and friends join with a

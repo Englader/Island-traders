@@ -4,10 +4,10 @@ export const RESOURCE_LIST: Resource[] = ['brick', 'lumber', 'wool', 'grain', 'o
 
 export const RESOURCE_INFO: Record<Resource, { label: string; icon: string; color: string }> = {
   brick: { label: 'Brick', icon: '🧱', color: '#c65a32' },
-  lumber: { label: 'Lumber', icon: '🪵', color: '#2f7d3a' },
+  lumber: { label: 'Lumber', icon: '🌲', color: '#2f7d3a' },
   wool: { label: 'Wool', icon: '🐑', color: '#8ccf55' },
   grain: { label: 'Grain', icon: '🌾', color: '#e2b93b' },
-  ore: { label: 'Ore', icon: '🪨', color: '#7d8491' },
+  ore: { label: 'Ore', icon: '⛰️', color: '#7d8491' },
 };
 
 export const TERRAIN_INFO: Record<Terrain, { label: string; fill: string; icon: string }> = {
@@ -31,11 +31,11 @@ export const DEV_INFO: Record<DevCardType, { label: string; icon: string; text: 
 };
 
 export function harborLabel(h: HarborType): string {
-  return h === 'generic' ? '3:1' : `2:1 ${RESOURCE_INFO[h].icon}`;
+  return h === 'generic' ? '3:1' : `2:1 ${RESOURCE_INFO[h].label.toLowerCase()}`;
 }
 
 export function countsText(c: Partial<Record<Resource, number>>): string {
-  const parts = RESOURCE_LIST.filter((r) => (c[r] ?? 0) > 0).map((r) => `${c[r]}${RESOURCE_INFO[r].icon}`);
+  const parts = RESOURCE_LIST.filter((r) => (c[r] ?? 0) > 0).map((r) => `${c[r]} ${RESOURCE_INFO[r].label.toLowerCase()}`);
   return parts.length ? parts.join(' ') : 'nothing';
 }
 
