@@ -1,0 +1,134 @@
+import { generateMap } from '../board/mapSpec.js';
+import { layoutKeyFor } from '../board/topology.js';
+import { PIECES_PER_PLAYER } from '../core/constants.js';
+import { emptyCounts, filledCounts } from '../core/resources.js';
+import { rollDie, seedRng, shuffle } from '../core/rng.js';
+import type { DevCardType, GameConfig, GameOptions, GameState, PlayerId, PlayerState, RngState } from '../core/types.js';
+import { getScenario } from '../scenarios/registry.js';
+import '../scenarios/all.js';
+
+export const DEFAULT_OPTIONS: GameOptions = {
+  tradeBuildMode: 'combined',
+  fiveSixMode: 'paired',
+  tokenPlacement: 'spiral',
+  noAdjacentRed: true,
+  noAdjacent2and12: false,
+  noAdjacentSameNumber: false,
+  friendlyRobber: false,
+  discardLimit: 7,
+  setupGoldYield: 'choose',
+};
+
+/** Each player rolls; the highest roll starts, ties re-roll among the tied players. */
+function rollForFirstPlayer(rng: RngState, n: number, logLines: string[], names: string[]): PlayerId {
+  let contenders = Array.from({ length: n }, (_, i) => i);
+  for (;;) {
+    const rolls = contenders.map(() => rollDie(rng) + rollDie(rng));
+    logLines.push(contenders.map((p, i) => `${names[p]} rolls ${rolls[i]}`).join(', '));
+    const best = Math.max(...rolls);
+    contenders = contenders.filter((_, i) => rolls[i] === best);
+    if (contenders.length === 1) return contenders[0];
+  }
+}
+
+export function createGame(config: GameConfig): GameState {
+  const scenario = getScenario(config.scenario);
+  const names =
+    typeof config.players === 'number'
+      ? Array.from({ length: config.players }, (_, i) => `Player ${i + 1}`)
+      : [...config.players];
+  const n = names.length;
+  if (n < scenario.minPlayers || n > scenario.maxPlayers) {
+    throw new Error(`${scenario.name} supports ${scenario.minPlayers}-${scenario.maxPlayers} players, got ${n}`);
+  }
+  const options: GameOptions = { ...DEFAULT_OPTIONS, ...(config.options ?? {}) };
+  const seed = String(config.seed);
+  const rng = seedRng(seed);
+
+  const map = generateMap(
+    scenario.map(n, options),
+    rng,
+    {
+      noAdjacentRed: options.noAdjacentRed,
+      noAdjacent2and12: options.noAdjacent2and12,
+      noAdjacentSameNumber: options.noAdjacentSameNumber,
+    },
+    options.tokenPlacement === 'spiral',
+  );
+
+  const deckCounts = scenario.devDeck(n);
+  const deck: DevCardType[] = [];
+  for (const [type, count] of Object.entries(deckCounts)) for (let i = 0; i < count; i++) deck.push(type as DevCardType);
+  shuffle(rng, deck);
+
+  const players: PlayerState[] = names.map((name, id) => ({
+    id,
+    name,
+    resources: emptyCounts(),
+    devCards: [],
+    playedKnights: 0,
+    playedProgress: [],
+    supply: {
+      roads: PIECES_PER_PLAYER.roads,
+      ships: scenario.rules.ships ? PIECES_PER_PLAYER.ships : 0,
+      settlements: PIECES_PER_PLAYER.settlements,
+      cities: PIECES_PER_PLAYER.cities,
+    },
+    bonusVP: 0,
+    bonusZones: [],
+    homeZones: [],
+  }));
+
+  const logLines: string[] = [];
+  let firstPlayer: PlayerId;
+  if (options.firstPlayer !== undefined) {
+    if (options.firstPlayer < 0 || options.firstPlayer >= n) throw new Error('firstPlayer out of range');
+    firstPlayer = options.firstPlayer;
+  } else {
+    firstPlayer = rollForFirstPlayer(rng, n, logLines, names);
+  }
+  logLines.push(`${names[firstPlayer]} starts`);
+
+  const state: GameState = {
+    version: 1,
+    scenario: scenario.id,
+    seed,
+    options,
+    victoryTarget: options.victoryPoints ?? scenario.victoryPoints(n),
+    rng,
+    board: {
+      layoutKey: layoutKeyFor(Object.keys(map.hexes)),
+      hexes: map.hexes,
+      harbors: map.harbors,
+      buildings: {},
+      pieces: {},
+      robber: scenario.rules.robber ? map.robber : null,
+      pirate: map.pirate,
+    },
+    players,
+    bank: filledCounts(scenario.bankSize(n)),
+    devDeck: deck,
+    longestRoute: { holder: null, lengths: names.map(() => 0) },
+    largestArmy: { holder: null },
+    turn: {
+      number: 0,
+      current: firstPlayer,
+      actor: firstPlayer,
+      role: 'active',
+      part: 0,
+      dice: null,
+      devCardPlayed: false,
+      shipMoved: false,
+      buildingStarted: false,
+      trades: [],
+      nextTradeId: 1,
+    },
+    phase: { kind: 'setup', round: 0, index: 0, step: 'settlement', vertex: null },
+    firstPlayer,
+    ext: {},
+    log: logLines.map((msg) => ({ turn: 0, msg })),
+  };
+  if (map.fogStack) state.ext.fog = map.fogStack;
+  scenario.hooks.init?.(state);
+  return state;
+}
