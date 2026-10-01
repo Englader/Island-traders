@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import type { ImprovementTrack, KnightLevel } from 'engine';
 import type { Ask, AskArt } from '../game/ask';
-import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { CARD_INFO, CARD_LIST } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import { DevCardView } from './cards';
 import { ResGlyph } from './icons';
 import { PieceGlyph } from './pieces';
+import { GateGlyph, KnightGlyph, TowerGlyph, WallGlyph } from './ckArt';
 
 // --- "Ask before building": a setting kept in this browser, on unless turned off -------------
 
@@ -70,10 +72,29 @@ function WonderGlyph() {
   );
 }
 
+/** The robber, chased by a knight. */
+function RobberGlyph() {
+  return (
+    <svg viewBox="0 0 40 40" aria-hidden="true">
+      <ellipse cx="20" cy="35" rx="11" ry="3" fill="rgba(0,0,0,0.22)" />
+      <path d="M10 35 Q20 6 30 35 Z" fill="#3a3a40" stroke="#1c1c20" stroke-width="1.2" />
+      <circle cx="20" cy="11" r="6.5" fill="#4a4a50" stroke="#1c1c20" stroke-width="1.2" />
+    </svg>
+  );
+}
+
 function Art({ art, color }: { art: AskArt; color: PlayerColor }) {
   if (art === 'dev') return <DevCardView type={null} back look="mini" />;
   if (art === 'wonder') return <WonderGlyph />;
-  return <PieceGlyph kind={art} fill={color.fill} stroke={color.stroke} />;
+  if (art === 'robber') return <RobberGlyph />;
+  if (art === 'wall') return <WallGlyph fill={color.fill} stroke={color.stroke} />;
+  if (art.startsWith('knight-')) {
+    const [, level, on] = art.split('-');
+    return <KnightGlyph level={Number(level) as KnightLevel} active={on === 'on'} fill={color.fill} stroke={color.stroke} />;
+  }
+  if (art.startsWith('gate-')) return <GateGlyph track={art.slice(5) as ImprovementTrack} size={40} />;
+  if (art.startsWith('metro-')) return <TowerGlyph track={art.slice(6) as ImprovementTrack} fill={color.fill} stroke={color.stroke} />;
+  return <PieceGlyph kind={art as 'road' | 'ship' | 'settlement' | 'city'} fill={color.fill} stroke={color.stroke} />;
 }
 
 /** How long a click that didn't start on the dialog is ignored after it opens (see `pressed`). */
@@ -184,7 +205,7 @@ export function ConfirmDialog({
   }, [ask.title]);
 
   const pips = ask.cost
-    ? RESOURCE_LIST.flatMap((r) =>
+    ? CARD_LIST.flatMap((r) =>
         Array.from({ length: ask.cost![r] ?? 0 }, (_, i) => (
           <span key={`${r}${i}`} class="ask-pip">
             <ResGlyph r={r} />
@@ -231,7 +252,7 @@ export function ConfirmDialog({
                 <span key={x.r}>
                   {i === 0 ? '' : i === ask.left.length - 1 ? ' and ' : ', '}
                   <span class={x.n === 0 ? 'ask-n out' : 'ask-n'}>
-                    <b>{x.n}</b> {RESOURCE_INFO[x.r].label.toLowerCase()}
+                    <b>{x.n}</b> {CARD_INFO[x.r].label.toLowerCase()}
                   </span>
                 </span>
               ))}{' '}

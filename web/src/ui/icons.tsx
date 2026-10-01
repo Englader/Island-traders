@@ -1,6 +1,6 @@
-import type { PartialCounts, Resource } from 'engine';
+import type { Card, CardCounts } from 'engine';
 import type { JSX } from 'preact';
-import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { CARD_INFO, CARD_LIST } from '../game/names';
 
 /**
  * Drawn resource icons. Emoji such as 🪵 and 🪨 are too new for many
@@ -8,11 +8,11 @@ import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
  * `x`, `y` and `size` place the icon inside the board's SVG; without them it
  * sits in a line of text at 1em.
  */
-export function ResGlyph({ r, x, y, size }: { r: Resource; x?: number; y?: number; size?: number }) {
+export function ResGlyph({ r, x, y, size }: { r: Card; x?: number; y?: number; size?: number }) {
   const place =
     size !== undefined ? { x: (x ?? 0) - size / 2, y: (y ?? 0) - size / 2, width: size, height: size } : { width: '1em', height: '1em', class: 'glyph' };
   return (
-    <svg viewBox="0 0 24 24" {...place} role="img" aria-label={RESOURCE_INFO[r].label}>
+    <svg viewBox="0 0 24 24" {...place} role="img" aria-label={CARD_INFO[r].label}>
       {GLYPHS[r]}
     </svg>
   );
@@ -21,7 +21,7 @@ export function ResGlyph({ r, x, y, size }: { r: Resource; x?: number; y?: numbe
 const BRICK = '#d0663c';
 const BRICK_EDGE = '#86331a';
 
-const GLYPHS: Record<Resource, JSX.Element> = {
+const GLYPHS: Record<Card, JSX.Element> = {
   brick: (
     <g fill={BRICK} stroke={BRICK_EDGE} stroke-width="1" stroke-linejoin="round">
       <rect x="1.8" y="4" width="9.7" height="4.8" rx="1" />
@@ -89,11 +89,44 @@ const GLYPHS: Record<Resource, JSX.Element> = {
       <path d="M6 9 L10.5 12 L11.5 5.5 M10.5 12 L17.5 7.5 M10.5 12 L8 20.5 M10.5 12 L21.5 13.5" stroke="#5f656e" stroke-width="0.8" fill="none" />
     </g>
   ),
+  // Cities & Knights commodities: a scroll of paper, a bolt of cloth, a stack of coins
+  paper: (
+    <g stroke="#7d6234" stroke-width="1" stroke-linejoin="round">
+      <rect x="5.6" y="4.6" width="12.8" height="14.8" fill="#fbf1d8" />
+      <path d="M8 9.3 h8 M8 11.8 h8 M8 14.3 h5.2" stroke="#b49a68" stroke-width="0.9" fill="none" />
+      <rect x="3.4" y="2.8" width="17.2" height="3.8" rx="1.9" fill="#e4c98f" />
+      <rect x="3.4" y="17.4" width="17.2" height="3.8" rx="1.9" fill="#e4c98f" />
+      <circle cx="16.4" cy="15.2" r="1.5" fill="#c0392b" stroke="#7c1d18" stroke-width="0.7" />
+    </g>
+  ),
+  cloth: (
+    <g stroke="#5a1f55" stroke-width="1" stroke-linejoin="round">
+      <path d="M4.5 13.5 V20.6 L13.6 19 L15.8 13.5 Z" fill="#8a3d84" />
+      <path d="M6.2 15.4 L6.2 19.6 M9.2 15.2 L9.2 19.2" stroke="#d58fcc" stroke-width="0.8" fill="none" />
+      <rect x="3" y="5.2" width="15" height="9.4" rx="1.2" fill="#b65aab" />
+      <path d="M6.5 5.4 v9 M10.5 5.4 v9 M14.5 5.4 v9" stroke="#e7a9de" stroke-width="1.1" fill="none" />
+      <ellipse cx="18" cy="9.9" rx="3.2" ry="4.7" fill="#d98ccf" />
+      <path d="M18 7.6 a1.6 2.3 0 1 1 -0.6 4.4" stroke="#8a3d84" stroke-width="0.8" fill="none" />
+    </g>
+  ),
+  coin: (
+    <g stroke="#7a4e0e" stroke-width="0.9" stroke-linejoin="round">
+      {[0, 1, 2].map((i) => (
+        <g key={i}>
+          <path d={`M2.6 ${17.2 - i * 3} v2.2 a5.6 2.3 0 0 0 11.2 0 v-2.2 Z`} fill="#b97f1c" />
+          <ellipse cx="8.2" cy={17.2 - i * 3} rx="5.6" ry="2.3" fill="#e6b13a" />
+        </g>
+      ))}
+      <circle cx="16.2" cy="13.2" r="5.6" fill="#f2c64e" />
+      <circle cx="16.2" cy="13.2" r="3.9" fill="none" stroke="#b9861f" stroke-width="0.9" />
+      <path d="M14.4 14.5 l0.4 -2.8 l1.4 1.2 l1.4 -1.2 l0.4 2.8 Z" fill="#b9861f" stroke="none" />
+    </g>
+  ),
 };
 
 /** "2 [brick] 1 [grain]" with drawn icons; "nothing" when empty. */
-export function Counts({ c }: { c: PartialCounts }) {
-  const parts = RESOURCE_LIST.filter((r) => (c[r] ?? 0) > 0);
+export function Counts({ c }: { c: CardCounts }) {
+  const parts = CARD_LIST.filter((r) => (c[r] ?? 0) > 0);
   if (parts.length === 0) return <>nothing</>;
   return (
     <span class="counts">

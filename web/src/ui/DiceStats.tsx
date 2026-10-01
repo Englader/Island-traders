@@ -1,7 +1,15 @@
-import type { DiceRoll, GameView, PlayerId } from 'engine';
+import type { DiceRoll, EventFace, GameView, PlayerId } from 'engine';
 import { useState } from 'preact/hooks';
 import type { PlayerColor } from '../game/seats';
 import { Sheet } from './common';
+import { EventDie } from './ckArt';
+
+const EVENT_FACES: Array<{ face: EventFace; label: string; ways: number }> = [
+  { face: 'ship', label: 'Ship', ways: 3 },
+  { face: 'trade', label: 'Yellow gate', ways: 1 },
+  { face: 'politics', label: 'Blue gate', ways: 1 },
+  { face: 'science', label: 'Green gate', ways: 1 },
+];
 
 /** Ways to roll each total with two dice (out of 36). */
 const WAYS = [0, 0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1];
@@ -171,6 +179,24 @@ export function DiceStatsSheet({
         </div>
       )}
 
+      {view.ck && n > 0 && (
+        <div class="event-tally" role="group" aria-label="The event die">
+          <span class="event-tally-cap">Event die</span>
+          {EVENT_FACES.map((f) => {
+            const k = rolls.filter((r) => r.event === f.face).length;
+            return (
+              <span key={f.face} class="event-tally-item" title={`${f.label}: ${k} of ${n}, about ${((n * f.ways) / 6).toFixed(1)} expected`}>
+                <span class="event-tally-die">
+                  <EventDie face={f.face} />
+                </span>
+                <b>{k}</b>
+                <small>~{((n * f.ways) / 6).toFixed(1)}</small>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <details class="dice-table">
         <summary>Show as a table</summary>
         <table>
@@ -197,7 +223,7 @@ export function DiceStatsSheet({
         </table>
       </details>
       <p class="hint">
-        Each roll is two fair six-sided dice, so a 7 comes up 6 times in 36 and a 2 or 12 once in 36. Over a single game the counts can
+        Each roll is two fair six-sided dice, so a 7 comes up 6 times in 36 and a 2 or 12 once in 36.{view.ck ? ' The event die shows the ship on 3 faces of 6 and each city gate on 1.' : ''} Over a single game the counts can
         stray a long way from that.
       </p>
     </Sheet>

@@ -15,7 +15,18 @@ export function flashOf(a: Action | undefined, key: number): Flash | null {
     case 'placeSettlement':
     case 'buildSettlement':
     case 'buildCity':
+    case 'buildKnight':
+    case 'activateKnight':
+    case 'promoteKnight':
+    case 'buildCityWall':
+    case 'pillageCity':
       return { kind: 'vertex', id: a.vertex, key, by };
+    case 'moveKnight':
+    case 'displaceKnight':
+    case 'retreatKnight':
+      return { kind: 'vertex', id: a.to, key, by };
+    case 'improveCity':
+      return a.vertex ? { kind: 'vertex', id: a.vertex, key, by } : null;
     case 'placeRoad':
     case 'placeShip':
     case 'buildRoad':

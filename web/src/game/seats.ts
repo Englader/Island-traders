@@ -56,7 +56,19 @@ export const ROLL_TIMING: Record<BotSpeed, RollTiming> = {
 };
 /** How long a trade or development card is shown in the middle of the screen, in ms. */
 export const FX_TIME: Record<BotSpeed, number> = { slow: 1800, normal: 1400, fast: 800 };
-const FX_ACTIONS = new Set<Action['type']>(['bankTrade', 'confirmTrade', 'acceptTrade', 'buyDevCard', 'playKnight', 'playRoadBuilding', 'playYearOfPlenty', 'playMonopoly']);
+const FX_ACTIONS = new Set<Action['type']>([
+  'bankTrade',
+  'confirmTrade',
+  'acceptTrade',
+  'buyDevCard',
+  'playKnight',
+  'playRoadBuilding',
+  'playYearOfPlenty',
+  'playMonopoly',
+  'improveCity',
+  'drawProgress',
+  'playProgress',
+]);
 
 export function rollDuration(speed: BotSpeed): number {
   const t = ROLL_TIMING[speed];
@@ -70,7 +82,7 @@ export function rollDuration(speed: BotSpeed): number {
 export function botDelay(speed: BotSpeed, last: Action | null): number {
   const base = BOT_DELAY[speed];
   if (!last) return base;
-  // the dice animation, then a moment to see what the roll produced
+  // the dice animation, then a moment to see what the roll produced (Cities & Knights: the event die too)
   if (last.type === 'rollDice') return rollDuration(speed) + base * 0.8;
   // a trade or a development card is shown first
   if (FX_ACTIONS.has(last.type)) return FX_TIME[speed] + base * 0.6;
@@ -96,6 +108,22 @@ export function mustAct(s: GameState | GameView): PlayerId[] {
       return [ph.queue[0]];
     case 'scenario':
       return [ph.player];
+    // Cities & Knights: the players a decision waits for (as the engine's ckPlayersToAct)
+    case 'ck':
+      switch (ph.step) {
+        case 'pillage':
+        case 'progressDiscard':
+        case 'aqueduct':
+          return Object.keys(ph.pending).map(Number).sort(fromCurrent);
+        case 'defenderDraw':
+          return ph.queue.length > 0 ? [ph.queue[0]] : [];
+        case 'retreat':
+          return [ph.player];
+        case 'card':
+          return ph.pending ? Object.keys(ph.pending).map(Number).sort(fromCurrent) : [ph.player];
+        default:
+          return [];
+      }
     case 'main': {
       const responders: PlayerId[] = [];
       for (const t of s.turn.trades) {

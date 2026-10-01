@@ -1,12 +1,23 @@
+import type { EventFace } from 'engine';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { RollTiming } from '../game/seats';
 import { DiePips } from './common';
+import { EventFaceArt } from './ckArt';
 
 export interface RollInfo {
   /** Changes for every roll (the flash key of the roll). */
   key: number;
   dice: [number, number];
+  /** Cities & Knights: the event die, and what it did (shown under the total). */
+  event?: EventFace;
+  caption?: { title: string; sub: string; tone: 'ship' | 'attack' | ImprovementTone };
 }
+
+type ImprovementTone = 'trade' | 'politics' | 'science';
+
+/** The event die's six faces on the cube: three ships and a gate of each colour (in the number slots of FACES). */
+const EVENT_SLOTS: Record<number, EventFace> = { 1: 'ship', 6: 'trade', 2: 'ship', 5: 'politics', 3: 'ship', 4: 'science' };
+const EVENT_SHOW: Record<EventFace, number> = { ship: 1, trade: 6, politics: 5, science: 4 };
 
 /** Each face's place on the cube; opposite faces add up to 7. */
 const FACES: Array<[number, string]> = [
@@ -26,8 +37,10 @@ const SHOW: Record<number, [number, number]> = { 1: [0, 0], 6: [0, 180], 2: [0, 
  * header, where `targets` are the header's dice. Tap to skip.
  */
 export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; timing: RollTiming; targets(): Element[]; onDone(): void }) {
-  const wraps = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
-  const cubes = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
+  const wraps = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
+  const cubes = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
+  // the event die rolls as a third cube, its face given as the slot that holds it
+  const faces = roll.event ? [...roll.dice, EVENT_SHOW[roll.event]] : [...roll.dice];
   const [stage, setStage] = useState<'tumble' | 'landed' | 'leaving'>('tumble');
   const done = useRef(false);
   const finish = () => {
@@ -45,13 +58,15 @@ export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; ti
     }
     const anims: Animation[] = [];
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const { tumble, hold, flight } = timing;
-    roll.dice.forEach((n, i) => {
+    const { tumble, flight } = timing;
+    // the event's caption needs a moment longer to read
+    const hold = timing.hold + (roll.caption ? 900 : 0);
+    faces.forEach((n, i) => {
       const cube = cubes[i].current;
       const wrap = wraps[i].current;
       if (!cube || !wrap) return;
       const [fx, fy] = SHOW[n] ?? [0, 0];
-      const side = i === 0 ? 1 : -1;
+      const side = i === 1 ? -1 : 1;
       // several turns on every axis, ending on the rolled face
       anims.push(
         cube.animate(
@@ -82,7 +97,7 @@ export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; ti
       setTimeout(() => {
         setStage('leaving');
         const to = targets();
-        roll.dice.forEach((_, i) => {
+        faces.forEach((_, i) => {
           const wrap = wraps[i].current;
           const target = to[i];
           if (!wrap || !target) return;
@@ -109,15 +124,22 @@ export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; ti
   }, [roll.key]);
 
   const sum = roll.dice[0] + roll.dice[1];
+  const said = `Rolled ${roll.dice[0]} and ${roll.dice[1]}: ${sum}${roll.caption ? `. ${roll.caption.title}. ${roll.caption.sub}` : ''}`;
   return (
-    <div class={`roll-overlay ${stage}`} onClick={finish} role="img" aria-label={`Rolled ${roll.dice[0]} and ${roll.dice[1]}: ${sum}`}>
+    <div class={`roll-overlay ${stage}${roll.event ? ' three' : ''}`} onClick={finish} role="img" aria-label={said}>
       <div class="roll-stage">
-        {roll.dice.map((n, i) => (
-          <div key={i} class={i === 1 ? 'cube-wrap red' : 'cube-wrap'} ref={wraps[i]}>
+        {faces.map((n, i) => (
+          <div key={i} class={i === 1 ? 'cube-wrap red' : i === 2 ? 'cube-wrap event' : 'cube-wrap'} ref={wraps[i]}>
             <div class="cube" ref={cubes[i]} style={{ transform: `rotateX(${SHOW[n]?.[0] ?? 0}deg) rotateY(${SHOW[n]?.[1] ?? 0}deg)` }}>
               {FACES.map(([face, turn]) => (
                 <div key={face} class="cube-face" style={{ transform: `${turn} translateZ(var(--half))` }}>
-                  <DiePips n={face} />
+                  {i === 2 ? (
+                    <svg class="die-pips" viewBox="0 0 1 1" aria-hidden="true">
+                      <EventFaceArt face={EVENT_SLOTS[face]} />
+                    </svg>
+                  ) : (
+                    <DiePips n={face} />
+                  )}
                 </div>
               ))}
             </div>
@@ -125,6 +147,12 @@ export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; ti
         ))}
       </div>
       <div class="roll-sum">{sum}</div>
+      {roll.caption && (
+        <div class={`roll-event tone-${roll.caption.tone}`}>
+          <b>{roll.caption.title}</b>
+          <span>{roll.caption.sub}</span>
+        </div>
+      )}
     </div>
   );
 }

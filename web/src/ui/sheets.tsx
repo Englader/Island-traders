@@ -1,12 +1,16 @@
 import {
   COSTS,
+  KNIGHTS_PER_LEVEL,
+  MAX_CITY_WALLS,
+  cardRates,
   getScenario,
   tradeRates,
   type Action,
+  type Card,
+  type CardCounts,
   type DevCardType,
   type GameState,
   type GameView,
-  type PartialCounts,
   type PlayerId,
   type Resource,
   type TradeOffer,
@@ -14,7 +18,8 @@ import {
 import type { ComponentChildren } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST, WONDER_INFO, countsText, harborLabel } from '../game/names';
+import { CARD_INFO, CARD_LIST, DEV_INFO, RESOURCE_INFO, RESOURCE_LIST, WONDER_INFO, bankOfView, cardKindsOf, countsText, handOfView, harborLabel } from '../game/names';
+import { KNIGHT_COST, WALL_COST, sevenLimitOf } from '../game/ck';
 import type { PlayerColor } from '../game/seats';
 import { Cost, ResIcon, Sheet, cleanCounts, sumCounts } from './common';
 import { Counts } from './icons';
@@ -44,7 +49,7 @@ function Dot({ color }: { color: PlayerColor }) {
 
 // --- build -----------------------------------------------------------------------
 
-export type BuildPiece = 'road' | 'ship' | 'settlement' | 'city';
+export type BuildPiece = 'road' | 'ship' | 'settlement' | 'city' | 'knight' | 'wall';
 
 export function BuildSheet({
   view,
@@ -53,19 +58,29 @@ export function BuildSheet({
   close,
   choose,
   buyDev,
+  improve,
 }: SheetProps & {
   choose(p: BuildPiece): void;
   /** Buys a development card (after asking, if the menu says to), then closes the sheet. */
   buyDev(): void;
+  /** Cities & Knights: opens the city improvements. */
+  improve?: () => void;
 }) {
   const ships = getScenario(view.scenario).rules.ships;
   const me = view.players[seat];
-  const items: Array<{ key: BuildPiece | 'dev'; label: string; cost: PartialCounts; ok: boolean; left?: number }> = [
+  const ck = view.ck;
+  const basicLeft = KNIGHTS_PER_LEVEL - Object.values(ck?.knights ?? {}).filter((k) => k.owner === seat && k.level === 1).length;
+  const items: Array<{ key: BuildPiece | 'dev'; label: string; cost: CardCounts; ok: boolean; left?: number }> = [
     { key: 'road', label: 'Road', cost: COSTS.road, ok: has(legal, 'buildRoad'), left: me?.supply.roads },
     ...(ships ? [{ key: 'ship' as const, label: 'Ship', cost: COSTS.ship, ok: has(legal, 'buildShip'), left: me?.supply.ships }] : []),
     { key: 'settlement', label: 'Settlement', cost: COSTS.settlement, ok: has(legal, 'buildSettlement'), left: me?.supply.settlements },
     { key: 'city', label: 'City', cost: COSTS.city, ok: has(legal, 'buildCity'), left: me?.supply.cities },
-    { key: 'dev', label: 'Development card', cost: COSTS.devCard, ok: has(legal, 'buyDevCard'), left: view.devDeckCount },
+    ...(ck
+      ? [
+          { key: 'knight' as const, label: 'Knight (basic)', cost: KNIGHT_COST, ok: has(legal, 'buildKnight'), left: basicLeft },
+          { key: 'wall' as const, label: 'City wall', cost: WALL_COST, ok: has(legal, 'buildCityWall'), left: MAX_CITY_WALLS - (ck.players[seat]?.walls.length ?? 0) },
+        ]
+      : [{ key: 'dev' as const, label: 'Development card', cost: COSTS.devCard, ok: has(legal, 'buyDevCard'), left: view.devDeckCount }]),
   ];
   return (
     <Sheet title="Build" onClose={close}>
@@ -84,7 +99,12 @@ export function BuildSheet({
           </button>
         ))}
       </div>
-      <p class="hint">Greyed out: not enough cards, no pieces left, or no legal spot.</p>
+      {ck && improve && (
+        <button type="button" class="wide build-improve" onClick={improve}>
+          City improvements…
+        </button>
+      )}
+      <p class="hint">Greyed out: not enough cards, no pieces left, or no legal spot.{ck ? ' Knights are activated and moved with the Knights button.' : ''}</p>
     </Sheet>
   );
 }
@@ -96,16 +116,16 @@ export function BuildSheet({
  * (cards being discarded, or taken) each tile counts what will be left,
  * marked with the change, and underneath says what was held before.
  */
-function YourCards({ hand, change }: { hand: PartialCounts; change?: SignedCounts }) {
+function YourCards({ hand, change, kinds = RESOURCE_LIST }: { hand: CardCounts; change?: SignedCounts; kinds?: Card[] }) {
   return (
     <div class={change ? 'your-cards picking' : 'your-cards'} role="group" aria-label="Your cards">
       <span class="your-cards-label">Your cards</span>
-      <div class="your-cards-row">
-        {RESOURCE_LIST.map((r) => {
+      <div class={kinds.length > 5 ? 'your-cards-row cards8' : 'your-cards-row'}>
+        {kinds.map((r) => {
           const held = hand[r] ?? 0;
           const d = change?.[r] ?? 0;
           const after = held + d;
-          const name = RESOURCE_INFO[r].label;
+          const name = CARD_INFO[r].label;
           const said = d < 0 ? `${name}: you hold ${held}, discard ${-d}, keep ${after}` : d > 0 ? `${name}: you hold ${held}, take ${d}, then ${after}` : `${name}: ${held}`;
           return (
             <span key={r} class={d < 0 ? 'yc out' : d > 0 ? 'yc in' : 'yc'} data-res={r} role="img" aria-label={said} title={said}>
@@ -169,14 +189,14 @@ function offerText(t: TradeOffer, view: GameView, seat: PlayerId): ComponentChil
 const MAX_ASK = 9;
 
 /** Can this player give what the row gives? */
-function affordable(row: SignedCounts, hand: PartialCounts): boolean {
-  return RESOURCE_LIST.every((r) => -(row[r] ?? 0) <= (hand[r] ?? 0));
+function affordable(row: SignedCounts, hand: CardCounts): boolean {
+  return CARD_LIST.every((r) => -(row[r] ?? 0) <= (hand[r] ?? 0));
 }
 
 /** Box rules for a trade with players: give up to what you hold, ask for up to MAX_ASK. */
-function playerRules(hand: PartialCounts): Record<Resource, BoxRule> {
-  const out = {} as Record<Resource, BoxRule>;
-  for (const r of RESOURCE_LIST) out[r] = { min: -(hand[r] ?? 0), max: MAX_ASK };
+function playerRules(hand: CardCounts): Record<Card, BoxRule> {
+  const out = {} as Record<Card, BoxRule>;
+  for (const r of CARD_LIST) out[r] = { min: -(hand[r] ?? 0), max: MAX_ASK };
   return out;
 }
 
@@ -200,9 +220,14 @@ function SendButton({ disabled, why, onClick, children }: { disabled: boolean; w
 }
 
 export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProps) {
-  const me = view.players[seat];
-  const hand = me.resources!;
-  const rates = useMemo(() => tradeRates(view as unknown as GameState, seat), [view, seat]);
+  const hand = handOfView(view, seat);
+  const kinds = cardKindsOf(view);
+  const bankCards = bankOfView(view);
+  // Cities & Knights: commodities trade 4:1, 3:1 at a generic harbor, 2:1 with the Merchant Guild (never at the 2:1 resource harbors)
+  const rates: Partial<Record<Card, number>> = useMemo(
+    () => (view.ck ? cardRates(view as unknown as GameState, seat) : tradeRates(view as unknown as GameState, seat)),
+    [view, seat],
+  );
   const canBank = has(legal, 'bankTrade') || (view.phase.kind === 'main' && view.turn.actor === seat && !(view.options.tradeBuildMode === 'separate' && view.turn.buildingStarted));
   const domestic =
     view.phase.kind === 'main' &&
@@ -213,11 +238,12 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
 
   // bank: ▼ gives a lot at the resource's rate, ▲ takes one card from the bank
   const [bankRow, setBankRow] = useState<SignedCounts>({});
-  const bankRules = {} as Record<Resource, BoxRule>;
-  const rateNotes = {} as Record<Resource, { text: string; tone?: string }>;
-  for (const r of RESOURCE_LIST) {
-    bankRules[r] = { min: -Math.floor(hand[r] / rates[r]) * rates[r], max: view.bank[r], lot: rates[r] };
-    rateNotes[r] = { text: `${rates[r]}:1`, tone: rates[r] < 4 ? `r${rates[r]}` : undefined };
+  const bankRules = {} as Record<Card, BoxRule>;
+  const rateNotes = {} as Record<Card, { text: string; tone?: string }>;
+  for (const r of kinds) {
+    const rate = rates[r] ?? 4;
+    bankRules[r] = { min: -Math.floor((hand[r] ?? 0) / rate) * rate, max: bankCards[r] ?? 0, lot: rate };
+    rateNotes[r] = { text: `${rate}:1`, tone: rate < 4 ? `r${rate}` : undefined };
   }
   const bank = bankCheck(bankRow, rates);
   const bankWhy = !canBank
@@ -261,7 +287,7 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
 
   return (
     <Sheet title="Trade" onClose={close} wide>
-      <YourCards hand={hand} />
+      <YourCards hand={hand} kinds={kinds} />
       {domestic && (
         <div class="tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'players'} class={tab === 'players' ? 'tab on' : 'tab'} onClick={() => setTab('players')}>
@@ -274,7 +300,7 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
       )}
       {tab === 'bank' || !domestic ? (
         <div class="bank-trade">
-          <TradeRow row={bankRow} rules={bankRules} notes={rateNotes} onChange={setBankRow} />
+          <TradeRow row={bankRow} rules={bankRules} notes={rateNotes} kinds={kinds} onChange={setBankRow} />
           <TradeSummary row={bankRow} tip="▼ gives cards at the rate shown · ▲ takes a card" />
           <SendButton
             disabled={!canBank || !bank.ok || !affordable(bankRow, hand)}
@@ -290,7 +316,7 @@ export function TradeSheet({ view, legal, seat, colors, send, close }: SheetProp
         </div>
       ) : (
         <div class="player-trade">
-          <TradeRow row={offerRow} rules={playerRules(hand)} onChange={setOfferRow} />
+          <TradeRow row={offerRow} rules={playerRules(hand)} kinds={kinds} onChange={setOfferRow} />
           <TradeSummary row={offerRow} tip="▲ a card you want · ▼ a card you give" />
           <div class="tto" role="group" aria-label="Offer to">
             <span class="tto-label">Offer to</span>
@@ -408,10 +434,10 @@ function OfferRow({
  * something in return; "what will you give for my wool?" locks the wool this
  * player gets and leaves only giving.
  */
-function counterRules(t: TradeOffer, hand: PartialCounts): Record<Resource, BoxRule> {
+function counterRules(t: TradeOffer, hand: CardCounts): Record<Card, BoxRule> {
   const locked = t.open === 'give' ? rowOf(t.get, {}) : t.open === 'get' ? rowOf({}, t.give) : {};
-  const out = {} as Record<Resource, BoxRule>;
-  for (const r of RESOURCE_LIST) {
+  const out = {} as Record<Card, BoxRule>;
+  for (const r of CARD_LIST) {
     const v = locked[r];
     if (v !== undefined) out[r] = { min: v, max: v, locked: true };
     else if (t.open === 'give') out[r] = { min: 0, max: MAX_ASK };
@@ -426,7 +452,8 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
   const offers = view.turn.trades.filter((t) => t.to.includes(seat) && t.from === view.turn.actor && !t.accepted.includes(seat) && !t.rejected.includes(seat));
   const [counter, setCounter] = useState<TradeOffer | null>(null);
   const [row, setRow] = useState<SignedCounts>({});
-  const hand = view.players[seat].resources!;
+  const hand = handOfView(view, seat);
+  const kinds = cardKindsOf(view);
   if (offers.length === 0) return null;
   if (counter) {
     const { give, get } = rowSides(row);
@@ -445,11 +472,11 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
           : null;
     return (
       <Sheet title={counter.open ? `Your offer to ${nameOf(view, counter.from)}` : `Counter-offer to ${nameOf(view, counter.from)}`} onClose={() => setCounter(null)} wide>
-        <YourCards hand={hand} />
+        <YourCards hand={hand} kinds={kinds} />
         <p class="tctx">
           <Dot color={colors[counter.from]} /> {offerText(counter, view, seat)}
         </p>
-        <TradeRow row={row} rules={counterRules(counter, hand)} onChange={setRow} />
+        <TradeRow row={row} rules={counterRules(counter, hand)} kinds={kinds} onChange={setRow} />
         <TradeSummary row={row} tip="▲ a card you want · ▼ a card you give" />
         <SendButton
           disabled={why !== null}
@@ -466,14 +493,14 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
   }
   return (
     <Sheet title="Trade offer">
-      <YourCards hand={hand} />
+      <YourCards hand={hand} kinds={kinds} />
       {offers.map((t) => (
         <OfferRow key={t.id} t={t} view={view} colors={colors} seat={seat}>
           {t.open ? (
             <button
               type="button"
               class="primary"
-              disabled={t.open === 'give' && !RESOURCE_LIST.every((r) => (t.get[r] ?? 0) <= (hand[r] ?? 0))}
+              disabled={t.open === 'give' && !CARD_LIST.every((r) => (t.get[r] ?? 0) <= (hand[r] ?? 0))}
               onClick={() => {
                 setRow(t.open === 'give' ? rowOf(t.get, {}) : rowOf({}, t.give));
                 setCounter(t);
@@ -642,7 +669,7 @@ function EyeIcon() {
  * rob). It can't be closed, but "Peek at the board" folds it into a small bar
  * over the board, the choices made so far kept, and the bar opens it again.
  */
-function ForcedSheet({
+export function ForcedSheet({
   title,
   bar,
   back,
@@ -713,6 +740,7 @@ function ForcedSheet({
 /** Discarding, ▼ discards a card (▲ keeps it after all); taking, ▲ takes one (▼ returns it). */
 const DISCARD_VERBS: RowVerbs = { get: 'keep', give: 'discard' };
 const TAKE_VERBS: RowVerbs = { get: 'take', give: 'return' };
+const GIVE_VERBS: RowVerbs = { get: 'keep', give: 'give' };
 
 /**
  * Picking exactly `need` cards: your hand on top, counting what will be left
@@ -720,35 +748,48 @@ const TAKE_VERBS: RowVerbs = { get: 'take', give: 'return' };
  * (`sign` −1), ▲ takes one from the bank (+1), up to `limit`. A line
  * underneath says what is picked and how many are still to pick.
  */
-function PickCards({
+export function PickCards({
   hand,
   row,
   need,
   limit,
   sign,
+  kinds = RESOURCE_LIST,
+  giving,
   onChange,
 }: {
-  hand: PartialCounts;
+  hand: CardCounts;
   row: SignedCounts;
   need: number;
-  limit: PartialCounts;
+  limit: CardCounts;
   sign: 1 | -1;
+  /** The cards to pick from: resources, and commodities when discarding in Cities & Knights. */
+  kinds?: Card[];
+  /** The cards go to another player (a Wedding): "give" rather than "discard". */
+  giving?: boolean;
   onChange(row: SignedCounts): void;
 }) {
   const picked = rowCount(row);
   const { give, get } = rowSides(row);
   const left = need - picked;
+  const out = giving ? 'give' : 'discard';
   return (
     <>
-      <YourCards hand={hand} change={row} />
-      <TradeRow row={row} rules={pickRules(row, need, limit, sign)} verbs={sign < 0 ? DISCARD_VERBS : TAKE_VERBS} onChange={onChange} />
+      <YourCards hand={hand} change={row} kinds={kinds} />
+      <TradeRow
+        row={row}
+        rules={pickRules(row, need, limit, sign)}
+        verbs={sign < 0 ? (giving ? GIVE_VERBS : DISCARD_VERBS) : TAKE_VERBS}
+        kinds={kinds}
+        onChange={onChange}
+      />
       <p class="tsum pick-sum" aria-live="polite">
         {picked === 0 ? (
-          <span class="tsum-tip">{sign < 0 ? '▼ under a card discards it' : '▲ above a card takes it'}</span>
+          <span class="tsum-tip">{sign < 0 ? `▼ under a card ${out}s it` : '▲ above a card takes it'}</span>
         ) : (
           <>
             <span class={sign < 0 ? 'tsum-give' : 'tsum-get'}>
-              You {sign < 0 ? 'discard' : 'take'} <b>{countsPhrase(sign < 0 ? give : get)}</b>
+              You {sign < 0 ? out : 'take'} <b>{countsPhrase(sign < 0 ? give : get)}</b>
             </span>
             {left > 0 && (
               <span class="tsum-left">
@@ -766,7 +807,7 @@ function PickCards({
 const cardsWord = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
 
 /** The folded sheet's bar: what is asked, and what is picked so far. */
-function PeekLine({ title, picked, n, need }: { title: string; picked: PartialCounts; n: number; need: number }) {
+export function PeekLine({ title, picked, n, need }: { title: string; picked: CardCounts; n: number; need: number }) {
   return (
     <>
       <b>{title}</b>
@@ -786,7 +827,10 @@ export function DiscardSheet({ view, seat, send, covered }: ForcedProps) {
   const ph = view.phase;
   const need = ph.kind === 'discard' ? ph.pending[seat] ?? 0 : 0;
   const [row, setRow] = useState<SignedCounts>({});
-  const hand = view.players[seat].resources!;
+  // Cities & Knights: commodities are discarded like resources, and each city wall raises the limit by 2
+  const hand = handOfView(view, seat);
+  const kinds = cardKindsOf(view);
+  const limit = sevenLimitOf(view, seat);
   const total = sumCounts(hand);
   const picked = rowCount(row);
   const title = `Discard ${cardsWord(need)}`;
@@ -795,8 +839,10 @@ export function DiscardSheet({ view, seat, send, covered }: ForcedProps) {
       <p class="pick-lead">
         Discard <b>{need}</b> of <b>{total}</b> — you keep <b>{total - need}</b>
       </p>
-      <p class="hint pick-note">A 7 was rolled and you hold more than {view.options.discardLimit} cards.</p>
-      <PickCards hand={hand} row={row} need={need} limit={hand} sign={-1} onChange={setRow} />
+      <p class="hint pick-note">
+        A 7 was rolled and you hold more than {limit} cards{view.ck ? ` (${view.options.discardLimit}, +2 for each city wall; commodities count too)` : ''}.
+      </p>
+      <PickCards hand={hand} row={row} need={need} limit={hand} sign={-1} kinds={kinds} onChange={setRow} />
       <button
         type="button"
         class="primary wide"

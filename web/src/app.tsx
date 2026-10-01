@@ -35,6 +35,7 @@ function savedLabel(r: GameRecord | null): { label: string } | null {
   } catch {
     return null;
   }
+  if (r.state.options?.citiesAndKnights) name = 'Cities & Knights';
   return { label: `${name} · turn ${r.state.turn.number} · ${r.seats.length} players` };
 }
 
@@ -160,6 +161,20 @@ export function App() {
             ? 'to choose resources'
             : ph.kind === 'setup'
               ? 'to place their starting pieces'
+              : ph.kind === 'ck'
+                ? ph.step === 'pillage'
+                  ? 'to choose the city the barbarians pillage'
+                  : ph.step === 'progressDiscard'
+                    ? 'to discard progress cards'
+                    : ph.step === 'aqueduct'
+                      ? 'to use their Aqueduct'
+                      : ph.step === 'retreat'
+                        ? 'to move their displaced knight'
+                        : ph.step === 'defenderDraw'
+                          ? 'to draw a progress card'
+                          : ph.step === 'card'
+                            ? 'to answer a progress card'
+                            : 'to continue'
               : ph.kind === 'main' && ctrl.state.turn.actor !== p
                 ? 'to answer a trade offer'
                 : need[0] === p

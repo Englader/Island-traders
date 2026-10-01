@@ -1,11 +1,12 @@
-import type { PartialCounts, Resource } from 'engine';
-import { RESOURCE_INFO, RESOURCE_LIST } from './names';
+import type { Card, CardCounts } from 'engine';
+import { CARD_INFO, CARD_LIST } from './names';
 
 /**
- * A trade as one signed number per resource, seen from the player setting it
- * up: +n means "I get n", -n means "I give n", 0 (or missing) means neither.
+ * A trade as one signed number per card (resources, and commodities in
+ * Cities & Knights), seen from the player setting it up: +n means "I get n",
+ * -n means "I give n", 0 (or missing) means neither.
  */
-export type SignedCounts = Partial<Record<Resource, number>>;
+export type SignedCounts = Partial<Record<Card, number>>;
 
 /** What one box of the row allows. */
 export interface BoxRule {
@@ -20,10 +21,10 @@ export interface BoxRule {
 }
 
 /** The cards this player gives (the negative numbers) and gets (the positive ones). */
-export function rowSides(row: SignedCounts): { give: PartialCounts; get: PartialCounts } {
-  const give: PartialCounts = {};
-  const get: PartialCounts = {};
-  for (const r of RESOURCE_LIST) {
+export function rowSides(row: SignedCounts): { give: CardCounts; get: CardCounts } {
+  const give: CardCounts = {};
+  const get: CardCounts = {};
+  for (const r of CARD_LIST) {
     const v = row[r] ?? 0;
     if (v < 0) give[r] = -v;
     else if (v > 0) get[r] = v;
@@ -32,9 +33,9 @@ export function rowSides(row: SignedCounts): { give: PartialCounts; get: Partial
 }
 
 /** The row for a trade in which this player gives `give` and gets `get`. */
-export function rowOf(give: PartialCounts, get: PartialCounts): SignedCounts {
+export function rowOf(give: CardCounts, get: CardCounts): SignedCounts {
   const row: SignedCounts = {};
-  for (const r of RESOURCE_LIST) {
+  for (const r of CARD_LIST) {
     const v = (get[r] ?? 0) - (give[r] ?? 0);
     if (v !== 0) row[r] = v;
   }
@@ -68,7 +69,7 @@ export function stepValue(v: number, dir: 1 | -1, rule: BoxRule): number | null 
 }
 
 /** The row after a tap on one box (the same row when the tap is not allowed). */
-export function stepRow(row: SignedCounts, r: Resource, dir: 1 | -1, rule: BoxRule): SignedCounts {
+export function stepRow(row: SignedCounts, r: Card, dir: 1 | -1, rule: BoxRule): SignedCounts {
   const next = stepValue(row[r] ?? 0, dir, rule);
   if (next === null) return row;
   const out = { ...row };
@@ -79,7 +80,7 @@ export function stepRow(row: SignedCounts, r: Resource, dir: 1 | -1, rule: BoxRu
 
 /** How many cards a row moves, both sides counted. */
 export function rowCount(row: SignedCounts): number {
-  return RESOURCE_LIST.reduce((n, r) => n + Math.abs(row[r] ?? 0), 0);
+  return CARD_LIST.reduce((n, r) => n + Math.abs(row[r] ?? 0), 0);
 }
 
 /**
@@ -88,10 +89,10 @@ export function rowCount(row: SignedCounts): number {
  * what the bank has). Once `need` cards are picked no box goes further, so
  * the row never holds too many.
  */
-export function pickRules(row: SignedCounts, need: number, limit: PartialCounts, sign: 1 | -1): Record<Resource, BoxRule> {
+export function pickRules(row: SignedCounts, need: number, limit: CardCounts, sign: 1 | -1): Record<Card, BoxRule> {
   const full = rowCount(row) >= need;
-  const out = {} as Record<Resource, BoxRule>;
-  for (const r of RESOURCE_LIST) {
+  const out = {} as Record<Card, BoxRule>;
+  for (const r of CARD_LIST) {
     const far = full ? row[r] ?? 0 : sign * (limit[r] ?? 0);
     out[r] = sign < 0 ? { min: Math.min(far, 0), max: 0 } : { min: 0, max: Math.max(far, 0) };
   }
@@ -103,23 +104,24 @@ export function pickRules(row: SignedCounts, need: number, limit: PartialCounts,
  * player's rates, `cards` how many are asked for. It is complete when they
  * match (and every given amount is a whole number of lots).
  */
-export function bankCheck(row: SignedCounts, rates: Record<Resource, number>): { lots: number; cards: number; ok: boolean } {
+export function bankCheck(row: SignedCounts, rates: Partial<Record<Card, number>>): { lots: number; cards: number; ok: boolean } {
   let lots = 0;
   let cards = 0;
   let whole = true;
-  for (const r of RESOURCE_LIST) {
+  for (const r of CARD_LIST) {
     const v = row[r] ?? 0;
+    const rate = rates[r] ?? 4;
     if (v < 0) {
-      if (-v % rates[r] !== 0) whole = false;
-      lots += Math.floor(-v / rates[r]);
+      if (-v % rate !== 0) whole = false;
+      lots += Math.floor(-v / rate);
     } else cards += v;
   }
   return { lots, cards, ok: whole && cards > 0 && lots === cards };
 }
 
 /** "1 brick", "1 brick and 2 wool", "1 brick, 2 wool and 3 ore". */
-export function countsPhrase(c: PartialCounts): string {
-  const parts = RESOURCE_LIST.filter((r) => (c[r] ?? 0) > 0).map((r) => `${c[r]} ${RESOURCE_INFO[r].label.toLowerCase()}`);
+export function countsPhrase(c: CardCounts): string {
+  const parts = CARD_LIST.filter((r) => (c[r] ?? 0) > 0).map((r) => `${c[r]} ${CARD_INFO[r].label.toLowerCase()}`);
   if (parts.length === 0) return 'nothing';
   return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }

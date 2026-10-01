@@ -1,60 +1,16 @@
-import type { Action, DevCardType, GameView, PartialCounts, PlayerId, Resource } from 'engine';
+import { PROGRESS_CARDS, type Card, type CardCounts, type DevCardType, type GameView, type PlayerId } from 'engine';
 import { useEffect, useRef } from 'preact/hooks';
-import { DEV_INFO, RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { TRACK_INFO, TRACK_LIST, improvementName } from '../game/ck';
+import type { FxEvent } from '../game/fx';
+import { CARD_LIST, DEV_INFO, progressTitle } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import { DevCardView, ResourceCard } from './cards';
+import { GateGlyph, HelmIcon, ProgressCardView, ShipGlyph, TowerGlyph } from './ckArt';
 
-/** A moment worth showing in the middle of the screen: a trade or a development card. */
-export type FxEvent =
-  | { kind: 'trade'; a: PlayerId; b: PlayerId | 'bank'; give: PartialCounts; get: PartialCounts }
-  | { kind: 'devBuy'; by: PlayerId; card: DevCardType | null }
-  | { kind: 'devPlay'; by: PlayerId; card: DevCardType; detail: string };
+export { fxFor, type FxEvent, type ProgressDraw } from '../game/fx';
 
-const PLAYS: Partial<Record<Action['type'], DevCardType>> = {
-  playKnight: 'knight',
-  playRoadBuilding: 'roadBuilding',
-  playYearOfPlenty: 'yearOfPlenty',
-  playMonopoly: 'monopoly',
-};
-
-function newCard(before: GameView, after: GameView, p: PlayerId): DevCardType | null {
-  const had = before.players[p]?.devCards;
-  const has = after.players[p]?.devCards;
-  if (!had || !has) return null;
-  const count = (list: typeof has, t: DevCardType) => list.filter((c) => c.type === t).length;
-  return has.find((c) => count(has, c.type) > count(had, c.type))?.type ?? null;
-}
-
-/** The event a move should show, if any; `before` is the view just before it. */
-export function fxFor(action: Action, before: GameView, after: GameView, seat: PlayerId | null): FxEvent | null {
-  switch (action.type) {
-    case 'bankTrade':
-      return { kind: 'trade', a: action.player, b: 'bank', give: action.give, get: action.get };
-    case 'confirmTrade': {
-      const t = before.turn.trades.find((x) => x.id === action.tradeId);
-      return t ? { kind: 'trade', a: t.from, b: action.partner, give: t.give, get: t.get } : null;
-    }
-    case 'acceptTrade': {
-      // only a counter-offer taken by the active player trades at once
-      const t = before.turn.trades.find((x) => x.id === action.tradeId);
-      if (!t || after.turn.trades.some((x) => x.id === t.id)) return null;
-      return { kind: 'trade', a: t.from, b: action.player, give: t.give, get: t.get };
-    }
-    case 'buyDevCard':
-      return { kind: 'devBuy', by: action.player, card: seat === action.player ? newCard(before, after, action.player) : null };
-    default: {
-      const card = PLAYS[action.type];
-      if (!card) return null;
-      let detail = DEV_INFO[card].text;
-      if (action.type === 'playMonopoly') detail = `Takes every ${RESOURCE_INFO[action.resource].label.toLowerCase()} card.`;
-      if (action.type === 'playYearOfPlenty') detail = `Takes ${action.resources.map((r) => RESOURCE_INFO[r].label.toLowerCase()).join(' and ')} from the bank.`;
-      return { kind: 'devPlay', by: action.player, card, detail };
-    }
-  }
-}
-
-function cardsOf(c: PartialCounts): Resource[] {
-  return RESOURCE_LIST.flatMap((r) => Array.from({ length: c[r] ?? 0 }, () => r));
+function cardsOf(c: CardCounts): Card[] {
+  return CARD_LIST.flatMap((r) => Array.from({ length: c[r] ?? 0 }, () => r));
 }
 
 function Party({ name, color, bank }: { name: string; color?: PlayerColor; bank?: boolean }) {
@@ -121,6 +77,122 @@ export function FxOverlay({ fx, view, colors, seat, ms, onDone }: { fx: FxEvent 
             </div>
           </div>
           {fx.b === 'bank' ? <Party name="Bank" bank /> : <Party name={name(fx.b)} color={colors[fx.b]} />}
+        </div>
+      </>
+    );
+  } else if (fx.kind === 'attack') {
+    body = (
+      <>
+        <div class="fx-title">The barbarians attack!</div>
+        <div class="fx-attack-sea" aria-hidden="true">
+          <span class="fx-attack-ship">
+            <ShipGlyph />
+          </span>
+          <span class="fx-attack-shore" />
+        </div>
+        <div class={fx.won ? 'fx-vs won' : 'fx-vs lost'}>
+          <span class="fx-side barb">
+            <b>{fx.barbarians}</b>
+            <small>barbarians</small>
+          </span>
+          <span class="fx-vs-x">{fx.won ? '≤' : '>'}</span>
+          <span class="fx-side kn">
+            <b>{fx.knights}</b>
+            <small>knights</small>
+          </span>
+        </div>
+        <div class="fx-defenders">
+          {fx.perPlayer.map((n, p) => (
+            <span key={p} class="fx-def" style={{ '--pc': colors[p]?.fill } as Record<string, string>}>
+              <span class="fx-def-dot" />
+              {name(p)} <HelmIcon /> {n}
+            </span>
+          ))}
+        </div>
+        <div class={fx.won ? 'fx-outcome won' : 'fx-outcome lost'}>
+          <b>{fx.outcome}</b>
+          <span>{fx.detail}</span>
+        </div>
+      </>
+    );
+  } else if (fx.kind === 'draw') {
+    const who = [...new Set(fx.draws.map((d) => d.p))];
+    const mine = fx.draws.filter((d) => d.p === seat && d.card);
+    const title =
+      who.length === 1
+        ? who[0] === seat
+          ? mine.length === 1
+            ? `You draw ${progressTitle(mine[0].card!)}`
+            : 'You draw progress cards'
+          : `${name(who[0])} draws ${fx.draws.length === 1 ? (fx.draws[0].card ? progressTitle(fx.draws[0].card) : 'a progress card') : 'progress cards'}`
+        : 'Progress cards are drawn';
+    body = (
+      <>
+        <div class="fx-title">{title}</div>
+        <div class="fx-draws">
+          {fx.draws.map((d, i) => (
+            <div key={i} class="fx-draw" style={{ '--i': i } as Record<string, number>}>
+              <div class={d.card ? 'fx-devbuy reveal' : 'fx-devbuy'}>
+                <div class="fx-flip prog">
+                  <div class="fx-dev back">
+                    <ProgressCardView deck={d.deck} back />
+                  </div>
+                  <div class="fx-dev face">
+                    <ProgressCardView card={d.card} deck={d.deck} back={!d.card} text />
+                  </div>
+                </div>
+              </div>
+              <span class="fx-draw-who" style={{ '--pc': colors[d.p]?.fill } as Record<string, string>}>
+                {name(d.p)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div class="fx-sub">
+          {fx.draws.some((d) => d.card && PROGRESS_CARDS[d.card]?.vp)
+            ? 'A victory point card is played at once: +1 VP'
+            : TRACK_LIST.filter((t) => fx.draws.some((d) => d.deck === t))
+                .map((t) => `${TRACK_INFO[t].label} deck`)
+                .join(' · ')}
+        </div>
+      </>
+    );
+  } else if (fx.kind === 'progPlay') {
+    body = (
+      <>
+        <div class="fx-title">
+          {name(fx.by)} {fx.by === seat ? 'play' : 'plays'} {progressTitle(fx.card)}
+        </div>
+        <div class="fx-devplay reveal">
+          <div class="fx-flip prog">
+            <div class="fx-dev back">
+              <ProgressCardView card={fx.card} back />
+            </div>
+            <div class="fx-dev face">
+              <ProgressCardView card={fx.card} text />
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  } else if (fx.kind === 'improve') {
+    const info = TRACK_INFO[fx.track];
+    body = (
+      <>
+        <div class="fx-title">
+          {name(fx.by)} {fx.by === seat ? 'build' : 'builds'} the {improvementName(fx.track, fx.level)}
+        </div>
+        <div class="fx-improve" style={{ '--tc': info.fill } as Record<string, string>}>
+          <span class="fx-imp-art">{fx.metropolis ? <TowerGlyph track={fx.track} fill={colors[fx.by].fill} stroke={colors[fx.by].stroke} /> : <GateGlyph track={fx.track} />}</span>
+          <span class="fx-imp-level">
+            {[1, 2, 3, 4, 5].map((l) => (
+              <span key={l} class={l <= fx.level ? 'on' : ''} />
+            ))}
+          </span>
+        </div>
+        <div class="fx-sub">
+          {info.label} level {fx.level}
+          {fx.metropolis ? ` · the ${fx.track} metropolis: +2 VP` : fx.level === 3 ? ` · ${info.abilityText}` : ''}
         </div>
       </>
     );

@@ -1,0 +1,1539 @@
+/* Cities & Knights (ui/CkPanels.tsx, ui/ckArt.tsx and their places in the game screen). */
+
+/* --- pieces on the board ------------------------------------------------------------------- */
+.knight-ring {
+  fill: none;
+  stroke: #ffd34d;
+  stroke-width: 0.03;
+}
+.knight-glow {
+  fill: rgba(255, 211, 77, 0.22);
+  stroke: rgba(255, 211, 77, 0.55);
+  stroke-width: 0.07;
+}
+.knight.active .knight-glow {
+  animation: knight-glow 2.6s ease-in-out infinite;
+}
+@keyframes knight-glow {
+  50% {
+    stroke: rgba(255, 211, 77, 0.25);
+  }
+}
+.knight.ghost,
+.tower.ghost,
+.wall.ghost {
+  opacity: 0.72;
+}
+.ghost-wall {
+  opacity: 0.8;
+}
+.robber.asleep .robber-body {
+  filter: grayscale(1) brightness(1.4);
+  opacity: 0.55;
+}
+.zzz-bubble {
+  fill: rgba(255, 255, 255, 0.85);
+  stroke: rgba(30, 40, 60, 0.35);
+  stroke-width: 0.01;
+}
+.zzz-text {
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* --- the header: three dice and the barbarian track ------------------------------------------ */
+.die.event .die-face {
+  fill: #f4efe2;
+  stroke: #b9ad92;
+}
+.dice.three {
+  gap: 4px;
+}
+.ck-track {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 3px 8px 3px 6px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-bottom-width: 1px;
+  background: var(--panel-2);
+  color: var(--ink);
+  font-weight: 700;
+}
+.ck-track:active:not(:disabled) {
+  transform: none;
+  border-bottom-width: 1px;
+}
+.bt-lane {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--len), minmax(0, 1fr)) 26px;
+  align-items: center;
+  width: 176px;
+  height: 26px;
+  padding-left: 4px;
+}
+.bt-water {
+  position: absolute;
+  left: 0;
+  right: 13px;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sea-3), var(--sea-1));
+  opacity: 0.85;
+}
+.bt-wake {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  width: calc((100% - 30px) * var(--pos) / var(--len));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  transition: width 0.6s ease;
+}
+.bt-node {
+  position: relative;
+  justify-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(6, 26, 44, 0.35);
+}
+.bt-node.past {
+  background: rgba(255, 255, 255, 0.35);
+}
+.bt-shore {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+}
+.bt-shore-art {
+  width: 26px;
+  height: 22px;
+}
+.bt-ship {
+  position: absolute;
+  top: 50%;
+  /* over its space: the spaces share the lane minus the shore, the ship's middle on the node */
+  left: calc(4px + (100% - 30px) * (var(--pos) + 0.5) / var(--len));
+  transform: translate(-50%, -62%);
+  width: 26px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  transition: left 0.6s cubic-bezier(0.3, 1.2, 0.5, 1);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+.bt-ship .ship-glyph {
+  width: 26px;
+  height: 20px;
+}
+.ck-track[data-pos='6'] .bt-ship {
+  animation: bt-rock 1.4s ease-in-out infinite;
+}
+@keyframes bt-rock {
+  50% {
+    transform: translate(-50%, -62%) rotate(-6deg);
+  }
+}
+.bt-vs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--display);
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.bt-b,
+.bt-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 1px 4px;
+  border-radius: 8px;
+}
+.bt-b {
+  background: color-mix(in srgb, #a8322a 14%, transparent);
+  color: color-mix(in srgb, #a8322a 80%, var(--ink));
+}
+.bt-k {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+.bt-vs.lose .bt-b {
+  background: #a8322a;
+  color: #fff;
+}
+.bt-vs.hold .bt-k {
+  background: var(--ok);
+  color: var(--panel);
+}
+.bt-flag {
+  width: 9px;
+  height: 11px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 15%, 100% 85%, 0 100%, 25% 50%);
+}
+.bt-k .helm-icon {
+  width: 13px;
+  height: 13px;
+}
+.bt-x {
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+/* phones: the track takes a row of its own under the status line */
+@media (max-width: 899px) {
+  .hud:has(.ck-track) {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .hud .ck-track {
+    order: 3;
+    flex: 1 1 100%;
+    justify-content: space-between;
+    margin-left: 40px;
+    padding: 2px 8px 2px 6px;
+  }
+  .hud .ck-track .bt-lane {
+    flex: 1;
+    width: auto;
+    max-width: 260px;
+  }
+  .dice.three .die {
+    width: 29px;
+    height: 29px;
+  }
+}
+
+/* --- the dice roll: the event die and what it did ------------------------------------------- */
+.roll-overlay.three .roll-stage {
+  gap: 22px;
+}
+.cube-wrap.event .cube-face {
+  background: linear-gradient(145deg, #fbf8ef, #e2d8bf);
+  border-color: #b9ad92;
+}
+.roll-event {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: min(92vw, 420px);
+  padding: 8px 16px;
+  border-radius: 16px;
+  background: rgba(6, 26, 44, 0.82);
+  color: #fff;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.25s ease-out,
+    transform 0.3s ease-out;
+}
+.roll-event b {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+.roll-event span {
+  font-size: 0.86rem;
+  opacity: 0.9;
+}
+.roll-overlay.landed .roll-event {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.15s;
+}
+.roll-overlay.leaving .roll-event {
+  opacity: 0;
+}
+.tone-trade {
+  --tone: #e9b726;
+}
+.tone-politics {
+  --tone: #3b78c9;
+}
+.tone-science {
+  --tone: #3f9a4a;
+}
+.tone-ship {
+  --tone: #8a7f70;
+}
+.tone-attack {
+  --tone: #c0392b;
+}
+.roll-event,
+.event-note {
+  border-left: 6px solid var(--tone, transparent);
+}
+/* reduced motion: the event's result over the board for a moment, still */
+.event-note {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: max-content;
+  max-width: calc(100% - 110px);
+  padding: 7px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.event-note b {
+  font-family: var(--display);
+  font-size: 1rem;
+}
+.event-note span {
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+
+/* --- the hand ----------------------------------------------------------------------------------- */
+.hand.ck-hand {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 4px;
+}
+.hand.ck-hand .rtile {
+  height: 52px;
+  border-radius: 9px;
+}
+.hand.ck-hand .rtile-icon {
+  width: 16px;
+  height: 16px;
+  top: 2px;
+  left: 2px;
+}
+.hand.ck-hand .rtile-n {
+  right: 2px;
+  bottom: 2px;
+  min-width: 19px;
+  padding: 0 4px;
+  font-size: 0.86rem;
+}
+/* a gap between the resources and the commodities */
+.hand.ck-hand .rtile.r-paper {
+  margin-left: 3px;
+}
+.rtile.prog-tile {
+  margin-left: 3px;
+  border-color: #8a7f70;
+  background: #8a7f70;
+}
+.rtile.prog-tile .gcard.prog.tile {
+  border-radius: 0;
+}
+.hand.cards.ck-cards {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  row-gap: 14px;
+}
+.hand.cards.ck-cards .prog-hcard {
+  grid-column: 5;
+}
+.hcard.prog-hcard.many::before {
+  background: #8a7f70;
+  border-color: #f0e6d0;
+}
+
+/* --- progress cards ------------------------------------------------------------------------------ */
+.gcard.prog {
+  padding: 0;
+  border: 1.5px solid #5b5141;
+  background: #fbf3dc;
+}
+.gcard.prog svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.gcard.prog.back {
+  border: 2px solid #fff6e0;
+}
+.gcard.prog.face svg {
+  position: absolute;
+  inset: 0;
+}
+.prog-title {
+  position: absolute;
+  top: 4%;
+  left: 7%;
+  right: 7%;
+  height: 24%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(7px, 11.5cqw, 15px);
+  line-height: 1;
+  text-align: center;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.gcard.prog.mini .prog-title {
+  font-size: clamp(6px, 13cqw, 12px);
+}
+.prog-text {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 7%;
+  font-size: clamp(7px, 8.4cqw, 12px);
+  line-height: 1.2;
+  text-align: center;
+  color: #3b2a14;
+}
+.gcard.prog.tile {
+  border: none;
+}
+.prog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prog-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.prog-thumb {
+  flex: none;
+  width: 52px;
+  height: 73px;
+  display: flex;
+}
+.prog-thumb .gcard {
+  width: 100%;
+  height: 100%;
+}
+.prog-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.86rem;
+}
+.prog-info strong {
+  font-family: var(--display);
+  font-size: 1rem;
+}
+.prog-deck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--ink-2);
+}
+.prog-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.prog-soon {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--ink-2);
+}
+.prog-over {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 700;
+}
+.prog-vp h3 {
+  margin: 14px 0 6px;
+  font-size: 0.95rem;
+}
+.deck-pick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.deck-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+}
+.deck-btn .gcard {
+  width: 64px;
+}
+.deck-btn-l {
+  font-family: var(--display);
+  font-weight: 800;
+}
+.deck-btn-n {
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+
+/* --- the trade rows with commodities: a second line on phones, one line on wide sheets -------------- */
+.trow.cards8,
+.your-cards-row.cards8 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  row-gap: 8px;
+}
+.trow.cards8 .tcol.c-paper,
+.your-cards-row.cards8 .yc:nth-child(6) {
+  grid-column-start: 2;
+}
+@media (min-width: 700px) {
+  .trow.cards8,
+  .your-cards-row.cards8 {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+  .trow.cards8 .tcol.c-paper,
+  .your-cards-row.cards8 .yc:nth-child(6) {
+    grid-column-start: auto;
+  }
+  .trow.cards8 .tbox-card {
+    padding: 0 3px;
+  }
+}
+
+/* --- the players ------------------------------------------------------------------------------- */
+.pmeta.ck-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.pmeta .pm-kn b {
+  font-weight: 800;
+}
+.pm-sub {
+  font-size: 0.86em;
+  opacity: 0.8;
+}
+.pm .helm-icon {
+  width: 13px;
+  height: 13px;
+}
+.pm-prog {
+  display: inline-block;
+  width: 10px;
+  height: 14px;
+  margin-right: 2px;
+  border-radius: 2px;
+  vertical-align: -2px;
+  background: linear-gradient(135deg, #e9b726 0 33%, #3b78c9 33% 66%, #3f9a4a 66%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.pm-levels {
+  gap: 2px;
+}
+.lvl {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 4px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.lvl.tr-trade {
+  background: #e9b726;
+  color: #2b1d00;
+}
+.lvl.tr-politics {
+  background: #3b78c9;
+  color: #fff;
+}
+.lvl.tr-science {
+  background: #3f9a4a;
+  color: #fff;
+}
+.lvl.zero {
+  opacity: 0.35;
+}
+.pmeta.ck-awards {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  font-size: 0.8rem;
+}
+.pm-tower {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  vertical-align: -4px;
+}
+.pm-tower svg {
+  width: 100%;
+  height: 100%;
+}
+.pm-x {
+  font-size: 0.75em;
+  font-weight: 800;
+}
+.panel:not(.desk) .pmeta.ck-meta {
+  gap: 5px;
+}
+.ck-score {
+  margin-top: 4px;
+}
+.ck-vp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ck-vp-part {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+}
+.ck-rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+.ck-rows .helm-icon {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+}
+.ck-imps {
+  display: inline-flex;
+  gap: 8px;
+}
+.ck-imp {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.ck-metro-badge {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* --- action buttons -------------------------------------------------------------------------- */
+.ai-helm,
+.ai-gate {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.ai-helm .helm-icon {
+  width: 100%;
+  height: 100%;
+  color: #6b7380;
+}
+.ai-gate .gate-glyph {
+  width: 100%;
+  height: 100%;
+}
+.deck-row.four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+}
+.bgrid.five .btile:nth-child(5) {
+  grid-column: 1 / -1;
+}
+.db-icon .gcard.prog {
+  width: 16px;
+  margin: auto;
+}
+.db-icon .knight-glyph {
+  width: 26px;
+  height: 24px;
+}
+.build-improve {
+  margin-top: 8px;
+}
+
+/* --- a selected knight ------------------------------------------------------------------------- */
+.knight-bar {
+  align-items: center;
+}
+.kb-head {
+  flex: 1 1 160px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.kb-art {
+  flex: none;
+  width: 38px;
+  height: 36px;
+}
+.kb-art svg {
+  width: 100%;
+  height: 100%;
+}
+.kb-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.kb-text b {
+  font-family: var(--display);
+}
+.kb-text small {
+  color: var(--ink-2);
+}
+.knight-bar .confirm-buttons button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.knight-bar .cost .glyph {
+  width: 1.05em;
+  height: 1.05em;
+}
+.kb-none {
+  flex-basis: 100%;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+.mode-hint.forced-hint {
+  background: var(--sun);
+  color: var(--sun-ink);
+  font-weight: 700;
+}
+
+/* --- city improvements: the flip chart ------------------------------------------------------------ */
+.flip-lead {
+  margin-top: 0;
+}
+.flip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.flip-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tc) 12%, var(--panel));
+  border: 1.5px solid color-mix(in srgb, var(--tc) 55%, var(--line));
+}
+.flip-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 2px 4px;
+  border-bottom: 2px solid var(--tc);
+}
+.flip-gate {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+.flip-gate .gate-glyph {
+  width: 100%;
+  height: 100%;
+}
+.flip-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.flip-name b {
+  font-family: var(--display);
+  font-size: 1rem;
+}
+.flip-sub {
+  font-size: 0.7rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flip-have {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+.flip-levels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.flip-level {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 5px;
+  padding: 5px 5px 5px 4px;
+  border-radius: 10px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+}
+.flip-level.done {
+  background: color-mix(in srgb, var(--tc) 30%, var(--chip));
+  border-color: color-mix(in srgb, var(--tc) 70%, var(--line));
+}
+.flip-level.next {
+  border: 2px dashed var(--tc);
+}
+.fl-n {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+.flip-level.done .fl-n {
+  background: var(--tc);
+  border-color: var(--tcd);
+  color: #fff;
+}
+.flip-col.tr-trade .flip-level.done .fl-n {
+  color: #2b1d00;
+}
+.fl-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fl-name {
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+.fl-cost {
+  display: inline-flex;
+  gap: 0;
+  white-space: nowrap;
+}
+.fl-cost .glyph {
+  width: 0.95em;
+  height: 0.95em;
+}
+.flip-draw {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.flip-die .die {
+  width: 13px;
+  height: 13px;
+  filter: none;
+  vertical-align: -2px;
+}
+.fl-ability,
+.fl-metro {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.fl-ability {
+  background: var(--tc);
+  color: #fff;
+}
+.flip-col.tr-trade .fl-ability {
+  color: #2b1d00;
+}
+.fl-metro {
+  background: var(--panel-2);
+  border: 1px solid color-mix(in srgb, var(--tc) 60%, var(--line));
+}
+.fl-tower {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+}
+.fl-tower svg {
+  width: 100%;
+  height: 100%;
+}
+.fl-who {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+}
+.fl-you {
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.fl-mark {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid;
+}
+.flip-buy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: auto;
+  padding: 6px 4px;
+  font-size: 0.82rem;
+  line-height: 1.15;
+}
+.flip-buy .fb-l {
+  white-space: normal;
+}
+.flip-buy .cost .glyph {
+  width: 1em;
+  height: 1em;
+}
+.flip-why,
+.flip-done {
+  margin: 0;
+  font-size: 0.72rem;
+  text-align: center;
+  color: var(--ink-2);
+}
+.flip-notes {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.flip-notes b {
+  color: var(--ink);
+}
+.gate-glyph {
+  vertical-align: -0.15em;
+}
+@media (max-width: 440px) {
+  .flip {
+    gap: 5px;
+  }
+  .flip-col {
+    padding: 4px;
+  }
+  .flip-gate {
+    width: 20px;
+    height: 20px;
+  }
+  .flip-have {
+    display: none;
+  }
+  .flip-sub {
+    font-size: 0.66rem;
+  }
+  .flip-level {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 4px 4px 4px 5px;
+    font-size: 0.74rem;
+  }
+  .fl-n {
+    display: none;
+  }
+  .fl-name {
+    padding-right: 10px;
+  }
+}
+
+/* --- the barbarian sheet -------------------------------------------------------------------------- */
+.bs-track {
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--panel-2);
+}
+.bt-lane.big {
+  width: 100%;
+  height: 40px;
+  grid-template-columns: repeat(var(--len), minmax(0, 1fr)) 40px;
+}
+.bt-lane.big .bt-water {
+  height: 18px;
+  right: 20px;
+}
+.bt-lane.big .bt-node {
+  width: 11px;
+  height: 11px;
+}
+.bt-lane.big .bt-shore,
+.bt-lane.big .bt-shore-art {
+  width: 40px;
+  height: 34px;
+}
+.bt-lane.big .bt-ship {
+  left: calc(4px + (100% - 44px) * (var(--pos) + 0.5) / var(--len));
+  width: 44px;
+  height: 34px;
+}
+.bt-lane.big .bt-ship .ship-glyph {
+  width: 44px;
+  height: 34px;
+}
+.bt-lane.big .bt-wake {
+  width: calc((100% - 44px) * var(--pos) / var(--len));
+}
+.bs-where {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+}
+.bs-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+.bs-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.bs-n {
+  font-family: var(--display);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 1.2em;
+  text-align: center;
+}
+.bs-side.barb .bs-n {
+  color: #b33a2e;
+}
+.bs-side.kn .bs-n {
+  color: var(--ok);
+}
+.bs-l {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  line-height: 1.25;
+}
+.bs-l b {
+  display: block;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+.bs-forecast {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.bs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.bs-table th,
+.bs-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.bs-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bs-table thead th {
+  font-size: 0.74rem;
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.bs-rules {
+  margin: 10px 0 6px;
+  padding-left: 18px;
+  font-size: 0.84rem;
+  color: var(--ink-2);
+}
+.bs-rules b {
+  color: var(--ink);
+}
+
+/* --- the moments in the middle of the screen (ui/Fx.tsx) ---------------------------------------------- */
+.fx-panel.fx-attack {
+  width: min(100%, 400px);
+}
+.fx-attack-sea {
+  position: relative;
+  height: 56px;
+  margin: 0 0 8px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--sea-1), var(--sea-2));
+  overflow: hidden;
+}
+.fx-attack-shore {
+  position: absolute;
+  right: -10px;
+  bottom: -14px;
+  width: 90px;
+  height: 46px;
+  border-radius: 50%;
+  background: #7fbf5a;
+  box-shadow: inset 0 6px 0 #9fd27a;
+}
+.fx-attack-ship {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  animation: fx-sail calc(var(--fx-ms) * 0.35) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+.fx-attack-ship .ship-glyph {
+  width: 64px;
+  height: 46px;
+}
+@keyframes fx-sail {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(min(100vw, 400px) - 190px));
+  }
+}
+.fx-vs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  animation: fx-fade-in 0.3s ease both;
+  animation-delay: calc(var(--fx-ms) * 0.3);
+}
+.fx-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 84px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.fx-side b {
+  font-family: var(--display);
+  font-size: 2.1rem;
+  line-height: 1;
+}
+.fx-side small {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.fx-side.barb b {
+  color: #b33a2e;
+}
+.fx-side.kn b {
+  color: var(--ok);
+}
+.fx-vs-x {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+.fx-vs.lost .fx-side.barb,
+.fx-vs.won .fx-side.kn {
+  box-shadow: 0 0 0 2px currentColor;
+}
+.fx-vs.lost .fx-side.barb {
+  color: #b33a2e;
+}
+.fx-vs.won .fx-side.kn {
+  color: var(--ok);
+}
+.fx-defenders {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  margin: 8px 0;
+  font-size: 0.8rem;
+  animation: fx-fade-in 0.3s ease both;
+  animation-delay: calc(var(--fx-ms) * 0.36);
+}
+.fx-def {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.fx-def .helm-icon {
+  width: 12px;
+  height: 12px;
+}
+.fx-def-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--pc);
+}
+.fx-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  animation: fx-pop 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+  animation-delay: calc(var(--fx-ms) * 0.46);
+}
+.fx-outcome b {
+  font-family: var(--display);
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+.fx-outcome span {
+  font-size: 0.82rem;
+  opacity: 0.85;
+}
+.fx-outcome.won {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.fx-outcome.lost {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+@keyframes fx-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+.fx-draws {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.fx-draw {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.fx-draws .fx-flip.prog {
+  width: 96px;
+  height: 134px;
+}
+.fx-draws .fx-devbuy {
+  animation-delay: calc(var(--i) * 120ms);
+}
+.fx-draw-who {
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 2px solid var(--pc);
+}
+.fx-improve {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fx-imp-art {
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  animation: fx-pop 0.4s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+.fx-imp-art svg {
+  width: 100%;
+  height: 100%;
+}
+.fx-imp-level {
+  display: flex;
+  gap: 5px;
+}
+.fx-imp-level span {
+  width: 18px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.fx-imp-level span.on {
+  background: var(--tc);
+  border-color: var(--tc);
+}
+
+/* --- the new-game switch and the rules ----------------------------------------------------------- */
+.ck-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: var(--chip);
+  cursor: pointer;
+}
+.ck-toggle.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ck-toggle-art {
+  flex: none;
+  width: 40px;
+  height: 38px;
+}
+.ck-toggle-art svg {
+  width: 100%;
+  height: 100%;
+}
+.ck-toggle-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.ck-toggle-text b {
+  font-family: var(--display);
+  font-size: 1.05rem;
+}
+.ck-toggle-text span {
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+.rules-ck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rules-ck svg {
+  width: 28px;
+  height: 26px;
+}
+.rules-ck-list {
+  padding-left: 18px;
+}
+.rules-ck-list li {
+  margin-bottom: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knight.active .knight-glow,
+  .ck-track[data-pos='6'] .bt-ship,
+  .fx-attack-ship,
+  .fx-vs,
+  .fx-defenders,
+  .fx-outcome,
+  .fx-imp-art {
+    animation: none;
+  }
+  .bt-ship,
+  .bt-wake,
+  .roll-event {
+    transition: none;
+  }
+}
+
+/* --- refinements after a look at the screens ------------------------------------------------------ */
+.action-bar.six {
+  gap: 4px;
+}
+.action-bar.six .action {
+  font-size: 0.7rem;
+  padding: 4px 1px;
+}
+.panel.desk.tight .pm-kn .pm-sub {
+  display: none;
+}
+.panel.desk .pmeta.ck-awards {
+  min-height: 18px;
+}
+.hand.cards.ck-cards {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 5px;
+}
+.hand.cards.ck-cards .rtile.r-paper,
+.hand.cards.ck-cards .prog-hcard {
+  margin-left: 4px;
+}
+.hand.cards.ck-cards .prog-hcard {
+  grid-column: auto;
+}
+.hand.cards.ck-cards .rtile-n {
+  min-width: 22px;
+  padding: 0 5px;
+  font-size: 0.82rem;
+  bottom: -8px;
+}
+.hand.cards.ck-cards .hcard-icon {
+  width: 15px;
+  height: 15px;
+  font-size: 10px;
+}
+.fl-ability,
+.fl-metro {
+  border-radius: 7px;
+  line-height: 1.3;
+  padding: 1px 6px;
+}
+.fl-name {
+  padding-right: 14px;
+}
+.flip-level.at .fl-name {
+  padding-right: 32px;
+}
+@media (max-width: 440px) {
+  .flip-color {
+    display: none;
+  }
+  .fl-ability,
+  .fl-metro {
+    font-size: 0.64rem;
+    padding: 1px 4px;
+  }
+  .flip-level.at .fl-name {
+    padding-right: 26px;
+  }
+  .flip-buy {
+    font-size: 0.74rem;
+  }
+}
+.selected-ring {
+  fill: none;
+  stroke-width: 0.045;
+  stroke-dasharray: 0.09 0.05;
+  animation: sel-spin 3s linear infinite;
+}
+@keyframes sel-spin {
+  to {
+    stroke-dashoffset: -0.56;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .selected-ring {
+    animation: none;
+  }
+}
+/* the end-of-game stats and the dice statistics */
+.gs-tile-big {
+  font-family: var(--display);
+  font-size: 1.05rem;
+}
+.event-tally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.event-tally-cap {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.event-tally-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.event-tally-item small {
+  color: var(--ink-2);
+}
+.event-tally-die .die {
+  width: 24px;
+  height: 24px;
+}
+/* a progress card someone else played asks something of you */
+.card-ask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.card-ask .pick-lead {
+  margin: 0;
+}
+.card-ask-art {
+  flex: none;
+  width: 44px;
+  height: 62px;
+  display: flex;
+}
+.card-ask-art .gcard {
+  width: 100%;
+  height: 100%;
+}

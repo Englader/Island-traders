@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import type { PartialCounts, Resource } from 'engine';
-import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import type { Card, CardCounts } from 'engine';
+import { CARD_INFO, CARD_LIST } from '../game/names';
 import { ResGlyph } from './icons';
 
 /** Whether a CSS media query matches, following changes (window resized, device turned). */
@@ -81,8 +81,8 @@ export function Stepper({
   );
 }
 
-export function ResIcon({ r, n }: { r: Resource; n?: number }) {
-  const info = RESOURCE_INFO[r];
+export function ResIcon({ r, n }: { r: Card; n?: number }) {
+  const info = CARD_INFO[r];
   return (
     <span class={`res res-${r}`} title={info.label}>
       <span class="res-icon">
@@ -93,21 +93,21 @@ export function ResIcon({ r, n }: { r: Resource; n?: number }) {
   );
 }
 
-export function Cost({ cost }: { cost: PartialCounts }) {
+export function Cost({ cost }: { cost: CardCounts }) {
   return (
     <span class="cost">
-      {RESOURCE_LIST.flatMap((r) => Array.from({ length: cost[r] ?? 0 }, (_, i) => <ResGlyph key={`${r}${i}`} r={r} />))}
+      {CARD_LIST.flatMap((r) => Array.from({ length: cost[r] ?? 0 }, (_, i) => <ResGlyph key={`${r}${i}`} r={r} />))}
     </span>
   );
 }
 
-export function sumCounts(c: PartialCounts): number {
-  return RESOURCE_LIST.reduce((n, r) => n + (c[r] ?? 0), 0);
+export function sumCounts(c: CardCounts): number {
+  return CARD_LIST.reduce((n, r) => n + (c[r] ?? 0), 0);
 }
 
-export function cleanCounts(c: PartialCounts): PartialCounts {
-  const out: PartialCounts = {};
-  for (const r of RESOURCE_LIST) if ((c[r] ?? 0) > 0) out[r] = c[r];
+export function cleanCounts(c: CardCounts): CardCounts {
+  const out: CardCounts = {};
+  for (const r of CARD_LIST) if ((c[r] ?? 0) > 0) out[r] = c[r];
   return out;
 }
 

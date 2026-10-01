@@ -1,9 +1,11 @@
-import { COSTS, getScenario, type Action, type GameView, type PartialCounts, type PlayerId } from 'engine';
+import { COSTS, KNIGHTS_PER_LEVEL, MAX_CITY_WALLS, getScenario, type Action, type CardCounts, type GameView, type PlayerId } from 'engine';
 import type { ComponentChildren } from 'preact';
-import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { KNIGHT_COST, WALL_COST } from '../game/ck';
+import { CARD_INFO, CARD_LIST, handOfView } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import { ResGlyph } from './icons';
 import { PieceGlyph } from './pieces';
+import { KnightGlyph, WallGlyph } from './ckArt';
 import type { BuildPiece } from './sheets';
 
 /*
@@ -34,30 +36,32 @@ export function notNowReason(view: GameView, seat: PlayerId): string | null {
       return 'Place your free roads first';
     case 'scenario':
       return 'Finish the special move first';
+    case 'ck':
+      return ph.step === 'retreat' ? 'Wait while the displaced knight retreats' : ph.step === 'pillage' ? 'Wait while the pillaged cities are chosen' : 'Wait for the other players';
     default:
       return null;
   }
 }
 
-const lower = (r: string) => RESOURCE_INFO[r as keyof typeof RESOURCE_INFO].label.toLowerCase();
+const lower = (r: string) => CARD_INFO[r as keyof typeof CARD_INFO].label.toLowerCase();
 
-function costText(cost: PartialCounts): string {
-  return RESOURCE_LIST.filter((r) => (cost[r] ?? 0) > 0)
+function costText(cost: CardCounts): string {
+  return CARD_LIST.filter((r) => (cost[r] ?? 0) > 0)
     .map((r) => `${cost[r]} ${lower(r)}`)
     .join(', ');
 }
 
 /** What is missing from the hand to pay `cost`, e.g. "1 brick and 2 ore". */
-function missingText(cost: PartialCounts, hand: PartialCounts): string {
-  const parts = RESOURCE_LIST.filter((r) => (cost[r] ?? 0) > (hand[r] ?? 0)).map((r) => `${(cost[r] ?? 0) - (hand[r] ?? 0)} ${lower(r)}`);
+function missingText(cost: CardCounts, hand: CardCounts): string {
+  const parts = CARD_LIST.filter((r) => (cost[r] ?? 0) > (hand[r] ?? 0)).map((r) => `${(cost[r] ?? 0) - (hand[r] ?? 0)} ${lower(r)}`);
   return parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
 /** The cost as drawn cards, the ones the player doesn't hold yet faded. */
-function CostPips({ cost, hand }: { cost: PartialCounts; hand: PartialCounts }) {
+function CostPips({ cost, hand }: { cost: CardCounts; hand: CardCounts }) {
   return (
     <span class="bt-cost">
-      {RESOURCE_LIST.flatMap((r) =>
+      {CARD_LIST.flatMap((r) =>
         Array.from({ length: cost[r] ?? 0 }, (_, i) => (
           <span key={`${r}${i}`} class={i < (hand[r] ?? 0) ? 'pip have' : 'pip miss'}>
             <ResGlyph r={r} />
@@ -169,18 +173,32 @@ export interface DeckProps {
 
 export const BUILD_KEYS = ['1', '2', '3', '4', '5'];
 
-/** The build tiles in order (Seafarers adds the ship), for the grid and the number keys. */
+/**
+ * The build tiles in order, for the grid and the number keys: Seafarers
+ * adds the ship; Cities & Knights replaces the development card with the
+ * knight and the city wall.
+ */
 export function buildOrder(view: GameView): Array<BuildPiece | 'dev'> {
+  if (view.ck) return ['road', 'settlement', 'city', 'knight', 'wall'];
   return getScenario(view.scenario).rules.ships ? ['road', 'ship', 'settlement', 'city', 'dev'] : ['road', 'settlement', 'city', 'dev'];
+}
+
+/** The picture on a build tile. */
+function TileGlyph({ kind, fill, stroke }: { kind: BuildPiece | 'dev'; fill: string; stroke: string }) {
+  if (kind === 'knight') return <KnightGlyph level={1} active={false} fill={fill} stroke={stroke} />;
+  if (kind === 'wall') return <WallGlyph fill={fill} stroke={stroke} />;
+  return <PieceGlyph kind={kind} fill={fill} stroke={stroke} />;
 }
 
 export function ActionDeck(props: DeckProps) {
   const { view, legal, seat, colors } = props;
   const me = view.players[seat];
-  const hand: PartialCounts = me.resources ?? {};
+  const hand: CardCounts = handOfView(view, seat);
   const col = colors[seat];
   const later = notNowReason(view, seat);
-  const info: Record<BuildPiece | 'dev', { label: string; cost: PartialCounts; act: Action['type']; left: number; none: string; noSpot: string; verb: string }> = {
+  const ckMe = view.ck?.players[seat];
+  const basicLeft = KNIGHTS_PER_LEVEL - Object.values(view.ck?.knights ?? {}).filter((k) => k.owner === seat && k.level === 1).length;
+  const info: Record<BuildPiece | 'dev', { label: string; cost: CardCounts; act: Action['type']; left: number; none: string; noSpot: string; verb: string }> = {
     road: { label: 'Road', cost: COSTS.road, act: 'buildRoad', left: me.supply.roads, none: 'No roads left', noSpot: 'No free edge next to your roads and buildings', verb: 'Build a road' },
     ship: { label: 'Ship', cost: COSTS.ship, act: 'buildShip', left: me.supply.ships, none: 'No ships left', noSpot: 'No free sea edge next to your ships or coastal buildings', verb: 'Build a ship' },
     settlement: {
@@ -194,6 +212,24 @@ export function ActionDeck(props: DeckProps) {
     },
     city: { label: 'City', cost: COSTS.city, act: 'buildCity', left: me.supply.cities, none: 'No cities left', noSpot: 'No settlement of yours to upgrade', verb: 'Upgrade a settlement to a city' },
     dev: { label: 'Dev card', cost: COSTS.devCard, act: 'buyDevCard', left: view.devDeckCount, none: 'The development deck is empty', noSpot: 'Not possible right now', verb: 'Buy a development card' },
+    knight: {
+      label: 'Knight',
+      cost: KNIGHT_COST,
+      act: 'buildKnight',
+      left: basicLeft,
+      none: 'No basic knight left: promote one to free it',
+      noSpot: 'No free intersection on your roads',
+      verb: 'Hire a basic knight',
+    },
+    wall: {
+      label: 'City wall',
+      cost: WALL_COST,
+      act: 'buildCityWall',
+      left: MAX_CITY_WALLS - (ckMe?.walls.length ?? 0),
+      none: 'All 3 city walls are built',
+      noSpot: 'No city without a wall',
+      verb: 'Build a city wall (+2 hand limit on a 7)',
+    },
   };
   const order = buildOrder(view);
 
@@ -239,7 +275,7 @@ export function ActionDeck(props: DeckProps) {
               }}
             >
               <span class="bt-icon">
-                <PieceGlyph kind={key} fill={col.fill} stroke={col.stroke} />
+                <TileGlyph kind={key} fill={col.fill} stroke={col.stroke} />
                 <span class="bt-left" aria-label={key === 'dev' ? `${it.left} in the deck` : `${it.left} left`}>
                   {it.left}
                 </span>
@@ -251,7 +287,7 @@ export function ActionDeck(props: DeckProps) {
         })}
       </div>
       {props.secondary.length > 0 && (
-        <div class="deck-row">
+        <div class={props.secondary.length >= 4 ? 'deck-row four' : 'deck-row'}>
           {props.secondary.map((b) => (
             <DeckBtn key={b.key} b={b} cls="dbtn" />
           ))}

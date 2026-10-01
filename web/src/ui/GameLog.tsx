@@ -1,4 +1,4 @@
-import type { GameView, PlayerId, Resource } from 'engine';
+import type { Card, GameView, PlayerId } from 'engine';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { PlayerColor } from '../game/seats';
@@ -41,9 +41,10 @@ type Tok =
   | { t: 'text'; s: string }
   | { t: 'name'; s: string; id: PlayerId }
   | { t: 'roll'; n: number; a: number; b: number }
-  | { t: 'res'; n: number | null; r: Resource };
+  | { t: 'res'; n: number | null; r: Card };
 
-const RES = '(brick|lumber|wool|grain|ore)';
+/** Resources, and the Cities & Knights commodities. */
+const RES = '(brick|lumber|wool|grain|ore|paper|cloth|coin)';
 const WORDISH = /[\p{L}\p{N}]/u;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -83,8 +84,8 @@ function tokenize(msg: string, view: GameView): Tok[] {
     else if (m[2] !== undefined) {
       out.push({ t: 'text', s: 'rolls ' });
       out.push({ t: 'roll', n: Number(m[2]), a: Number(m[3]), b: Number(m[4]) });
-    } else if (m[5] !== undefined) out.push({ t: 'res', n: Number(m[5]), r: m[6] as Resource });
-    else out.push({ t: 'res', n: null, r: m[7] as Resource });
+    } else if (m[5] !== undefined) out.push({ t: 'res', n: Number(m[5]), r: m[6] as Card });
+    else out.push({ t: 'res', n: null, r: m[7] as Card });
     last = m.index + m[0].length;
   }
   if (last < msg.length) out.push({ t: 'text', s: msg.slice(last) });
