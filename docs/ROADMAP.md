@@ -116,9 +116,9 @@ The site is `https://englader.github.io/Island-traders/`.
 
 - Cities & Knights, in phases: (1) rules spec and engine core (done:
   [`cities-and-knights.md`](cities-and-knights.md)), (2) the progress-card
-  effects (done), (3) computer players for it, (4) the browser UI and art
-  (done but for playing progress cards in the browser), (5) the 5–6 player
-  extension and Seafarers combinations.
+  effects (done), (3) computer players for it (done), (4) the browser UI and
+  art (done but for playing progress cards in the browser), (5) the 5–6
+  player extension and Seafarers combinations.
 - 5–6 player maps for Seafarers scenarios 5–8 (The Forgotten Tribe, Cloth
   for Catan, The Pirate Islands, The Wonders of Catan): the base game, New
   World and scenarios 1–4 take 5–6 players today.

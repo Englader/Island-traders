@@ -516,11 +516,13 @@ them only when `state.ck` exists.
   `turnChoices` in the main phase. Section 10 has the API per card;
   `test/progressCards.test.ts` covers each card, `test/progressStress.test.ts`
   plays whole games with every card.
-- **Phase 3, bots.** `src/bots/ckBot.ts` is a simple fallback (improvements,
-  knights when the ship is near, walls, legal answers to every decision,
-  progress cards played when they plainly help: `ckPreRollAction` for the
-  Alchemist, `ckMainAction` for the rest, `ckPhaseAction` for the card
-  steps).
+- **Phase 3, bots (done).** `heuristicAction` hands every decision of a C&K
+  game to `ckHeuristicAction` (`src/bots/ckBot.ts`); the level's profile
+  (`ck` in `PROFILES`, `src/bots/heuristicBot.ts`) sets how it watches the
+  barbarians, picks improvement tracks, plays progress cards and uses its
+  knights. The README's "Computer players" section describes the levels and
+  the league results (`npm run bots:league -- 60 ck`);
+  `test/ckBot.test.ts` covers the key decisions.
 - **Phase 4, UI.** `viewFor(...).ck` (`CkView`) has everything public plus the
   viewer's own commodities and progress cards, and `played`, the progress
   cards played so far. A card step's `data` (what a Spy or Master Merchant

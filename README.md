@@ -37,8 +37,8 @@ GitHub Actions)
   knights, then who loses a city or becomes Defender of Catan. Progress cards
   are drawn and held (with a card turning over), but not played yet
 - Pass-and-play on one device: a hand-over screen keeps hands hidden
-- Computer players at three levels (easy, medium, hard) and an adjustable
-  pace, with a feed of their moves
+- Computer players at three levels (easy, medium, hard), in Cities & Knights
+  too, and an adjustable pace, with a feed of their moves
 - Trading with players, including open offers ("who gives me a brick?" or
   "what will you give for my brick?") that the others answer with
   counter-offers; the trade menu shows your cards
@@ -119,6 +119,39 @@ games, hard won 68%, medium 28% and easy 3%. Over the nine Seafarers
 scenarios (30–60 games each), hard won 55%, medium 44% and easy 1%. On the
 5–6 maps of scenarios 1–4 (30 games per scenario, player count and layout,
 480 in all, every one finished), hard won 56%, medium 42% and easy 2%.
+
+#### In Cities & Knights
+
+The same three levels play the expansion with a strategy of their own
+(`src/bots/ckBot.ts`, set by the `ck` part of each level's profile). Offers
+and answers follow the table above, with every card valued by what the
+player is saving for, commodities included; medium and hard trade with the
+bank and harbors at their best rates (2:1 with the Merchant Guild, the
+merchant or a Merchant Fleet) and discard the cards they need least.
+
+| | Easy | Medium | Hard |
+|---|---|---|---|
+| Set-up | often not the best spot; a commodity counts as an ordinary card | its city where forest, pasture and mountains give commodities, sometimes not the best spot | the same, the best spot it sees, commodities weighted most |
+| Barbarians | notices the ship only in its last two moves, and not always | from three moves out keeps a knight ready; wakes knights when an attack before its next turn is likely and it would lose a city as the weakest defender | from five moves out; weighs the odds of an attack before its next turn and the others' idle knights, and races for Defender of Catan |
+| Knights | hires one when it has none; chases the robber off its hexes | also guards its best hexes against the robber | also moves knights into opponents' paths and displaces knights in its way |
+| City improvements | whatever it can afford | one main track by commodity income, toward a metropolis; the cheap levels of the others | also weighs the level-3 abilities (Aqueduct for a weak producer, Merchant Guild for a heavy commodity producer, Fortress for strong knights) and the others' levels: a race it can win, level 5 to take or keep a metropolis, never a metropolis locked at level 5 |
+| City walls | none | when its hand is large, under a metropolis first | the same |
+| Progress cards | each card as soon as it can, with random choices | when a card plainly helps | when it matters most: the Alchemist for a big roll, Spy, Master Merchant, Bishop, Saboteur and Diplomat against the leader, the Deserter on the strongest knights |
+| Near 13 VP | – | cities and settlements first | also Longest Road and Defender of Catan |
+
+`npm run bots:league -- 120 ck official 3` (and `random`, and 4 players)
+plays the levels against each other. Over 120 games per setting, 480 in
+all, every one finished:
+
+| Setting | Easy | Medium | Hard | Turns a game (all players) |
+|---|---|---|---|---|
+| 3 players, beginners' map | 1% | 32% | 68% | 65 |
+| 3 players, random map | 0% | 26% | 74% | 65 |
+| 4 players, beginners' map | 2% | 34% | 64% | 75 |
+| 4 players, random map | 3% | 33% | 65% | 75 |
+
+In all, hard won 68%, medium 31% and easy 1%. A computer move took 0.6 ms
+on average and 34 ms at the slowest, the engine's own work included.
 
 ### Dice
 
