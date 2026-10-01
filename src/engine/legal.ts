@@ -1,10 +1,21 @@
+import { handOf, hasCards } from '../ck/cards.js';
+import {
+  cardCombinations,
+  ckBankTradeActions,
+  ckBuildActions,
+  ckPhaseActions,
+  ckPlayersToAct,
+  knightActions,
+  ownTurnProgressDiscards,
+  progressPlays,
+} from '../ck/legal.js';
 import { COSTS, RESOURCES } from '../core/constants.js';
 import { hasAtLeast, total } from '../core/resources.js';
 import type { Action, GameState, HarborType, PartialCounts, PlayerId, Resource } from '../core/types.js';
-import { legalRobberMoves, robberVictimsAt, shipError, topo, tradeRates } from '../rules/queries.js';
+import { robberVictimsAt, shipError, topo, tradeRates } from '../rules/queries.js';
 import { movableShips } from '../rules/ships.js';
 import { scenarioOf } from '../scenarios/registry.js';
-import { currentSetupPlayer, devCardError, harborEdgeError } from './apply.js';
+import { currentSetupPlayer, devCardError, harborEdgeError, robberPhaseMoves } from './apply.js';
 import {
   legalCities,
   legalRoads,
@@ -28,6 +39,8 @@ export function playersToAct(s: GameState): PlayerId[] {
       return [ph.queue[0]];
     case 'scenario':
       return [ph.player];
+    case 'ck':
+      return ckPlayersToAct(s);
     case 'main': {
       const others = new Set<PlayerId>();
       for (const t of s.turn.trades) for (const p of t.to) others.add(p);
@@ -92,7 +105,9 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
     case 'discard': {
       const need = ph.pending[player];
       if (need === undefined) return [];
-      for (const cards of combinations(pl.resources, need)) out.push({ type: 'discard', player, cards });
+      // Cities & Knights: commodities are discarded like resources.
+      const options = s.ck ? cardCombinations(handOf(s, player), need) : combinations(pl.resources, need);
+      for (const cards of options) out.push({ type: 'discard', player, cards });
       return out;
     }
     case 'gold': {
@@ -104,7 +119,7 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
     }
     case 'robber': {
       if (!isActor) return [];
-      for (const m of legalRobberMoves(s, player)) {
+      for (const m of robberPhaseMoves(s)) {
         const victims = robberVictimsAt(s, player, m.piece, m.hex);
         if (victims.length === 0) out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex });
         for (const v of victims) {
@@ -125,10 +140,13 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
     }
     case 'scenario':
       return sc.hooks.legalActions?.(s, player) ?? [];
+    case 'ck':
+      return ckPhaseActions(s, player);
     case 'preRoll': {
       if (!isActor) return [];
       out.push({ type: 'rollDice', player });
       out.push(...devCardActions(s, player));
+      if (s.ck) out.push(...progressPlays(s, player));
       out.push(...(sc.hooks.legalActions?.(s, player) ?? []));
       return out;
     }
@@ -143,7 +161,7 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
         for (const t of s.turn.trades) {
           if (!t.to.includes(player)) continue;
           // an open offer is answered with a counter-offer (proposeTrade with replyTo) or declined
-          if (!t.open && hasAtLeast(pl.resources, t.get) && !t.accepted.includes(player)) {
+          if (!t.open && hasCards(s, player, t.get) && !t.accepted.includes(player)) {
             out.push({ type: 'acceptTrade', player, tradeId: t.id });
           }
           if (!t.rejected.includes(player)) out.push({ type: 'rejectTrade', player, tradeId: t.id });
@@ -152,8 +170,16 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
       }
       out.push(...buildActions(s, player));
       out.push(...devCardActions(s, player));
+      if (s.ck) {
+        out.push(...ckBuildActions(s, player));
+        if (s.turn.role === 'active') {
+          out.push(...knightActions(s, player));
+          out.push(...progressPlays(s, player));
+          out.push(...ownTurnProgressDiscards(s, player));
+        }
+      }
       const tradeOpen = !(s.options.tradeBuildMode === 'separate' && s.turn.buildingStarted);
-      if (tradeOpen) out.push(...bankTradeActions(s, player));
+      if (tradeOpen) out.push(...(s.ck ? ckBankTradeActions(s, player) : bankTradeActions(s, player)));
       if (sc.rules.shipMoves && !s.turn.shipMoved) {
         for (const from of movableShips(s, player)) {
           for (const to of topo(s).edgeIds) {
@@ -174,12 +200,13 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
           for (const partner of t.accepted) out.push({ type: 'confirmTrade', player, tradeId: t.id, partner });
           out.push({ type: 'cancelTrade', player, tradeId: t.id });
         } else if (t.to.includes(player)) {
-          if (hasAtLeast(pl.resources, t.get)) out.push({ type: 'acceptTrade', player, tradeId: t.id });
+          if (hasCards(s, player, t.get)) out.push({ type: 'acceptTrade', player, tradeId: t.id });
           out.push({ type: 'rejectTrade', player, tradeId: t.id });
         }
       }
       out.push(...(sc.hooks.legalActions?.(s, player) ?? []));
-      out.push({ type: 'endTurn', player });
+      // Cities & Knights: over the progress card limit, discard before ending the turn.
+      if (!(s.ck && s.turn.role === 'active' && ownTurnProgressDiscards(s, player).length > 0)) out.push({ type: 'endTurn', player });
       return out;
     }
   }

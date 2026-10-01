@@ -199,6 +199,18 @@ Seafarers scenarios 1–4 on the Seafarers 5-6 maps, and New World. With 5–6
 players Seafarers uses the 5–6 bank (24 of each resource) and the 34-card
 development deck, as in the base game.
 
+## 14. Cities & Knights
+
+The *Cities & Knights* expansion is a rules module (`GameOptions.citiesAndKnights`,
+state in `GameState.ck`, code in `src/ck/`) rather than a scenario, so it can
+later combine with the Seafarers scenarios and 5–6 players; for now it plays on
+the base game with 3–4 players. It follows the 5th-edition *Game Rules &
+Almanac* (2020), with the 2025 rulebook for unclear points. The rules as
+implemented, every engine choice, the full list of progress cards and the
+beginners' map are in [`cities-and-knights.md`](cities-and-knights.md).
+Progress-card effects, C&K computer players, the browser UI and the 5–6 player
+extension come in later phases.
+
 ## Scenario rules and their sources
 
 Scenarios 1–9 were checked against the official rulebooks on catan.com:

@@ -8,7 +8,7 @@ export { renderAscii } from './board/ascii.js';
 export * from './board/mapSpec.js';
 export { spreadEdges, styledMap, type DraftMap, type MapStyle, type StyleRules } from './board/generator.js';
 export { createGame, DEFAULT_OPTIONS } from './engine/createGame.js';
-export { applyAction, checkVictory, cloneState, currentSetupPlayer, harborEdgeError, setupOrder } from './engine/apply.js';
+export { applyAction, checkVictory, cloneState, currentSetupPlayer, harborEdgeError, robberPhaseMoves, setupOrder } from './engine/apply.js';
 export { legalActions, playersToAct } from './engine/legal.js';
 export * from './engine/placements.js';
 export { viewFor, type GameView, type PlayerPublicView } from './engine/view.js';
@@ -20,4 +20,5 @@ export { getScenario, hasOfficialMap, listScenarios, mapSpecFor, registerScenari
 export { baseRules, seafarersRules, DEFAULT_SETUP, type ScenarioDef, type ScenarioHooks, type ScenarioRules, type SetupRound } from './scenarios/types.js';
 export { BUILT_IN_SCENARIOS } from './scenarios/all.js';
 export { randomAction, simulate } from './bots/randomBot.js';
+export * from './ck/index.js';
 export { BOT_LEVELS, botProfile, heuristicAction, simulateHeuristic, spotValue, production, potentialField, type BotLevel } from './bots/heuristicBot.js';

@@ -1,7 +1,7 @@
 import { RESOURCES } from '../core/constants.js';
-import { formatCounts, total } from '../core/resources.js';
+import { formatCounts } from '../core/resources.js';
 import { nextInt } from '../core/rng.js';
-import type { DevCardType, GameState, PartialCounts, PlayerId, Resource } from '../core/types.js';
+import type { CardCounts, DevCardType, GameState, PartialCounts, PlayerId, Resource } from '../core/types.js';
 
 export function log(state: GameState, msg: string, visibleTo?: PlayerId[]): void {
   state.log.push(visibleTo ? { turn: state.turn.number, msg, visibleTo } : { turn: state.turn.number, msg });
@@ -88,6 +88,7 @@ export function addGoldChoice(state: GameState, owed: Record<number, number>): v
   state.phase = { kind: 'gold', pending, resume: state.phase };
 }
 
-export function describeCounts(c: PartialCounts): string {
-  return total(c) === 0 ? 'nothing' : formatCounts(c);
+/** "2 brick, 1 ore" or "nothing" (commodities included in Cities & Knights). */
+export function describeCounts(c: CardCounts): string {
+  return formatCounts(c);
 }

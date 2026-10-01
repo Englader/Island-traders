@@ -1,6 +1,10 @@
-import type { DevCardType, HarborType, PartialCounts, Resource, Terrain } from './types.js';
+import type { Card, Commodity, DevCardType, HarborType, PartialCounts, Resource, Terrain } from './types.js';
 
 export const RESOURCES: readonly Resource[] = ['brick', 'lumber', 'wool', 'grain', 'ore'];
+
+/** Cities & Knights commodities, and every card that can be in a hand (resources first). */
+export const COMMODITIES: readonly Commodity[] = ['paper', 'cloth', 'coin'];
+export const CARDS: readonly Card[] = [...RESOURCES, ...COMMODITIES];
 
 export const TERRAIN_RESOURCE: Partial<Record<Terrain, Resource>> = {
   hills: 'brick',

@@ -1,5 +1,5 @@
-import { RESOURCES } from './constants.js';
-import type { PartialCounts, Resource, ResourceCounts } from './types.js';
+import { CARDS, COMMODITIES, RESOURCES } from './constants.js';
+import type { CardCounts, PartialCounts, Resource, ResourceCounts } from './types.js';
 
 export function emptyCounts(): ResourceCounts {
   return { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0 };
@@ -12,6 +12,13 @@ export function filledCounts(n: number): ResourceCounts {
 export function total(c: PartialCounts): number {
   let t = 0;
   for (const r of RESOURCES) t += c[r] ?? 0;
+  return t;
+}
+
+/** Resources and commodities (Cities & Knights) together. */
+export function cardTotal(c: CardCounts): number {
+  let t = 0;
+  for (const k of CARDS) t += c[k] ?? 0;
   return t;
 }
 
@@ -68,8 +75,10 @@ export function listToCounts(list: readonly Resource[]): ResourceCounts {
   return c;
 }
 
-export function formatCounts(c: PartialCounts): string {
+export function formatCounts(c: CardCounts): string {
   const parts: string[] = [];
   for (const r of RESOURCES) if ((c[r] ?? 0) > 0) parts.push(`${c[r]} ${r}`);
+  // commodities only ever appear in Cities & Knights games
+  for (const k of COMMODITIES) if ((c[k] ?? 0) > 0) parts.push(`${c[k]} ${k}`);
   return parts.length ? parts.join(', ') : 'nothing';
 }

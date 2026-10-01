@@ -1,5 +1,19 @@
+import { bankHas, cardKinds, cardRates, hasCards, moveCards, sameCards, stealRandomCard, validCards } from '../ck/cards.js';
+import { CHASED_ROBBER_NEEDS_NUMBER } from '../ck/constants.js';
+import {
+  ckAction,
+  ckCityError,
+  ckEndTurnError,
+  ckRollDice,
+  ckSettle,
+  isTipped,
+  robberActive,
+  setupPlacesCity,
+  sevenLimit,
+  untip,
+} from '../ck/engine.js';
 import { COSTS, LARGEST_ARMY_MIN, RESOURCES } from '../core/constants.js';
-import { hasAtLeast, isResource, sameCounts, total, transfer, validCounts } from '../core/resources.js';
+import { cardTotal, hasAtLeast, isResource, total, validCounts } from '../core/resources.js';
 import { rollDie } from '../core/rng.js';
 import type {
   Action,
@@ -8,6 +22,7 @@ import type {
   EdgeId,
   GameState,
   HarborType,
+  HexId,
   Phase,
   PlayerId,
   TradeOffer,
@@ -137,6 +152,22 @@ function dispatch(s: GameState, a: Action): string | null {
       return bankTrade(s, a);
     case 'endTurn':
       return endTurn(s, a);
+    case 'buildKnight':
+    case 'activateKnight':
+    case 'promoteKnight':
+    case 'moveKnight':
+    case 'displaceKnight':
+    case 'retreatKnight':
+    case 'chaseRobber':
+    case 'buildCityWall':
+    case 'improveCity':
+    case 'pillageCity':
+    case 'drawProgress':
+    case 'discardProgress':
+    case 'aqueduct':
+    case 'playProgress':
+    case 'progressChoice':
+      return ckAction(s, a);
     case 'scenario': {
       const handler = scenarioOf(s).hooks.action;
       if (!handler) return 'this scenario has no special actions';
@@ -175,12 +206,14 @@ function beginPart(s: GameState, p: PlayerId, role: TurnRole): void {
   s.turn.buildingStarted = false;
   s.turn.trades = [];
   s.turn.offers = 0;
+  if (s.ck) s.ck.turnEffects = [];
 }
 
 function startTurn(s: GameState, p: PlayerId): void {
   s.turn.number++;
   s.turn.current = p;
   s.turn.dice = null;
+  if (s.ck) s.ck.event = null;
   beginPart(s, p, 'active');
   s.phase = { kind: 'preRoll' };
   log(s, `--- Turn ${s.turn.number}: ${nameOf(s, p)} ---`);
@@ -214,11 +247,28 @@ function gameOver(s: GameState, winner: PlayerId | null, reason: string): void {
   log(s, winner === null ? `Game over: ${reason}` : `${nameOf(s, winner)} wins: ${reason}`);
 }
 
+/**
+ * Where the robber phase lets the actor move the robber or pirate: every
+ * legal move, limited to one piece when a knight chased it away (Cities &
+ * Knights), and for the chased robber to numbered hexes.
+ */
+export function robberPhaseMoves(s: GameState): Array<{ piece: 'robber' | 'pirate'; hex: HexId }> {
+  const ph = s.phase;
+  const moves = legalRobberMoves(s, s.turn.actor);
+  if (ph.kind !== 'robber' || (!ph.piece && ph.reason !== 'chase')) return moves;
+  return moves.filter((m) => (!ph.piece || m.piece === ph.piece) && chasedHexOk(s, ph.reason, m.piece, m.hex));
+}
+
+function chasedHexOk(s: GameState, reason: string, piece: 'robber' | 'pirate', hex: HexId): boolean {
+  return !(reason === 'chase' && piece === 'robber' && CHASED_ROBBER_NEEDS_NUMBER && s.board.hexes[hex]?.token == null);
+}
+
 /** Auto-resolves phases with nothing left to do, then checks for the end of the game. */
 function settle(s: GameState): void {
   for (let guard = 0; guard < 20; guard++) {
     const ph = s.phase;
-    if (ph.kind === 'robber' && legalRobberMoves(s, s.turn.actor).length === 0) {
+    if (ph.kind === 'ck' && ckSettle(s)) continue;
+    if (ph.kind === 'robber' && robberPhaseMoves(s).length === 0) {
       log(s, 'The robber cannot move anywhere');
       s.phase = ph.resume;
       continue;
@@ -307,10 +357,13 @@ function setupSettlement(s: GameState, a: A<'placeSettlement'>): string | null {
   const err = setupSettlementError(s, a.player, a.vertex);
   if (err) return err;
   const pl = s.players[a.player];
-  s.board.buildings[a.vertex] = { owner: a.player, type: 'settlement' };
-  pl.supply.settlements--;
+  // Cities & Knights: the placement that collects starting resources is a city.
+  const city = setupPlacesCity(s, ph.round);
+  s.board.buildings[a.vertex] = { owner: a.player, type: city ? 'city' : 'settlement' };
+  if (city) pl.supply.cities--;
+  else pl.supply.settlements--;
   for (const z of vertexZones(s, a.vertex)) if (!pl.homeZones.includes(z)) pl.homeZones.push(z);
-  log(s, `${pl.name} places a starting settlement`);
+  log(s, `${pl.name} places a starting ${city ? 'city' : 'settlement'}`);
   const round = scenarioOf(s).rules.setupRounds[ph.round];
   let gold = 0;
   if (round.collect) {
@@ -449,6 +502,11 @@ function robberPhaseOr(s: GameState, reason: 'seven' | 'knight', resume: Phase):
 function rollDice(s: GameState, a: A<'rollDice'>): string | null {
   if (s.phase.kind !== 'preRoll') return 'you cannot roll now';
   if (!isActor(s, a.player)) return 'it is not your turn';
+  if (s.ck) {
+    // the event die first, then production (src/ck/engine.ts)
+    ckRollDice(s, a.player);
+    return null;
+  }
   const dice: [number, number] = [rollDie(s.rng), rollDie(s.rng)];
   s.turn.dice = dice;
   (s.rolls ??= []).push({ by: a.player, dice: [dice[0], dice[1]], turn: s.turn.number });
@@ -472,12 +530,12 @@ function rollDice(s: GameState, a: A<'rollDice'>): string | null {
   return null;
 }
 
-/** Players holding more than the limit discard half, rounded down. */
+/** Players holding more than the limit (Cities & Knights: +2 per city wall) discard half, rounded down. */
 function sevenDiscards(s: GameState): Record<string, number> {
   const pending: Record<string, number> = {};
   for (const pl of s.players) {
     const n = handSize(s, pl.id);
-    if (n > s.options.discardLimit) pending[pl.id] = Math.floor(n / 2);
+    if (n > sevenLimit(s, pl.id)) pending[pl.id] = Math.floor(n / 2);
   }
   return pending;
 }
@@ -487,10 +545,10 @@ function discard(s: GameState, a: A<'discard'>): string | null {
   if (ph.kind !== 'discard') return 'no discards are due';
   const need = ph.pending[a.player];
   if (need === undefined) return 'you do not need to discard';
-  if (!validCounts(a.cards)) return 'invalid cards';
-  if (total(a.cards) !== need) return `you must discard exactly ${need} cards`;
-  if (!hasAtLeast(s.players[a.player].resources, a.cards)) return 'you do not have those cards';
-  transfer(s.players[a.player].resources, s.bank, a.cards);
+  if (!validCards(s, a.cards)) return 'invalid cards';
+  if (cardTotal(a.cards) !== need) return `you must discard exactly ${need} cards`;
+  if (!hasCards(s, a.player, a.cards)) return 'you do not have those cards';
+  moveCards(s, a.player, 'bank', a.cards);
   delete ph.pending[a.player];
   log(s, `${nameOf(s, a.player)} discards ${describeCounts(a.cards)}`);
   return null;
@@ -501,6 +559,9 @@ function moveRobber(s: GameState, a: A<'moveRobber'>): string | null {
   if (ph.kind !== 'robber') return 'the robber is not being moved now';
   if (!isActor(s, a.player)) return 'it is not your turn';
   if (a.piece !== 'robber' && a.piece !== 'pirate') return 'unknown piece';
+  if (!robberActive(s)) return 'the robber stays put until the barbarians first attack';
+  if (ph.piece && a.piece !== ph.piece) return `only the ${ph.piece} can be moved now`;
+  if (!chasedHexOk(s, ph.reason, a.piece, a.hex)) return 'a chased robber must go to a hex with a number';
   const hooks = scenarioOf(s).hooks;
   if (a.piece === 'pirate' && hooks.canMovePirate && !hooks.canMovePirate(s, a.player)) {
     return 'you cannot move the pirate yet';
@@ -524,8 +585,11 @@ function moveRobber(s: GameState, a: A<'moveRobber'>): string | null {
   else s.board.pirate = a.hex;
   log(s, `${nameOf(s, a.player)} moves the ${a.piece}`);
   if (a.victim !== undefined) {
-    if (take === 'resource') stealRandom(s, a.player, a.victim);
-    else hooks.steal!(s, a.player, a.victim, take);
+    // Cities & Knights: the robber takes resources and commodities alike.
+    if (take === 'resource') {
+      if (s.ck) stealRandomCard(s, a.player, a.victim);
+      else stealRandom(s, a.player, a.victim);
+    } else hooks.steal!(s, a.player, a.victim, take);
   }
   s.phase = ph.resume;
   return null;
@@ -608,14 +672,22 @@ function buildSettlement(s: GameState, a: A<'buildSettlement'>): string | null {
 function buildCity(s: GameState, a: A<'buildCity'>): string | null {
   const e = buildPhaseError(s, a.player);
   if (e) return e;
-  const err = cityError(s, a.player, a.vertex);
+  // Cities & Knights: a pillaged city lying on its side is rebuilt first, and needs no city from the supply.
+  const tipped = isTipped(s, a.vertex) && s.board.buildings[a.vertex]?.owner === a.player;
+  const err = tipped ? null : cityError(s, a.player, a.vertex);
   if (err) return err;
+  const ckErr = s.ck ? ckCityError(s, a.player, a.vertex) : null;
+  if (ckErr) return ckErr;
   if (!hasAtLeast(s.players[a.player].resources, COSTS.city)) return 'not enough resources';
   payToBank(s, a.player, COSTS.city);
   s.turn.buildingStarted = true;
   s.board.buildings[a.vertex] = { owner: a.player, type: 'city' };
-  s.players[a.player].supply.cities--;
-  s.players[a.player].supply.settlements++;
+  if (tipped) {
+    untip(s, a.vertex);
+  } else {
+    s.players[a.player].supply.cities--;
+    s.players[a.player].supply.settlements++;
+  }
   log(s, `${nameOf(s, a.player)} upgrades to a city`);
   return null;
 }
@@ -623,6 +695,7 @@ function buildCity(s: GameState, a: A<'buildCity'>): string | null {
 function buyDevCard(s: GameState, a: A<'buyDevCard'>): string | null {
   const e = buildPhaseError(s, a.player);
   if (e) return e;
+  if (s.ck) return 'Cities & Knights has no development cards';
   if (s.devDeck.length === 0) return 'the development card deck is empty';
   if (!hasAtLeast(s.players[a.player].resources, COSTS.devCard)) return 'not enough resources';
   payToBank(s, a.player, COSTS.devCard);
@@ -749,10 +822,10 @@ function playMonopoly(s: GameState, a: A<'playMonopoly'>): string | null {
 // Trading
 // ---------------------------------------------------------------------------
 
-function tradeShapeError(give: unknown, get: unknown): string | null {
-  if (!validCounts(give) || !validCounts(get)) return 'invalid trade';
-  if (total(give) === 0 || total(get) === 0) return 'trades must exchange cards for cards (no gifts)';
-  for (const r of RESOURCES) {
+function tradeShapeError(s: GameState, give: unknown, get: unknown): string | null {
+  if (!validCards(s, give) || !validCards(s, get)) return 'invalid trade';
+  if (cardTotal(give) === 0 || cardTotal(get) === 0) return 'trades must exchange cards for cards (no gifts)';
+  for (const r of cardKinds(s)) {
     if ((give[r] ?? 0) > 0 && (get[r] ?? 0) > 0) return 'cannot trade a resource for the same resource';
   }
   return null;
@@ -771,11 +844,11 @@ function proposeTrade(s: GameState, a: A<'proposeTrade'>): string | null {
   let open: 'give' | 'get' | undefined;
   if (a.open) {
     if (a.player !== actor) return 'only the active player can ask for offers';
-    if (!validCounts(a.give) || !validCounts(a.get)) return 'invalid trade';
-    if ((total(a.give) === 0) === (total(a.get) === 0)) return 'an open offer names only what you give or only what you want';
-    open = total(a.give) === 0 ? 'give' : 'get';
+    if (!validCards(s, a.give) || !validCards(s, a.get)) return 'invalid trade';
+    if ((cardTotal(a.give) === 0) === (cardTotal(a.get) === 0)) return 'an open offer names only what you give or only what you want';
+    open = cardTotal(a.give) === 0 ? 'give' : 'get';
   } else {
-    const shape = tradeShapeError(a.give, a.get);
+    const shape = tradeShapeError(s, a.give, a.get);
     if (shape) return shape;
   }
   if (!Array.isArray(a.to) || a.to.length === 0) return 'choose who to trade with';
@@ -789,10 +862,10 @@ function proposeTrade(s: GameState, a: A<'proposeTrade'>): string | null {
     answers = s.turn.trades.find((t) => t.id === a.replyTo);
     if (!answers) return 'that offer is no longer open';
     if (answers.from !== actor || !answers.to.includes(a.player)) return 'you can only answer offers made to you';
-    if (answers.open === 'give' && !sameCounts(a.give, answers.get)) return `your offer must give ${describeCounts(answers.get)}`;
-    if (answers.open === 'get' && !sameCounts(a.get, answers.give)) return `your offer must ask for ${describeCounts(answers.give)}`;
+    if (answers.open === 'give' && !sameCards(s, a.give, answers.get)) return `your offer must give ${describeCounts(answers.get)}`;
+    if (answers.open === 'get' && !sameCards(s, a.get, answers.give)) return `your offer must ask for ${describeCounts(answers.give)}`;
   }
-  if (!hasAtLeast(s.players[a.player].resources, a.give)) return 'you do not have those cards';
+  if (!hasCards(s, a.player, a.give)) return 'you do not have those cards';
   const id = s.turn.nextTradeId++;
   const offer: TradeOffer = { id, from: a.player, to, give: { ...a.give }, get: { ...a.get }, accepted: [], rejected: [] };
   if (open) offer.open = open;
@@ -817,12 +890,10 @@ function closeOpenOffer(s: GameState, id: number): void {
 
 function executeTrade(s: GameState, tradeId: number, partner: PlayerId): string | null {
   const offer = s.turn.trades.find((t) => t.id === tradeId)!;
-  const from = s.players[offer.from].resources;
-  const to = s.players[partner].resources;
-  if (!hasAtLeast(from, offer.give)) return `${nameOf(s, offer.from)} no longer has the offered cards`;
-  if (!hasAtLeast(to, offer.get)) return `${nameOf(s, partner)} no longer has the requested cards`;
-  transfer(from, to, offer.give);
-  transfer(to, from, offer.get);
+  if (!hasCards(s, offer.from, offer.give)) return `${nameOf(s, offer.from)} no longer has the offered cards`;
+  if (!hasCards(s, partner, offer.get)) return `${nameOf(s, partner)} no longer has the requested cards`;
+  moveCards(s, offer.from, partner, offer.give);
+  moveCards(s, partner, offer.from, offer.get);
   s.turn.trades = s.turn.trades.filter((t) => t.id !== tradeId);
   // a counter-offer to an open offer settles it: the others are no longer needed
   const answered = offer.replyTo === undefined ? undefined : s.turn.trades.find((t) => t.id === offer.replyTo);
@@ -838,7 +909,7 @@ function acceptTrade(s: GameState, a: A<'acceptTrade'>): string | null {
   if (!offer) return 'no such offer';
   if (!offer.to.includes(a.player)) return 'the offer is not addressed to you';
   if (offer.open) return 'make an offer for it instead';
-  if (!hasAtLeast(s.players[a.player].resources, offer.get)) return 'you do not have the requested cards';
+  if (!hasCards(s, a.player, offer.get)) return 'you do not have the requested cards';
   if (offer.from !== s.turn.actor) {
     // A counter-offer to the active player: accepting completes it.
     return executeTrade(s, offer.id, a.player);
@@ -882,26 +953,30 @@ function cancelTrade(s: GameState, a: A<'cancelTrade'>): string | null {
   return null;
 }
 
-/** Maritime trade with the supply: 4:1, 3:1 at a generic harbor, 2:1 at a matching harbor. */
+/**
+ * Maritime trade with the supply: 4:1, 3:1 at a generic harbor, 2:1 at a
+ * matching harbor (Cities & Knights: commodities too, see `cardRates`).
+ */
 function bankTrade(s: GameState, a: A<'bankTrade'>): string | null {
   const e = mainPhaseError(s, a.player, ['active', 'paired']);
   if (e) return e;
   if (s.options.tradeBuildMode === 'separate' && s.turn.buildingStarted) return 'the trade phase is over';
-  const shape = tradeShapeError(a.give, a.get);
+  const shape = tradeShapeError(s, a.give, a.get);
   if (shape) return shape;
-  const rates = tradeRates(s, a.player);
+  const rates: Partial<Record<string, number>> = s.ck ? cardRates(s, a.player) : tradeRates(s, a.player);
   let credits = 0;
-  for (const r of RESOURCES) {
+  for (const r of cardKinds(s)) {
     const n = a.give[r] ?? 0;
     if (n === 0) continue;
-    if (n % rates[r] !== 0) return `${r} trades at ${rates[r]}:1`;
-    credits += n / rates[r];
+    const rate = rates[r]!;
+    if (n % rate !== 0) return `${r} trades at ${rate}:1`;
+    credits += n / rate;
   }
-  if (credits !== total(a.get)) return `that pays for ${credits} card(s)`;
-  if (!hasAtLeast(s.players[a.player].resources, a.give)) return 'you do not have those cards';
-  if (!hasAtLeast(s.bank, a.get)) return 'the bank does not have those cards';
-  transfer(s.players[a.player].resources, s.bank, a.give);
-  transfer(s.bank, s.players[a.player].resources, a.get);
+  if (credits !== cardTotal(a.get)) return `that pays for ${credits} card(s)`;
+  if (!hasCards(s, a.player, a.give)) return 'you do not have those cards';
+  if (!bankHas(s, a.get)) return 'the bank does not have those cards';
+  moveCards(s, a.player, 'bank', a.give);
+  moveCards(s, 'bank', a.player, a.get);
   log(s, `${nameOf(s, a.player)} trades ${describeCounts(a.give)} with the bank for ${describeCounts(a.get)}`);
   return null;
 }
@@ -924,6 +999,8 @@ function endTurn(s: GameState, a: A<'endTurn'>): string | null {
     return null;
   }
   if (s.phase.kind !== 'main') return s.phase.kind === 'preRoll' ? 'you must roll the dice first' : 'finish the current step first';
+  const ckErr = ckEndTurnError(s, a.player);
+  if (ckErr) return ckErr;
   s.turn.trades = [];
   if (s.turn.role === 'active' && n >= 5) {
     if (s.options.fiveSixMode === 'paired') {
