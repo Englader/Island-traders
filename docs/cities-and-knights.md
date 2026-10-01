@@ -526,7 +526,13 @@ them only when `state.ck` exists.
   cards played so far. A card step's `data` (what a Spy or Master Merchant
   sees) is in `viewFor(...).phase` for its player only. `PlayerStats.producedCommodities`
   counts commodities; `expected36` counts all cards a roll should give, so
-  compare it with resources plus commodities.
+  compare it with resources plus commodities. The browser game (part 3,
+  `web/src/ui/CkPanels.tsx`, `ckArt.tsx`, `web/src/game/ck.ts`, `fx.ts`)
+  plays everything but a human's own progress cards: knights, walls,
+  improvements, the barbarians, drawing, holding and discarding progress
+  cards, and the answers to cards other players play (Wedding, Saboteur,
+  Commercial Harbor, Deserter; any other card step gets a plain list of its
+  `choices`). Playing your own cards is part 4b.
 - **Phase 5, 5–6 players and Seafarers.** `createGame` refuses C&K with
   Seafarers scenarios or more than 4 players for now. Hooks for them:
   `COMMODITY_BANK`/`DEFENDER_CARDS` (5–6: +6 each commodity, +2 Defender

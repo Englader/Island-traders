@@ -1,9 +1,10 @@
-import { getScenario, type Action, type GameView, type PlayerId } from 'engine';
+import { PROGRESS_CARDS, getScenario, type Action, type GameView, type ImprovementTrack, type PlayerId, type VertexId } from 'engine';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
 import { askFor } from '../game/ask';
-import { RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel } from '../game/names';
+import { CARD_INFO, COMMODITY_LIST, RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel, progressTitle } from '../game/names';
+import { TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, namesList, sevenLimitOf } from '../game/ck';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import type { ClockFeed } from '../game/clock';
@@ -21,6 +22,20 @@ import type { Flash } from './flash';
 import { Die, Sheet, useMedia } from './common';
 import { ResGlyph } from './icons';
 import { PieceGlyph } from './pieces';
+import { EventDie, GateGlyph, HelmIcon, KnightGlyph, ProgressCardView, TowerGlyph } from './ckArt';
+import {
+  AqueductSheet,
+  BarbarianTrack,
+  BarbariansSheet,
+  CardChoiceSheet,
+  CardPickSheet,
+  DefenderDrawSheet,
+  HarborAnswerSheet,
+  ImprovementsSheet,
+  KnightBar,
+  ProgressDiscardSheet,
+  ProgressSheet,
+} from './CkPanels';
 import {
   BuildSheet,
   CardsSheet,
@@ -66,9 +81,23 @@ type Mode =
   | { kind: 'moveFrom' }
   | { kind: 'moveTo'; from: string }
   | { kind: 'harbor' }
-  | { kind: 'robber'; piece: 'robber' | 'pirate' };
+  | { kind: 'robber'; piece: 'robber' | 'pirate' }
+  // Cities & Knights: pick one of your knights, then what it does, then (moving) where it goes
+  | { kind: 'knights' }
+  | { kind: 'knight'; at: VertexId }
+  | { kind: 'knightTo'; from: VertexId };
 
-type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice';
+type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice' | 'improve' | 'barbarians';
+
+/** How long a moment is shown: the barbarians' attack has three beats, drawn cards turn over. */
+function fxTime(kind: string, base: number): number {
+  if (kind === 'attack') return Math.max(3600, base * 2.4);
+  if (kind === 'draw') return Math.max(2000, base * 1.4);
+  return base;
+}
+
+/** Knight modes: what the Knights button toggles. */
+const KNIGHT_MODES = new Set(['knights', 'knight', 'knightTo']);
 
 /** Wide screens: build tiles and bigger buttons on the side panel, and keyboard shortcuts. */
 const DESK = '(min-width: 900px) and (min-height: 620px)';
@@ -92,9 +121,18 @@ interface Pending {
   preview?: number;
   /** Runs once the move is made (e.g. closes the build sheet after buying a card). */
   done?: () => void;
+  /** Asked even with "Ask before building" off: a choice to make (the city for a metropolis). */
+  force?: boolean;
 }
 
-const BUILD_ACTION: Record<BuildPiece, Action['type']> = { road: 'buildRoad', ship: 'buildShip', settlement: 'buildSettlement', city: 'buildCity' };
+const BUILD_ACTION: Record<BuildPiece, Action['type']> = {
+  road: 'buildRoad',
+  ship: 'buildShip',
+  settlement: 'buildSettlement',
+  city: 'buildCity',
+  knight: 'buildKnight',
+  wall: 'buildCityWall',
+};
 
 function RollIcon() {
   return (
@@ -145,6 +183,33 @@ function spotActions(view: GameView, legal: Action[], mode: Mode): Map<string, A
         if (piece === null || a.piece === piece) add(`h:${a.hex}`, a);
         break;
       }
+      // --- Cities & Knights ---
+      case 'buildKnight':
+        if (mode?.kind === 'build' && mode.piece === 'knight') add(`v:${a.vertex}`, a);
+        break;
+      case 'buildCityWall':
+        if (mode?.kind === 'build' && mode.piece === 'wall') add(`v:${a.vertex}`, a);
+        break;
+      case 'activateKnight':
+      case 'promoteKnight':
+      case 'chaseRobber':
+        if (mode?.kind === 'knights') add(`v:${a.vertex}`, a);
+        break;
+      case 'moveKnight':
+      case 'displaceKnight':
+        if (mode?.kind === 'knights') add(`v:${a.from}`, a);
+        else if (mode?.kind === 'knightTo' && a.from === mode.from) add(`v:${a.to}`, a);
+        break;
+      case 'pillageCity':
+        add(`v:${a.vertex}`, a);
+        break;
+      case 'retreatKnight':
+        add(`v:${a.to}`, a);
+        break;
+      // a progress card asks for one of your intersections (the Deserter: the knight you remove)
+      case 'progressChoice':
+        if (ph === 'ck' && typeof a.args?.vertex === 'string') add(`v:${a.args.vertex}`, a);
+        break;
       default:
         break;
     }
@@ -164,8 +229,42 @@ function toTargets(spots: Map<string, Action[]>): Targets {
   return t;
 }
 
-function ghostFor(a: Action, seat: PlayerId): Ghost | null {
+/** Cities & Knights: the set-up round that places a city instead of a settlement (engine: setupPlacesCity). */
+export function setupCity(view: GameView): boolean {
+  const ph = view.phase;
+  return !!view.ck && ph.kind === 'setup' && !!getScenario(view.scenario).rules.setupRounds[ph.round]?.collect;
+}
+
+function ghostFor(a: Action, seat: PlayerId, view: GameView): Ghost | null {
+  const knight = (v: VertexId) => view.ck?.knights[v];
+  if (a.type === 'placeSettlement' && setupCity(view)) return { kind: 'city', id: a.vertex, owner: seat };
   switch (a.type) {
+    case 'buildKnight':
+      return { kind: 'knight', id: a.vertex, owner: seat, level: 1, active: false };
+    case 'activateKnight': {
+      const k = knight(a.vertex);
+      return { kind: 'knight', id: a.vertex, owner: seat, level: k?.level ?? 1, active: true };
+    }
+    case 'promoteKnight': {
+      const k = knight(a.vertex);
+      return { kind: 'knight', id: a.vertex, owner: seat, level: Math.min(3, (k?.level ?? 1) + 1) as 1 | 2 | 3, active: !!k?.active };
+    }
+    case 'chaseRobber': {
+      const k = knight(a.vertex);
+      return { kind: 'knight', id: a.vertex, owner: seat, level: k?.level ?? 1, active: false };
+    }
+    case 'moveKnight':
+    case 'displaceKnight':
+      return { kind: 'knight', id: a.to, owner: seat, level: knight(a.from)?.level ?? 1, active: false };
+    case 'retreatKnight': {
+      const ph = view.phase;
+      const k = ph.kind === 'ck' && ph.step === 'retreat' ? ph.knight : null;
+      return { kind: 'knight', id: a.to, owner: seat, level: k?.level ?? 1, active: !!k?.active };
+    }
+    case 'buildCityWall':
+      return { kind: 'wall', id: a.vertex, owner: seat };
+    case 'improveCity':
+      return a.vertex ? { kind: 'metropolis', id: a.vertex, owner: seat, track: a.track } : null;
     case 'placeSettlement':
     case 'buildSettlement':
       return { kind: 'settlement', id: a.vertex, owner: seat };
@@ -198,10 +297,62 @@ function choiceLabel(a: Action, view: GameView): string {
     case 'buildShip':
       return 'Ship';
     case 'moveRobber':
+      if (view.phase.kind === 'robber' && view.phase.reason === 'bishop') return 'Move here';
       if (a.victim === undefined) return 'Nobody to rob';
       return a.take === 'cloth' ? `Take cloth from ${name(a.victim)}` : `Rob ${name(a.victim)} (${view.players[a.victim].resourceCount})`;
+    case 'moveKnight':
+      return 'Move here';
+    case 'displaceKnight':
+      return 'Displace';
     default:
       return 'Confirm';
+  }
+}
+
+/** "Ada", "Ada and Björn" for the players a phase waits for. */
+function waitingNames(view: GameView, pending: Record<string, number>, seat: PlayerId | null): string {
+  return namesList(
+    view,
+    Object.keys(pending).map(Number),
+    seat,
+  );
+}
+
+/** The status line in a Cities & Knights decision. */
+function ckStatus(view: GameView, seat: PlayerId | null): string {
+  const ph = view.phase;
+  if (ph.kind !== 'ck') return '';
+  const name = (p: number) => (p === seat ? 'You' : view.players[p]?.name ?? '');
+  switch (ph.step) {
+    case 'pillage': {
+      if (seat !== null && ph.pending[seat]) return 'Barbarians win: pick a city to lose';
+      const n = Object.keys(ph.pending).length;
+      return `${waitingNames(view, ph.pending, seat)} choose${n === 1 ? 's' : ''} a city to lose`;
+    }
+    case 'defenderDraw':
+      return ph.queue[0] === seat ? 'Draw a progress card' : `${name(ph.queue[0])} draws a progress card`;
+    case 'progressDiscard':
+      return seat !== null && ph.pending[seat] ? 'Discard progress cards' : 'Players are discarding progress cards';
+    case 'aqueduct':
+      return seat !== null && ph.pending[seat] ? 'Aqueduct: take a resource' : 'Players use their Aqueduct';
+    case 'retreat':
+      return ph.player === seat ? 'Move your displaced knight' : `${name(ph.player)} moves a displaced knight`;
+    case 'card': {
+      const title = progressTitle(ph.card);
+      const by = name(ph.player);
+      if (seat !== null && ph.pending?.[seat]) {
+        const n = ph.pending[seat];
+        const cards = `${n} card${n === 1 ? '' : 's'}`;
+        if (ph.stage === 'give') return `${title}: give ${by} ${cards}`;
+        if (ph.stage === 'discard') return `${title}: discard ${cards}`;
+        if (ph.stage === 'exchange') return `${title}: give ${by} a commodity`;
+        if (ph.stage === 'desert') return `${title}: remove one of your knights`;
+        return `${title}: your choice`;
+      }
+      return ph.player === seat ? `Finish playing ${title}` : `${by} plays ${title}`;
+    }
+    default:
+      return '';
   }
 }
 
@@ -220,6 +371,8 @@ export function statusText(view: GameView, seat: PlayerId | null, legal: Action[
     case 'setup': {
       const round = ph.round + 1;
       if (!mine) return `${name(view.turn.actor)} is placing (round ${round})`;
+      // Cities & Knights: the round that collects starting resources places a city
+      if (ph.step === 'settlement' && setupCity(view)) return 'Place your city';
       return ph.step === 'settlement' ? `Place settlement ${round}` : 'Place a road or ship next to it';
     }
     case 'preRoll':
@@ -229,7 +382,11 @@ export function statusText(view: GameView, seat: PlayerId | null, legal: Action[
     case 'gold':
       return seat !== null && ph.pending[seat] !== undefined ? 'Choose your free resources' : 'Players are choosing resources';
     case 'robber':
+      if (ph.reason === 'chase') return mine ? 'Chase the robber to a numbered hex' : `${name(view.turn.actor)} chases the robber`;
+      if (ph.reason === 'bishop') return mine ? 'Bishop: move the robber; everyone next to it pays a card' : `${name(view.turn.actor)} moves the robber (Bishop)`;
       return mine ? 'Move the robber' + (legal.some((a) => a.type === 'moveRobber' && a.piece === 'pirate') ? ' or the pirate' : '') : `${name(view.turn.actor)} moves the robber`;
+    case 'ck':
+      return ckStatus(view, seat);
     case 'roadBuilding':
       return mine ? `Place ${ph.remaining} free road${ph.remaining === 1 ? '' : 's'} or ship${ph.remaining === 1 ? '' : 's'}` : `${name(view.turn.actor)} is building`;
     case 'specialBuild':
@@ -244,6 +401,8 @@ export function statusText(view: GameView, seat: PlayerId | null, legal: Action[
         return offered ? 'You have a trade offer' : `${name(view.turn.actor)}'s turn`;
       }
       if (!mine) return `${name(view.turn.actor)}'s turn`;
+      // Cities & Knights: over the progress card limit, the turn can't end yet
+      if (legal.some((a) => a.type === 'discardProgress')) return 'Put back a progress card (you may hold 4)';
       return view.turn.role === 'paired' ? 'Your paired turn' : 'Your turn';
     }
     default:
@@ -304,7 +463,14 @@ export function GameScreen(props: GameScreenProps) {
   // Drop a build mode that no longer has any legal spot.
   const spots = useMemo(() => spotActions(view, legal, mode), [view, legal, mode]);
   useEffect(() => {
-    if (mode && mode.kind !== 'robber' && spots.size === 0) setMode(null);
+    if (!mode || mode.kind === 'robber') return;
+    if (mode.kind === 'knight') {
+      // the selected knight is gone (displaced, the turn moved on): nothing to show
+      const k = view.ck?.knights[mode.at];
+      if (!k || k.owner !== seat || !(ph.kind === 'main' && view.turn.actor === seat)) setMode(null);
+      return;
+    }
+    if (spots.size === 0) setMode(null);
   }, [spots, mode]);
   // A move that is no longer possible (the game has moved on) is not waiting for an answer any more.
   useEffect(() => {
@@ -323,9 +489,21 @@ export function GameScreen(props: GameScreenProps) {
 
   const doSend = (a: Action) => {
     setPending(null);
-    if (a.type === 'buildRoad' || a.type === 'buildShip' || a.type === 'buildSettlement' || a.type === 'buildCity' || a.type === 'moveShip' || a.type === 'placeHarbor') {
+    if (
+      a.type === 'buildRoad' ||
+      a.type === 'buildShip' ||
+      a.type === 'buildSettlement' ||
+      a.type === 'buildCity' ||
+      a.type === 'moveShip' ||
+      a.type === 'placeHarbor' ||
+      a.type === 'buildKnight' ||
+      a.type === 'buildCityWall' ||
+      a.type === 'chaseRobber'
+    ) {
       if (ph.kind !== 'roadBuilding') setMode(null);
     }
+    // after a knight's move, pick the next knight (the mode ends by itself when none can do more)
+    if (a.type === 'activateKnight' || a.type === 'promoteKnight' || a.type === 'moveKnight' || a.type === 'displaceKnight') setMode({ kind: 'knights' });
     send(a);
   };
 
@@ -338,12 +516,18 @@ export function GameScreen(props: GameScreenProps) {
       setPending(null);
       return;
     }
+    if (mode?.kind === 'knights') {
+      // a knight is picked: its moves come up in a bar
+      setMode({ kind: 'knight', at: id });
+      setPending(null);
+      return;
+    }
     setPending({ key, actions: acts });
   };
 
-  const ghost = pending && seat !== null ? ghostFor(pending.actions[pending.preview ?? 0] ?? pending.actions[0], seat) : null;
-  // builds, buys and placements ask first (the robber and harbors keep the confirm bar)
-  const ask = pending && seat !== null && askOn ? askFor(pending.actions, view, seat) : null;
+  const ghost = pending && seat !== null ? ghostFor(pending.actions[pending.preview ?? 0] ?? pending.actions[0], seat, view) : null;
+  // builds, buys and placements ask first (the robber and harbors keep the confirm bar); a metropolis always asks which city
+  const ask = pending && seat !== null && (askOn || pending.force) ? askFor(pending.actions, view, seat) : null;
   /** Makes a move, or first asks when it is a build or a purchase and the menu says to ask. */
   const askOrSend = (a: Action, key: string, done?: () => void) => {
     if (askOn && seat !== null && askFor([a], view, seat)) {
@@ -356,6 +540,33 @@ export function GameScreen(props: GameScreenProps) {
   const buyDev = (done?: () => void) => {
     const a = legal.find((x) => x.type === 'buyDevCard');
     if (a) askOrSend(a, 'dev', done);
+  };
+  /** Cities & Knights: the next level of a track; a level that wins a metropolis asks which city. */
+  const buyImprovement = (track: ImprovementTrack) => {
+    const acts = legal.filter((a) => a.type === 'improveCity' && a.track === track);
+    if (acts.length === 0) return;
+    setSheet(null);
+    if (acts.length === 1) askOrSend(acts[0], `imp:${track}`);
+    else setPending({ key: `imp:${track}`, actions: acts, force: true });
+  };
+  const ck = view.ck;
+  // a word over the board for a moment (the Knights button with nothing to do)
+  const [hint, setHint] = useState<string | null>(null);
+  useEffect(() => {
+    if (!hint) return;
+    const t = setTimeout(() => setHint(null), 2600);
+    return () => clearTimeout(t);
+  }, [hint]);
+  const toggleKnights = () => {
+    setPending(null);
+    if (mode && KNIGHT_MODES.has(mode.kind)) return setMode(null);
+    const moves = legal.some((a) => a.type === 'activateKnight' || a.type === 'promoteKnight' || a.type === 'moveKnight' || a.type === 'displaceKnight' || a.type === 'chaseRobber');
+    if (!moves) {
+      const any = Object.values(view.ck?.knights ?? {}).some((k) => k.owner === seat);
+      setHint(any ? 'None of your knights can do anything right now' : 'You have no knights yet: hire one with Build → Knight');
+      return;
+    }
+    setMode({ kind: 'knights' });
   };
   const confirmPending = (a: Action) => {
     const done = pending?.done;
@@ -372,6 +583,24 @@ export function GameScreen(props: GameScreenProps) {
     else if (ph.kind === 'gold' && ph.pending[seat] !== undefined) forced = <GoldSheet view={view} seat={seat} send={doSend} covered={covered} />;
     else if (ph.kind === 'scenario' && ph.step === 'rob' && ph.player === seat)
       forced = <RobAnySheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} covered={covered} />;
+    else if (ph.kind === 'ck' && ph.step === 'progressDiscard' && ph.pending[seat])
+      forced = <ProgressDiscardSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
+    else if (ph.kind === 'ck' && ph.step === 'defenderDraw' && ph.queue[0] === seat)
+      forced = <DefenderDrawSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
+    else if (ph.kind === 'ck' && ph.step === 'aqueduct' && ph.pending[seat])
+      forced = <AqueductSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
+    // a progress card another player played asks something of you
+    else if (ph.kind === 'ck' && ph.step === 'card' && ph.pending?.[seat] && (ph.stage === 'give' || ph.stage === 'discard'))
+      forced = <CardPickSheet view={view} seat={seat} send={doSend} covered={covered} />;
+    else if (ph.kind === 'ck' && ph.step === 'card' && ph.pending?.[seat] && ph.stage === 'exchange')
+      forced = <HarborAnswerSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
+    else if (
+      ph.kind === 'ck' &&
+      ph.step === 'card' &&
+      legal.some((a) => a.type === 'progressChoice') &&
+      !legal.some((a) => a.type === 'progressChoice' && typeof a.args?.vertex === 'string')
+    )
+      forced = <CardChoiceSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
     else if (
       !covered &&
       ph.kind === 'main' &&
@@ -392,7 +621,11 @@ export function GameScreen(props: GameScreenProps) {
   const showScenario =
     sc.expansion === 'seafarers' && (view.ext.wonders || view.ext.pirateIslands || view.ext.cloth || heldHarbors.length > 0 || scenarioActions.length > 0);
   const counters = seat !== null ? view.turn.trades.filter((t) => t.from !== seat && t.to.includes(seat)).length : 0;
-  const devCount = me?.devCards?.length ?? 0;
+  // Cities & Knights: progress cards take the development cards' place
+  const devCount = ck ? (seat !== null ? ck.players[seat]?.progressCount ?? 0 : 0) : (me?.devCards?.length ?? 0);
+  const knightModeOn = !!mode && KNIGHT_MODES.has(mode.kind);
+  const knightMoves = legal.some((a) => a.type === 'activateKnight' || a.type === 'promoteKnight' || a.type === 'moveKnight' || a.type === 'displaceKnight' || a.type === 'chaseRobber');
+  const canImprove = legal.some((a) => a.type === 'improveCity');
   const waitingFor = mustAct(view).filter((p) => p !== seat);
   const status = statusText(view, seat, legal);
 
@@ -427,11 +660,27 @@ export function GameScreen(props: GameScreenProps) {
           </button>,
         );
         bar.push(
-          <button type="button" key="cards" class="action" onClick={() => setSheet('cards')}>
+          <button type="button" key="cards" class={has('discardProgress') ? 'action glow' : 'action'} onClick={() => setSheet('cards')}>
             <span class="ai">🃏</span>
             <span class="al">Cards{devCount > 0 ? ` ${devCount}` : ''}</span>
           </button>,
         );
+        if (ck) {
+          bar.push(
+            <button type="button" key="knights" class={knightModeOn ? 'action on' : 'action'} onClick={toggleKnights} aria-pressed={knightModeOn}>
+              <span class="ai">{knightModeOn ? '✕' : <span class="ai-helm"><HelmIcon /></span>}</span>
+              <span class="al">{knightModeOn ? 'Cancel' : 'Knights'}</span>
+            </button>,
+          );
+          bar.push(
+            <button type="button" key="improve" class={canImprove ? 'action glow' : 'action'} onClick={() => setSheet('improve')}>
+              <span class="ai ai-gate">
+                <GateGlyph track="science" />
+              </span>
+              <span class="al">Improve</span>
+            </button>,
+          );
+        }
         if (has('moveShip'))
           bar.push(
             <button
@@ -545,16 +794,48 @@ export function GameScreen(props: GameScreenProps) {
       title: 'Trade with other players or the bank',
       onClick: () => setSheet('trade'),
     });
-    secondary.push({
-      key: 'cards',
-      label: 'Play card',
-      icon: <PieceGlyph kind="dev" fill="#6a48c4" stroke="#3b2273" />,
-      kbd: 'C',
-      badge: devCount,
-      why: devCount > 0 ? null : 'No development cards yet: buy one with the Dev card tile',
-      title: 'Your development cards',
-      onClick: () => setSheet('cards'),
-    });
+    if (ck) {
+      secondary.push({
+        key: 'cards',
+        label: 'Progress',
+        icon: <ProgressCardView deck="science" back look="mini" />,
+        kbd: 'C',
+        badge: devCount,
+        glow: has('discardProgress'),
+        why: devCount > 0 || (ck.players[seat].vpCards.length ?? 0) > 0 ? null : 'No progress cards yet: the event die’s city gates draw them',
+        title: 'Your progress cards',
+        onClick: () => setSheet('cards'),
+      });
+      secondary.push({
+        key: 'knights',
+        label: knightModeOn ? 'Cancel' : 'Knights',
+        icon: <KnightGlyph level={2} active fill={colors[seat].fill} stroke={colors[seat].stroke} />,
+        kbd: 'K',
+        on: knightModeOn,
+        why: knightModeOn ? null : (later ?? (knightMoves ? null : 'None of your knights can do anything now')),
+        title: 'Activate, promote and move your knights',
+        onClick: toggleKnights,
+      });
+      secondary.push({
+        key: 'improve',
+        label: 'Improve',
+        icon: <GateGlyph track="trade" />,
+        kbd: 'I',
+        glow: canImprove,
+        title: 'City improvements: trade, politics and science',
+        onClick: () => setSheet('improve'),
+      });
+    } else
+      secondary.push({
+        key: 'cards',
+        label: 'Play card',
+        icon: <PieceGlyph kind="dev" fill="#6a48c4" stroke="#3b2273" />,
+        kbd: 'C',
+        badge: devCount,
+        why: devCount > 0 ? null : 'No development cards yet: buy one with the Dev card tile',
+        title: 'Your development cards',
+        onClick: () => setSheet('cards'),
+      });
     if (isActor && ph.kind === 'main' && has('moveShip'))
       secondary.push({
         key: 'move',
@@ -613,6 +894,7 @@ export function GameScreen(props: GameScreenProps) {
         if (sheet) setSheet(null);
         else if (covered) return;
         else if (pending) setPending(null);
+        else if (mode?.kind === 'knight' || mode?.kind === 'knightTo') setMode({ kind: 'knights' });
         else if (mode && mode.kind !== 'robber') setMode(null);
         else return;
         e.preventDefault();
@@ -625,7 +907,9 @@ export function GameScreen(props: GameScreenProps) {
       if (k === 'r' && roll) roll();
       else if (k === 'e' && finish) finish();
       else if (k === 't' && seat !== null && tradeWhy === null) setSheet('trade');
-      else if (k === 'c' && seat !== null && devCount > 0) setSheet('cards');
+      else if (k === 'c' && seat !== null && (devCount > 0 || (ck?.players[seat]?.vpCards.length ?? 0) > 0)) setSheet('cards');
+      else if (k === 'k' && ck && seat !== null && (knightModeOn || (later === null && knightMoves))) toggleKnights();
+      else if (k === 'i' && ck && seat !== null) setSheet('improve');
       else if (k === 'b' && seat !== null) {
         // the build tiles are the build menu here: move the keyboard focus to them
         const tile = document.querySelector<HTMLElement>('.bgrid .btile.ready') ?? document.querySelector<HTMLElement>('.bgrid .btile');
@@ -657,17 +941,32 @@ export function GameScreen(props: GameScreenProps) {
     if (l && l.at !== seenFx.current) {
       seenFx.current = l.at;
       const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const e = reduced ? null : fxFor(l.action, prevView.current, view, seat);
-      if (e) setFx({ ...e, key: l.at });
+      const e = fxFor(l.action, prevView.current, view, seat);
+      if (e && !reduced) setFx({ ...e, key: l.at });
+      // without motion, the barbarians' attack and the cards you draw are still told, in a note that stays still
+      else if (e?.kind === 'attack') setEventNote({ key: l.at, title: `The barbarians attack: ${e.barbarians} against ${e.knights}`, sub: e.outcome, tone: 'attack' });
+      else if (e?.kind === 'draw' && e.draws.some((d) => d.p === seat && d.card))
+        setEventNote({ key: l.at, title: `You draw ${e.draws.filter((d) => d.p === seat && d.card).map((d) => progressTitle(d.card!)).join(' and ')}`, sub: 'A progress card', tone: e.draws[0].deck });
     }
     prevView.current = view;
   }, [view]);
+  // Cities & Knights: what the event die did (shown under the rolling dice, or for a moment over the board)
+  const [eventNote, setEventNote] = useState<{ key: number; title: string; sub: string; tone: string } | null>(null);
   useEffect(() => {
     if (!rollFlash || rollFlash.key === seenRoll.current) return;
     seenRoll.current = rollFlash.key;
     const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (dice && !reduced) setRolling({ key: rollFlash.key, dice: [dice[0], dice[1]] });
+    const event = view.ck?.event ?? null;
+    const caption = dice && event ? { ...eventText(view, event, dice[1], seat), tone: event === 'ship' ? (view.ck!.barbarians === 0 ? 'attack' : 'ship') : event } : null;
+    if (dice && !reduced) setRolling({ key: rollFlash.key, dice: [dice[0], dice[1]], ...(event && caption ? { event, caption: caption as RollInfo['caption'] } : {}) });
+    // (an attack's note comes with its outcome, from the effect above)
+    else if (caption && caption.tone !== 'attack') setEventNote((n) => (n && n.tone === 'attack' ? n : { key: rollFlash.key, ...caption }));
   }, [rollFlash?.key]);
+  useEffect(() => {
+    if (!eventNote) return;
+    const t = setTimeout(() => setEventNote(null), eventNote.tone === 'attack' ? 6000 : 3200);
+    return () => clearTimeout(t);
+  }, [eventNote?.key]);
   // The latest few events, each marked with the colour of the player it is about.
   // (Wide screens show the whole log in the corner instead.)
   const feed = dock
@@ -697,7 +996,7 @@ export function GameScreen(props: GameScreenProps) {
           </div>
           <div class="sub">
             <span class="sub-main">
-              {sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP
+              {ck ? 'Cities & Knights' : sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP
             </span>
             {live && (
               <span class="hud-clock" title={gameOver ? 'Game time' : 'Game time so far (active play)'}>
@@ -710,22 +1009,33 @@ export function GameScreen(props: GameScreenProps) {
             {props.note && <span class="sub-note">{` · ${props.note}`}</span>}
           </div>
         </div>
+        {ck && <BarbarianTrack view={view} onOpen={() => setSheet('barbarians')} />}
         <div
-          class="dice"
+          class={ck ? 'dice three' : 'dice'}
           ref={headerDice}
           style={rolling ? { visibility: 'hidden' } : undefined}
-          key={dice ? `${view.turn.number}-${dice[0]}-${dice[1]}` : 'none'}
-          aria-label={dice ? `rolled ${dice[0] + dice[1]}` : 'no roll yet'}
+          key={dice ? `${view.turn.number}-${dice[0]}-${dice[1]}-${ck?.event ?? ''}` : 'none'}
+          aria-label={dice ? `rolled ${dice[0] + dice[1]}${ck?.event ? `, event ${ck.event === 'ship' ? 'barbarian ship' : `${TRACK_INFO[ck.event].colorName} gate`}` : ''}` : 'no roll yet'}
         >
           {dice ? (
             <>
               <Die n={dice[0]} />
               <Die n={dice[1]} red />
+              {ck?.event && <EventDie face={ck.event} />}
             </>
           ) : null}
         </div>
       </header>
-      {fx && <FxOverlay fx={fx} view={view} colors={colors} seat={seat} ms={FX_TIME[props.speed ?? 'normal']} onDone={() => setFx(null)} />}
+      {fx && !rolling && (
+        <FxOverlay
+          fx={fx}
+          view={view}
+          colors={colors}
+          seat={seat}
+          ms={fxTime(fx.kind, FX_TIME[props.speed ?? 'normal'])}
+          onDone={() => setFx(null)}
+        />
+      )}
       {rolling && (
         <DiceRoll
           roll={rolling}
@@ -760,6 +1070,7 @@ export function GameScreen(props: GameScreenProps) {
           targets={targets}
           accent={accent}
           ghost={ghost}
+          selected={mode?.kind === 'knight' ? mode.at : mode?.kind === 'knightTo' ? mode.from : null}
           flash={rolling && rollFlash ? null : props.flash}
           onPick={onPick}
           tools={
@@ -800,7 +1111,7 @@ export function GameScreen(props: GameScreenProps) {
           }
         />
         {feed.length > 0 && (
-          <div class={rolling ? 'feed hushed' : 'feed'} aria-live="polite">
+          <div class={rolling || eventNote ? 'feed hushed' : 'feed'} aria-live="polite">
             {feed.map((e, k) => (
               <span key={e.i} class={`feed-line age-${feed.length - 1 - k}`}>
                 <span class="feed-dot" style={{ background: e.color ?? 'transparent' }} />
@@ -833,16 +1144,58 @@ export function GameScreen(props: GameScreenProps) {
             </div>
           </div>
         )}
-        {!pending && mode && mode.kind !== 'robber' && (
+        {!pending && mode && mode.kind !== 'robber' && mode.kind !== 'knight' && (
           <div class="mode-hint">
             {mode.kind === 'build'
-              ? `${tap} a highlighted spot to build a ${mode.piece}`
+              ? mode.piece === 'knight'
+                ? `${tap} a spot on your roads to hire a knight`
+                : mode.piece === 'wall'
+                  ? `${tap} one of your cities to wall it`
+                  : `${tap} a highlighted spot to build a ${mode.piece}`
               : mode.kind === 'moveFrom'
                 ? `${tap} the ship to move`
                 : mode.kind === 'moveTo'
                   ? `${tap} where the ship should go`
-                  : `${tap} a coast next to your settlement`}
+                  : mode.kind === 'knights'
+                    ? `${tap} one of your knights`
+                    : mode.kind === 'knightTo'
+                      ? legal.some((a) => a.type === 'displaceKnight' && a.from === mode.from)
+                        ? `${tap} where it goes, or a weaker knight to displace`
+                        : `${tap} where the knight goes`
+                      : `${tap} a coast next to your settlement`}
             {desk ? ' · Esc cancels' : ''}
+          </div>
+        )}
+        {!pending && !mode && ph.kind === 'ck' && seat !== null && ((ph.step === 'pillage' && ph.pending[seat]) || (ph.step === 'retreat' && ph.player === seat)) && (
+          <div class="mode-hint forced-hint">
+            {ph.step === 'pillage' ? `${tap} the city you lose (it becomes a settlement)` : `${tap} where your displaced knight retreats`}
+          </div>
+        )}
+        {!pending && !mode && ph.kind === 'ck' && ph.step === 'card' && seat !== null && legal.some((a) => a.type === 'progressChoice' && typeof a.args?.vertex === 'string') && (
+          <div class="mode-hint forced-hint">
+            {ph.stage === 'desert' ? `${tap} the knight you remove (${view.players[ph.player]?.name} played the ${progressTitle(ph.card)})` : `${tap} a highlighted spot (${progressTitle(ph.card)})`}
+          </div>
+        )}
+        {!pending && mode?.kind === 'knight' && seat !== null && (
+          <KnightBar
+            view={view}
+            legal={legal}
+            at={mode.at}
+            color={colors[seat]}
+            onAct={(a) => askOrSend(a, `kn:${a.type}:${mode.at}`)}
+            onMove={() => setMode({ kind: 'knightTo', from: mode.at })}
+            onClose={() => setMode({ kind: 'knights' })}
+          />
+        )}
+        {hint && !pending && !mode && (
+          <div class="mode-hint" role="status">
+            {hint}
+          </div>
+        )}
+        {eventNote && (
+          <div class={`event-note tone-${eventNote.tone}`} role="status" key={eventNote.key}>
+            <b>{eventNote.title}</b>
+            <span>{eventNote.sub}</span>
           </div>
         )}
         {props.chat}
@@ -872,7 +1225,7 @@ export function GameScreen(props: GameScreenProps) {
         ) : (
           <>
             {me?.resources && <Hand view={view} seat={seat!} desk={false} onCards={() => setSheet('cards')} />}
-            <nav class="action-bar">{bar}</nav>
+            <nav class={bar.length >= 6 ? 'action-bar six' : 'action-bar'}>{bar}</nav>
           </>
         )}
       </div>
@@ -890,10 +1243,16 @@ export function GameScreen(props: GameScreenProps) {
             setSheet(null);
             setMode({ kind: 'build', piece });
           }}
+          improve={() => setSheet('improve')}
         />
       )}
       {sheet === 'trade' && seat !== null && <TradeSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} close={() => setSheet(null)} />}
-      {sheet === 'cards' && seat !== null && <CardsSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} close={() => setSheet(null)} />}
+      {sheet === 'cards' && seat !== null && !ck && <CardsSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} close={() => setSheet(null)} />}
+      {sheet === 'cards' && seat !== null && ck && <ProgressSheet view={view} legal={legal} seat={seat} send={doSend} close={() => setSheet(null)} />}
+      {sheet === 'improve' && ck && (
+        <ImprovementsSheet view={view} legal={legal} seat={seat} colors={colors} later={seat !== null ? notNowReason(view, seat) : null} onBuy={buyImprovement} close={() => setSheet(null)} />
+      )}
+      {sheet === 'barbarians' && ck && <BarbariansSheet view={view} colors={colors} seat={seat} close={() => setSheet(null)} />}
       {sheet === 'scenario' && seat !== null && (
         <ScenarioSheet
           view={view}
@@ -995,7 +1354,7 @@ function Players({
             class={active ? 'player active' : 'player'}
             style={{ '--pc': colors[p.id].fill, '--pcs': colors[p.id].stroke } as Record<string, string>}
             onClick={onOpen}
-            aria-label={`${p.name}: ${vp} victory points, ${p.resourceCount} cards`}
+            aria-label={`${p.name}: ${vp} victory points, ${p.resourceCount} cards${view.ck ? `, ${view.ck.players[p.id]?.progressCount ?? 0} progress cards` : ''}`}
           >
             <span class="avatar">{kinds[p.id] === 'bot' ? '🤖' : kinds[p.id] === 'remote' ? '🌐' : p.name.slice(0, 1).toUpperCase()}</span>
             <span class="pinfo">
@@ -1008,7 +1367,9 @@ function Players({
               ) : (
                 name
               )}
-              {desk ? (
+              {view.ck ? (
+                <CkMeta view={view} p={p.id} desk={desk} turnTime={desk ? null : turnTime} colors={colors} />
+              ) : desk ? (
                 <span class="pmeta">
                   <span class="pm" title="Resource cards">
                     <CardsIcon /> {p.resourceCount}
@@ -1048,6 +1409,94 @@ function Players({
         );
       })}
     </div>
+  );
+}
+
+/** A player's Cities & Knights line(s): cards, progress cards, knights, improvements and the expansion's VP cards. */
+function CkMeta({ view, p, desk, turnTime, colors }: { view: GameView; p: PlayerId; desk: boolean; turnTime: ComponentChildren; colors: PlayerColor[] }) {
+  const ck = view.ck!;
+  const cp = ck.players[p];
+  const b = barbarianState(view)!;
+  const pts = ckPoints(view, p);
+  const metros = TRACK_LIST.filter((t) => ck.metropolises[t]?.owner === p);
+  const knights = (
+    <span class="pm pm-kn" title={`Knights: ${b.active[p]} of ${b.total[p]} active, defending with strength ${b.perPlayer[p]}`}>
+      <HelmIcon />
+      <b>{b.perPlayer[p]}</b>
+      <span class="pm-sub">
+        {b.active[p]}/{b.total[p]}
+      </span>
+    </span>
+  );
+  const levels = (
+    <span class="pm pm-levels" title={`City improvements: trade ${cp.improvements.trade}, politics ${cp.improvements.politics}, science ${cp.improvements.science}`}>
+      {TRACK_LIST.map((t) => (
+        <span key={t} class={`lvl tr-${t}${cp.improvements[t] === 0 ? ' zero' : ''}`}>
+          {cp.improvements[t]}
+        </span>
+      ))}
+    </span>
+  );
+  const awards = (
+    <>
+      {view.longestRoute.holder === p && (
+        <span class="pm award" title="Longest road">
+          🛣️
+        </span>
+      )}
+      {metros.map((t) => (
+        <span key={t} class="pm award pm-tower" title={`The ${t} metropolis (+2 VP)`}>
+          <TowerGlyph track={t} fill={colors[p].fill} stroke={colors[p].stroke} />
+        </span>
+      ))}
+      {pts.defender > 0 && (
+        <span class="pm award pm-def" title={`Defender of Catan ×${pts.defender} (${pts.defender} VP)`}>
+          🛡️{pts.defender > 1 ? <span class="pm-x">×{pts.defender}</span> : null}
+        </span>
+      )}
+      {cp.vpCards.map((c, i) => (
+        <span key={`${c}${i}`} class="pm award" title={`${progressTitle(c)} (1 VP)`}>
+          📜
+        </span>
+      ))}
+      {pts.merchant > 0 && (
+        <span class="pm award" title="The merchant (1 VP)">
+          🧺
+        </span>
+      )}
+    </>
+  );
+  if (!desk)
+    return (
+      <span class="pmeta ck-meta">
+        <span class="pm" title="Cards in hand">
+          🎴{view.players[p].resourceCount}
+        </span>
+        <span class="pm" title="Progress cards">
+          <span class="pm-prog" aria-hidden="true" />
+          {cp.progressCount}
+        </span>
+        {knights}
+        {turnTime}
+      </span>
+    );
+  return (
+    <>
+      <span class="pmeta ck-meta">
+        <span class="pm" title="Cards in hand (resources and commodities)">
+          <CardsIcon /> {view.players[p].resourceCount}
+        </span>
+        <span class="pm" title="Progress cards (hidden)">
+          <span class="pm-prog" aria-hidden="true" />
+          {cp.progressCount}
+        </span>
+        {knights}
+      </span>
+      <span class="pmeta ck-awards">
+        {levels}
+        {awards}
+      </span>
+    </>
   );
 }
 
@@ -1091,10 +1540,11 @@ function ScoresSheet({
               {p.id === seat && <span class="you">you</span>}
               <span class="score-vp">{p.totalVP ?? p.publicVP} VP</span>
             </div>
+            {view.ck && <CkScore view={view} p={p.id} colors={colors} />}
             <div class="score-stats">
               <span>🎴 {p.resourceCount} cards</span>
-              <span>🃏 {p.devCardCount} development</span>
-              {sc.rules.largestArmy && <span>⚔️ {p.playedKnights} knights</span>}
+              {!view.ck && <span>🃏 {p.devCardCount} development</span>}
+              {sc.rules.largestArmy && !view.ck && <span>⚔️ {p.playedKnights} knights</span>}
               {sc.rules.longestRoute && <span>🛣️ route {view.longestRoute.lengths[p.id] ?? 0}</span>}
               {cloth && <span>🧵 {cloth[p.id]} cloth</span>}
               {levels && <span>🏛️ wonder level {levels[p.id]}</span>}
@@ -1123,7 +1573,72 @@ function ScoresSheet({
   );
 }
 
+/** Where a player's Cities & Knights points come from, and their knights, improvements and cards. */
+function CkScore({ view, p, colors }: { view: GameView; p: PlayerId; colors: PlayerColor[] }) {
+  const ck = view.ck!;
+  const cp = ck.players[p];
+  const b = barbarianState(view)!;
+  const pts = ckPoints(view, p);
+  let settlements = 0;
+  let cities = 0;
+  for (const bd of Object.values(view.board.buildings)) {
+    if (bd.owner !== p) continue;
+    if (bd.type === 'city') cities += 2;
+    else settlements += 1;
+  }
+  const road = view.longestRoute.holder === p ? 2 : 0;
+  const parts: Array<[string, number]> = [
+    ['Settlements', settlements],
+    ['Cities', cities],
+    ['Metropolises', pts.metropolis],
+    ['Defender of Catan', pts.defender],
+    ['Progress VP cards', pts.cards],
+    ['Merchant', pts.merchant],
+    ['Longest road', road],
+  ];
+  return (
+    <div class="ck-score">
+      <div class="ck-vp" aria-label="Victory points from">
+        {parts
+          .filter(([, n]) => n > 0)
+          .map(([label, n]) => (
+            <span key={label} class="ck-vp-part">
+              {label} <b>{n}</b>
+            </span>
+          ))}
+      </div>
+      <div class="ck-rows">
+        <span title="Strength of the active knights; active / all knights">
+          <HelmIcon /> knights {b.perPlayer[p]} <small>({b.active[p]}/{b.total[p]} active)</small>
+        </span>
+        <span class="ck-imps">
+          {TRACK_LIST.map((t) => (
+            <span key={t} class="ck-imp" title={`${TRACK_INFO[t].label} level ${cp.improvements[t]}`}>
+              <GateGlyph track={t} /> {cp.improvements[t]}
+            </span>
+          ))}
+        </span>
+        <span>
+          <span class="pm-prog" aria-hidden="true" /> {cp.progressCount} progress
+        </span>
+        <span>🧱 {cp.walls.length} wall{cp.walls.length === 1 ? '' : 's'}</span>
+        {cp.vpCards.length > 0 && <span>📜 {cp.vpCards.map(progressTitle).join(', ')}</span>}
+        {TRACK_LIST.filter((t) => ck.metropolises[t]?.owner === p).map((t) => (
+          <span key={t} class="badge ck-metro-badge">
+            <span class="pm-tower">
+              <TowerGlyph track={t} fill={colors[p].fill} stroke={colors[p].stroke} />
+            </span>{' '}
+            {TRACK_INFO[t].label} metropolis
+          </span>
+        ))}
+        {pts.defender > 0 && <span class="badge">Defender of Catan ×{pts.defender}</span>}
+      </div>
+    </div>
+  );
+}
+
 function Hand({ view, seat, desk, onCards }: { view: GameView; seat: PlayerId; desk: boolean; onCards(): void }) {
+  if (view.ck) return <CkHand view={view} seat={seat} desk={desk} onCards={onCards} />;
   const me = view.players[seat];
   const res = me.resources!;
   const cards = me.devCards ?? [];
@@ -1174,6 +1689,63 @@ function Hand({ view, seat, desk, onCards }: { view: GameView; seat: PlayerId; d
         >
           {cards.length > 0 ? <DevCardView type={null} back look="mini" /> : <span class="hcard-slot" />}
           <span class="rtile-n">{cards.length}</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** Cities & Knights: the hand with its commodities, and the progress cards in place of the development cards. */
+function CkHand({ view, seat, desk, onCards }: { view: GameView; seat: PlayerId; desk: boolean; onCards(): void }) {
+  const me = view.players[seat];
+  const res = me.resources!;
+  const ckMe = view.ck!.players[seat];
+  const com = ckMe.commodities ?? { paper: 0, cloth: 0, coin: 0 };
+  const progress = ckMe.progress ?? [];
+  const hand = { ...res, ...com };
+  const kinds = [...RESOURCE_LIST, ...COMMODITY_LIST];
+  // the back of the newest card shows its deck's colour
+  const back: ImprovementTrack = progress.length > 0 ? (PROGRESS_CARDS[progress[progress.length - 1]]?.deck ?? 'science') : 'science';
+  if (!desk) {
+    return (
+      <div class="hand ck-hand">
+        {kinds.map((r) => (
+          <ResourceCard key={r} r={r} n={hand[r]} look="tile" empty={hand[r] === 0} />
+        ))}
+        <button type="button" class={progress.length === 0 ? 'rtile prog-tile empty' : 'rtile prog-tile'} onClick={onCards} aria-label={`Progress cards: ${progress.length}`}>
+          <span class="rtile-art">
+            <ProgressCardView deck={back} back look="tile" />
+          </span>
+          <span class="rtile-n">{progress.length}</span>
+        </button>
+      </div>
+    );
+  }
+  const total = kinds.reduce((n, r) => n + hand[r], 0);
+  const limit = sevenLimitOf(view, seat);
+  const pile = (n: number) => (n === 0 ? ' empty' : n > 1 ? ' many' : '');
+  return (
+    <section class="hand-block" aria-label="Your hand">
+      <div class="panel-cap">
+        <span>Your hand</span>
+        <span class={total > limit ? 'hand-total over' : 'hand-total'} title={`On a 7 you discard half with more than ${limit} cards (7, +2 for each city wall)`}>
+          {total} card{total === 1 ? '' : 's'}
+          {total > limit ? ' · discard on a 7' : ` · limit ${limit}`}
+        </span>
+      </div>
+      <div class="hand cards ck-cards">
+        {kinds.map((r) => (
+          <span key={r} class={`rtile hcard r-${r}${pile(hand[r])}`} title={`${CARD_INFO[r].label}: ${hand[r]}`}>
+            {hand[r] > 0 ? <ResourceCard r={r} look="mini" /> : <span class="hcard-slot" />}
+            <span class="hcard-icon">
+              <ResGlyph r={r} />
+            </span>
+            <span class="rtile-n">{hand[r]}</span>
+          </span>
+        ))}
+        <button type="button" class={`rtile hcard prog-hcard${pile(progress.length)}`} onClick={onCards} aria-label="Progress cards" title={`Progress cards: ${progress.length}`}>
+          {progress.length > 0 ? <ProgressCardView deck={back} back look="mini" /> : <span class="hcard-slot" />}
+          <span class="rtile-n">{progress.length}</span>
         </button>
       </div>
     </section>

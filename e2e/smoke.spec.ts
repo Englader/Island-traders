@@ -368,12 +368,19 @@ test('a random Seafarers map is a new map in the scenario’s style: 🎲 change
   await expect(page.locator('.map-note')).toHaveText('A new map in the style of Heading for New Shores — tap 🎲 for another.');
   const seen = [(await islandsOf(preview)).join(' | ')];
   expect(await islandsOf(preview)).toHaveLength(4);
-  for (let i = 0; i < 2; i++) {
+  const reroll = async () => {
+    const before = (await islandsOf(preview)).join(' | ');
     await page.getByRole('button', { name: '🎲 New map' }).click();
-    await expect.poll(async () => (await islandsOf(preview)).join(' | ')).not.toBe(seen[seen.length - 1]);
+    await expect.poll(async () => (await islandsOf(preview)).join(' | ')).not.toBe(before);
     const islands = await islandsOf(preview);
     expect(islands).toHaveLength(4);
-    seen.push(islands.join(' | '));
+    return islands.join(' | ');
+  };
+  for (let i = 0; i < 2; i++) {
+    let islands = await reroll();
+    // about one deal in 200 has the same islands as an earlier one (the tiles and numbers differ): deal once more then
+    if (seen.includes(islands)) islands = await reroll();
+    seen.push(islands);
   }
   expect(new Set(seen).size).toBe(3);
 });

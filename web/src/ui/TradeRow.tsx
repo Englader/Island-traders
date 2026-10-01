@@ -1,6 +1,6 @@
-import type { Resource } from 'engine';
+import type { Card } from 'engine';
 import type { ComponentChildren } from 'preact';
-import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { CARD_INFO, RESOURCE_LIST } from '../game/names';
 import { countsPhrase, rowSides, signed, stepRow, stepSize, stepValue, type BoxRule, type SignedCounts } from '../game/trade';
 import { ResourceCard } from './cards';
 
@@ -51,26 +51,29 @@ export function TradeRow({
   rules,
   notes,
   verbs = TRADE_VERBS,
+  kinds = RESOURCE_LIST,
   onChange,
 }: {
   row: SignedCounts;
-  rules: Record<Resource, BoxRule>;
+  rules: Partial<Record<Card, BoxRule>>;
   /** A small note under each box (the bank rates), with an extra class (`r3`, `r2`). */
-  notes?: Record<Resource, { text: string; tone?: string }>;
+  notes?: Partial<Record<Card, { text: string; tone?: string }>>;
   /** The words for the two sides (default: get / give). */
   verbs?: RowVerbs;
+  /** The cards in the row: the resources, and the commodities in Cities & Knights (a second line on phones). */
+  kinds?: Card[];
   onChange(row: SignedCounts): void;
 }) {
   return (
-    <div class={notes ? 'trow with-notes' : 'trow'}>
-      {RESOURCE_LIST.map((r) => {
-        const name = RESOURCE_INFO[r].label;
-        const rule = rules[r];
+    <div class={`trow${notes ? ' with-notes' : ''}${kinds.length > 5 ? ' cards8' : ''}`}>
+      {kinds.map((r) => {
+        const name = CARD_INFO[r].label;
+        const rule = rules[r] ?? { min: 0, max: 0 };
         const v = row[r] ?? 0;
         const state = v > 0 ? 'get' : v < 0 ? 'give' : 'zero';
         const said = v > 0 ? `you ${verbs.get} ${v}` : v < 0 ? `you ${verbs.give} ${-v}` : 'none';
         return (
-          <div class="tcol" key={r}>
+          <div class={`tcol c-${r}`} key={r}>
             <div
               class={`tbox ${state}${rule.locked ? ' locked' : ''}`}
               role="group"
@@ -105,7 +108,7 @@ export function TradeRow({
                 <Chevron />
               </button>
             </div>
-            {notes && <span class={notes[r].tone ? `tnote ${notes[r].tone}` : 'tnote'}>{notes[r].text}</span>}
+            {notes?.[r] && <span class={notes[r]!.tone ? `tnote ${notes[r]!.tone}` : 'tnote'}>{notes[r]!.text}</span>}
           </div>
         );
       })}

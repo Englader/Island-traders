@@ -9,6 +9,8 @@ import {
   type GameView,
   type HarborType,
   type HexId,
+  type ImprovementTrack,
+  type KnightLevel,
   type Terrain,
   type VertexId,
 } from 'engine';
@@ -20,6 +22,7 @@ import { useMedia } from '../ui/common';
 import type { Flash } from '../ui/flash';
 import { ResGlyph } from '../ui/icons';
 import { GOLD_TILE, GoldFieldDefs } from './gold';
+import { KnightShape, MerchantShape, TowerShape, WallShape } from '../ui/ckArt';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 
@@ -30,10 +33,17 @@ export interface Targets {
 }
 
 export interface Ghost {
-  kind: 'settlement' | 'city' | 'road' | 'ship' | 'robber' | 'pirate' | 'harbor';
+  kind: 'settlement' | 'city' | 'road' | 'ship' | 'robber' | 'pirate' | 'harbor' | 'knight' | 'wall' | 'metropolis';
   id: string;
   owner: number;
+  /** Cities & Knights: the knight's strength (and whether it is active), or the metropolis' track. */
+  level?: KnightLevel;
+  active?: boolean;
+  track?: ImprovementTrack;
 }
+
+/** Where a metropolis tower stands beside its city. */
+const TOWER_AT = { x: 0.2, y: -0.01 };
 
 interface Props {
   view: GameView;
@@ -49,6 +59,8 @@ interface Props {
   tools?: ComponentChildren;
   /** Draws the map a quarter turn round, or not; by default the screen's shape decides (see useTurned). */
   turned?: boolean;
+  /** An intersection picked for a move (Cities & Knights: the knight whose moves are shown), ringed. */
+  selected?: VertexId | null;
 }
 
 interface Pt {
@@ -176,7 +188,7 @@ export function useTurned(layoutKey: string | null): boolean {
   return tall && aspect > 1.15;
 }
 
-export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned }: Props) {
+export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned, selected }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 360, h: 360 });
@@ -433,9 +445,16 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
     const pieces = Object.entries(b.pieces)
       .filter(([e]) => t.edgeVertices[e])
       .sort(([a], [c]) => mid(a).y - mid(c).y);
-    const buildings = Object.entries(b.buildings)
+    // Cities & Knights: knights stand on intersections like buildings
+    const ck = view.ck;
+    const metroAt = new Map<VertexId, ImprovementTrack>();
+    if (ck) for (const [tr, m] of Object.entries(ck.metropolises)) if (m) metroAt.set(m.vertex, tr as ImprovementTrack);
+    const vertexPieces: Array<[VertexId, 'building' | 'knight']> = [
+      ...Object.keys(b.buildings).map((v): [VertexId, 'building'] => [v, 'building']),
+      ...Object.keys(ck?.knights ?? {}).map((v): [VertexId, 'knight'] => [v, 'knight']),
+    ]
       .filter(([v]) => vpt[v])
-      .sort(([a], [c]) => vpt[a].y - vpt[c].y);
+      .sort(([a], [c]) => vpt[a].y - vpt[c].y || vpt[a].x - vpt[c].x);
 
     return (
       <>
@@ -611,11 +630,46 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               pirateIslands.fortresses.map((f, i) =>
                 !f.captured && vpt[f.vertex] ? <Fortress key={`pf${i}`} p={vpt[f.vertex]} col={color(i)} chits={f.chits} /> : null,
               )}
-            {/* buildings */}
-            {buildings.map(([v, bd]) => {
-              const col = color(bd.owner);
-              const el = <Building key={`bd${v}`} p={vpt[v]} city={bd.type === 'city'} fill={col.fill} stroke={col.stroke} />;
-              // the newest settlement or city drops onto the board
+            {/* buildings and (Cities & Knights) knights, back to front; walls round their cities, metropolis towers beside them */}
+            {vertexPieces.map(([v, kind]) => {
+              const p = vpt[v];
+              let el;
+              if (kind === 'knight') {
+                const k = ck!.knights[v];
+                const col = color(k.owner);
+                el = (
+                  <g key={`kn${v}`} transform={`translate(${fmt(p.x)} ${fmt(p.y)})`} data-knight={v} data-owner={k.owner}>
+                    <KnightShape level={k.level} active={k.active} fill={col.fill} stroke={col.stroke} />
+                  </g>
+                );
+              } else {
+                const bd = b.buildings[v];
+                const col = color(bd.owner);
+                const walled = !!ck?.players[bd.owner]?.walls.includes(v);
+                const metro = metroAt.get(v);
+                const at = `translate(${fmt(p.x)} ${fmt(p.y)})`;
+                el = (
+                  <g key={`bd${v}`} class={walled || metro ? 'ck-city' : undefined} data-wall={walled ? 'true' : undefined} data-metropolis={metro}>
+                    {walled && (
+                      <g transform={at}>
+                        <WallShape part="back" fill={col.fill} />
+                      </g>
+                    )}
+                    {metro && (
+                      <g transform={`translate(${fmt(p.x + TOWER_AT.x)} ${fmt(p.y + TOWER_AT.y)})`}>
+                        <TowerShape track={metro} fill={col.fill} stroke={col.stroke} />
+                      </g>
+                    )}
+                    <Building p={p} city={bd.type === 'city'} fill={col.fill} stroke={col.stroke} />
+                    {walled && (
+                      <g transform={at}>
+                        <WallShape part="front" fill={col.fill} />
+                      </g>
+                    )}
+                  </g>
+                );
+              }
+              // the newest settlement, city or knight drops onto the board
               return flash?.kind === 'vertex' && flash.id === v ? (
                 <g key={`new${v}-${flash.key}`} class="arrive-drop">
                   {el}
@@ -624,10 +678,16 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                 el
               );
             })}
-            {/* robber & pirate (land with a bounce when moved) */}
+            {/* Cities & Knights: the merchant on its hex */}
+            {ck?.merchant && centers[ck.merchant.hex] && (
+              <g transform={`translate(${fmt(centers[ck.merchant.hex].x - 0.32)} ${fmt(centers[ck.merchant.hex].y + 0.12)})`} data-merchant={ck.merchant.hex}>
+                <MerchantShape fill={color(ck.merchant.owner).fill} stroke={color(ck.merchant.owner).stroke} />
+              </g>
+            )}
+            {/* robber & pirate (land with a bounce when moved); in Cities & Knights the robber sleeps until the barbarians first attack */}
             {b.robber && centers[b.robber] && (
               <g key={`robber${b.robber}`} class={flash?.kind === 'hex' && flash.id === b.robber ? 'arrive-drop' : undefined}>
-                <Robber p={centers[b.robber]} />
+                <Robber p={centers[b.robber]} asleep={!!ck && !ck.robberActive} />
               </g>
             )}
             {b.pirate && centers[b.pirate] && (
@@ -659,6 +719,9 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                 </g>
               ) : null,
             )}
+            {selected && vpt[selected] && (
+              <ellipse cx={vpt[selected].x} cy={vpt[selected].y + 0.03} rx={0.27} ry={0.27 * TILT} class="selected-ring" stroke={accent} data-selected={selected} />
+            )}
             {ghost && (
               // (data-ghost: the confirmation dialog keeps this spot in view)
               <g data-ghost="">
@@ -667,7 +730,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
             )}
       </>
     );
-  }, [view, g, targets, ghost, flash, colors, accent]);
+  }, [view, g, targets, ghost, flash, colors, accent, selected]);
 
   return (
     <div class="board-wrap" ref={wrap}>
@@ -876,14 +939,22 @@ function Fortress({ p, col, chits }: { p: Pt; col: PlayerColor; chits: number })
   );
 }
 
-function Robber({ p }: { p: Pt }) {
+function Robber({ p, asleep }: { p: Pt; asleep?: boolean }) {
   const x = p.x + 0.3;
   const y = p.y - 0.02;
   return (
-    <g class="robber">
+    <g class={asleep ? 'robber asleep' : 'robber'} data-asleep={asleep ? 'true' : undefined}>
       <ellipse cx={x + 0.02} cy={y + 0.2} rx={0.14} ry={0.05} class="piece-shadow" />
       <path d={`M ${fmt(x - 0.12)} ${fmt(y + 0.2)} Q ${fmt(x)} ${fmt(y - 0.14)} ${fmt(x + 0.12)} ${fmt(y + 0.2)} Z`} fill="url(#robber-grad)" class="robber-body" />
       <circle cx={x} cy={y - 0.1} r={0.085} fill="url(#robber-grad)" class="robber-body" />
+      {asleep && (
+        <g class="robber-zzz">
+          <ellipse cx={x + 0.16} cy={y - 0.25} rx={0.12} ry={0.1} class="zzz-bubble" />
+          <T x={x + 0.16} y={y - 0.245} s={0.13} cls="zzz-text">
+            💤
+          </T>
+        </g>
+      )}
     </g>
   );
 }
@@ -905,6 +976,28 @@ function PirateShip({ p }: { p: Pt }) {
 
 function GhostPiece({ ghost, g, colors }: { ghost: Ghost; g: ReturnType<typeof useGeometry>; colors: PlayerColor[] }) {
   const col = colors[ghost.owner] ?? colors[0];
+  if (ghost.kind === 'knight' || ghost.kind === 'wall' || ghost.kind === 'metropolis') {
+    const p = g.vpt[ghost.id];
+    if (!p) return null;
+    if (ghost.kind === 'knight')
+      return (
+        <g transform={`translate(${fmt(p.x)} ${fmt(p.y)})`} class="ghost">
+          <KnightShape level={ghost.level ?? 1} active={!!ghost.active} fill={col.fill} stroke={col.stroke} ghost />
+        </g>
+      );
+    if (ghost.kind === 'wall')
+      return (
+        <g transform={`translate(${fmt(p.x)} ${fmt(p.y)})`} class="ghost-wall">
+          <WallShape part="back" fill={col.fill} ghost />
+          <WallShape part="front" fill={col.fill} ghost />
+        </g>
+      );
+    return (
+      <g transform={`translate(${fmt(p.x + TOWER_AT.x)} ${fmt(p.y + TOWER_AT.y)})`} class="ghost">
+        <TowerShape track={ghost.track ?? 'trade'} fill={col.fill} stroke={col.stroke} ghost />
+      </g>
+    );
+  }
   if (ghost.kind === 'settlement' || ghost.kind === 'city') {
     const p = g.vpt[ghost.id];
     return p ? <Building p={p} city={ghost.kind === 'city'} fill={col.fill} stroke={col.stroke} ghost /> : null;

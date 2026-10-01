@@ -1,10 +1,11 @@
-import { COSTS, listScenarios, type GameOptions, type MapLayout, type ScenarioDef } from 'engine';
+import { CK_COSTS, CK_VICTORY_POINTS, COSTS, listScenarios, type GameOptions, type MapLayout, type ScenarioDef } from 'engine';
 import { Fragment } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, LEVEL_HINT, LEVEL_LABEL, PLAYER_COLORS, type BotLevel, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
 import { MapPreview } from './MapPreview';
+import { GateGlyph, KnightGlyph } from './ckArt';
 
 /** Builds for sandboxed previews (no WebSocket or WebRTC) set VITE_NO_ONLINE. */
 export const ONLINE = !import.meta.env.VITE_NO_ONLINE;
@@ -169,10 +170,14 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
   const [speed, setSpeed] = useState<BotSpeed>('normal');
   const [level, setLevel] = useState<BotLevel>(() => loadJson<BotLevel>('botLevel') ?? 'medium');
   const [showOptions, setShowOptions] = useState(false);
+  // Cities & Knights: on the base game, 3-4 players for now
+  const [ckOn, setCkOn] = useState(() => loadJson<boolean>('citiesAndKnights') === true);
+  const ck = ckOn && scenarioId === 'base';
+  const maxPlayers = ck ? Math.min(4, sc.maxPlayers) : sc.maxPlayers;
 
-  const n = Math.min(Math.max(count, sc.minPlayers), sc.maxPlayers);
+  const n = Math.min(Math.max(count, sc.minPlayers), maxPlayers);
   const activeSeats = defaultSeats(n, online, seats).slice(0, n);
-  const target = vp ?? sc.victoryPoints(n);
+  const target = vp ?? (ck ? CK_VICTORY_POINTS : sc.victoryPoints(n));
   // The preview is built with exactly these options and seed, so it shows the board the game will use.
   const options: Partial<GameOptions> = {
     ...(vp !== null ? { victoryPoints: vp } : {}),
@@ -181,6 +186,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
     tradeBuildMode: separate ? 'separate' : 'combined',
     fiveSixMode: fiveSix,
     tokenPlacement: tokens,
+    ...(ck ? { citiesAndKnights: true } : {}),
   };
 
   const setSeat = (i: number, patch: Partial<Seat>) => {
@@ -234,6 +240,30 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
               </button>
               {s.id === scenarioId && (
                 <div class="map-block">
+                  {s.id === 'base' && (
+                    <label class={ck ? 'ck-toggle on' : 'ck-toggle'}>
+                      <span class="ck-toggle-art" aria-hidden="true">
+                        <KnightGlyph level={2} active fill="#d8433b" stroke="#7c1d18" />
+                      </span>
+                      <span class="ck-toggle-text">
+                        <b>Cities &amp; Knights</b>
+                        <span>Knights, barbarians, city improvements · 13 VP</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        class="switch"
+                        checked={ck}
+                        aria-label="Play with Cities & Knights"
+                        onChange={(e) => {
+                          const on = (e.target as HTMLInputElement).checked;
+                          setCkOn(on);
+                          setVp(null);
+                          if (on && count > 4) setCount(4);
+                        }}
+                      />
+                    </label>
+                  )}
                   <div class="row map-row">
                     <span>Map</span>
                     <div class="seg" role="group" aria-label="Map">
@@ -244,7 +274,14 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
                       ))}
                     </div>
                   </div>
-                  <MapPreview scenario={scenarioId} name={sc.name} players={n} options={options} seed={seed} onReroll={() => setSeed(newSeed())} />
+                  <MapPreview
+                    scenario={scenarioId}
+                    name={ck ? `${sc.name} · Cities & Knights` : sc.name}
+                    players={n}
+                    options={options}
+                    seed={seed}
+                    onReroll={() => setSeed(newSeed())}
+                  />
                 </div>
               )}
             </Fragment>
@@ -256,8 +293,9 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
         <h2>Players</h2>
         <div class="row">
           <span>Number of players</span>
-          <Stepper value={n} min={sc.minPlayers} max={sc.maxPlayers} onChange={setCount} label="players" />
+          <Stepper value={n} min={sc.minPlayers} max={maxPlayers} onChange={setCount} label="players" />
         </div>
+        {ck && sc.maxPlayers > 4 && <p class="hint">Cities &amp; Knights is for 3–4 players for now.</p>}
         <div class="seat-list">
           {activeSeats.map((s, i) => (
             <div class="seat" key={i}>
@@ -378,6 +416,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
             if (activeSeats[0]?.kind === 'human' && activeSeats[0].name.trim()) saveJson('playerName', activeSeats[0].name.trim());
             saveJson('botLevel', level);
             saveJson('mapLayout', layout);
+            if (scenarioId === 'base') saveJson('citiesAndKnights', ckOn);
             onStart({
               scenario: scenarioId,
               seats: activeSeats.map((s, i) => ({ ...s, name: s.name.trim() || `Player ${i + 1}` })),
@@ -458,6 +497,42 @@ export function RulesSheet({ close }: { close(): void }) {
         </p>
         <h3>Awards</h3>
         <p>Longest road or trade route (5+) and largest army (3+ knights) are worth 2 VP each.</p>
+        <h3 class="rules-ck">
+          <KnightGlyph level={2} active fill="#2f6fe0" stroke="#173a7a" /> Cities &amp; Knights
+        </h3>
+        <p>
+          Played to 13 VP. Your second starting piece is a city. Three dice: the white and red production dice and the event die. There are no
+          development cards: progress cards take their place.
+        </p>
+        <ul class="rules-ck-list">
+          <li>
+            <b>Commodities.</b> A city on forest, pasture or mountains takes 1 resource and 1 commodity: paper, cloth or coin. They count in your hand,
+            can be traded (4:1, 3:1 at a generic harbor) and stolen.
+          </li>
+          <li>
+            <b>City improvements</b> cost 1–5 of a commodity: <GateGlyph track="trade" /> trade (cloth), <GateGlyph track="politics" /> politics (coin) and{' '}
+            <GateGlyph track="science" /> science (paper). Level 3 gives an ability (2:1 commodities, mighty knights, the Aqueduct); the first to level 4
+            builds the metropolis (+2 VP). Tap <b>Improve</b> (key I) for the three tracks.
+          </li>
+          <li>
+            <b>The event die.</b> A ship moves the barbarians one space; a city gate draws progress cards for players whose improvement of its colour
+            shows the red die (level 1: red 1–2, each level one more). You hold up to 4 progress cards, under <b>Cards</b>; playing them comes in the
+            next update.
+          </li>
+          <li>
+            <b>Knights</b> <Cost cost={CK_COSTS.knight} /> stand on your roads and block others. Activate one <Cost cost={CK_COSTS.activate} />, promote it{' '}
+            <Cost cost={CK_COSTS.promote} />; an active knight can move, displace a weaker knight or chase the robber. Tap <b>Knights</b> (key K),
+            then a knight.
+          </li>
+          <li>
+            <b>The barbarians</b> land after 7 ship rolls: all cities against all active knights. If they are stronger, whoever defended least loses a
+            city; otherwise the best defender becomes Defender of Catan (1 VP). The robber sleeps until the first attack. The track in the header
+            shows the ship and both sides' strength: tap it for more.
+          </li>
+          <li>
+            <b>City walls</b> <Cost cost={CK_COSTS.cityWall} /> raise your hand limit on a 7 by 2 each.
+          </li>
+        </ul>
         <p class="hint">Every scenario's special rules are shown in its description and under ⭐ Special during the game.</p>
       </div>
     </Sheet>

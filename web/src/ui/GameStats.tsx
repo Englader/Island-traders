@@ -1,8 +1,9 @@
-import { VP, getScenario, type GameStats as Stats, type GameView, type PlayerId, type PlayerStats, type Resource } from 'engine';
+import { VP, getScenario, type Card, type GameStats as Stats, type GameView, type PlayerId, type PlayerStats } from 'engine';
 import type { ComponentChildren, RefObject } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { averageTurn, formatClock, formatDuration, formatRough, type ClockFeed, type ClockSummary } from '../game/clock';
-import { RESOURCE_INFO, RESOURCE_LIST } from '../game/names';
+import { CARD_INFO, COMMODITY_LIST, RESOURCE_LIST } from '../game/names';
+import { ckPoints } from '../game/ck';
 import type { PlayerColor, SeatKind } from '../game/seats';
 import { Sheet } from './common';
 import { ResGlyph } from './icons';
@@ -41,7 +42,7 @@ export function GameStatsSheet({
     <Sheet title="Game stats" onClose={close} wide>
       <div class="gstats">
         <p class="gs-sub">
-          {sc.name} · {view.turn.number} turns · {view.players.length} players{time ? ` · ${formatRough(time.playedMs)}` : ''}
+          {view.ck ? 'Cities & Knights' : sc.name} · {view.turn.number} turns · {view.players.length} players{time ? ` · ${formatRough(time.playedMs)}` : ''}
         </p>
 
         <Section title="Final scores">
@@ -60,7 +61,10 @@ export function GameStatsSheet({
           )}
         </Section>
 
-        <Section title="Resources produced" note="Cards the dice gave each player, gold picks included">
+        <Section
+          title={view.ck ? 'Cards produced' : 'Resources produced'}
+          note={view.ck ? 'Resources and commodities the dice gave each player' : 'Cards the dice gave each player, gold picks included'}
+        >
           {stats ? <Produced view={view} colors={colors} stats={stats} /> : <NotRecorded />}
         </Section>
 
@@ -188,6 +192,10 @@ interface Breakdown {
   cards: number;
   road: number;
   army: number;
+  /** Cities & Knights: metropolises, Defender of Catan cards, the merchant. */
+  metropolis: number;
+  defender: number;
+  merchant: number;
   other: number;
   total: number;
 }
@@ -201,12 +209,26 @@ function breakdown(view: GameView, p: PlayerId): Breakdown {
     else settlements += VP.settlement;
   }
   const pl = view.players[p];
-  const cards = (pl.devCards ?? []).filter((c) => c.type === 'victoryPoint').length * VP.vpCard;
   const road = view.longestRoute.holder === p ? VP.longestRoute : 0;
   const army = view.largestArmy.holder === p ? VP.largestArmy : 0;
+  // Cities & Knights: progress VP cards are public; metropolises, defenders and the merchant have columns of their own
+  const ck = ckPoints(view, p);
+  const devVP = (pl.devCards ?? []).filter((c) => c.type === 'victoryPoint').length * VP.vpCard;
+  const cards = devVP + ck.cards;
   // island chits, gifts and scenario points (wonders, cloth, ...)
-  const other = pl.publicVP - settlements - cities - road - army;
-  return { settlements, cities, cards, road, army, other, total: pl.totalVP ?? pl.publicVP + cards };
+  const other = pl.publicVP - settlements - cities - road - army - ck.metropolis - ck.defender - ck.cards - ck.merchant;
+  return {
+    settlements,
+    cities,
+    cards,
+    road,
+    army,
+    metropolis: ck.metropolis,
+    defender: ck.defender,
+    merchant: ck.merchant,
+    other,
+    total: pl.totalVP ?? pl.publicVP + devVP,
+  };
 }
 
 function ScoreTable({
@@ -226,12 +248,16 @@ function ScoreTable({
   const rows = view.players.map((p) => ({ p: p.id, b: breakdown(view, p.id) }));
   rows.sort((a, b) => (a.p === winner ? -1 : b.p === winner ? 1 : b.b.total - a.b.total));
   const otherLabel = sc.rules.islandBonus ? 'Islands' : 'Special';
+  const ck = !!view.ck;
   const cols: Array<{ key: keyof Breakdown; icon: string; label: string; show: boolean }> = [
     { key: 'settlements', icon: '🏠', label: 'Settlements', show: true },
     { key: 'cities', icon: '🏙️', label: 'Cities', show: true },
-    { key: 'cards', icon: '🃏', label: 'VP cards', show: true },
+    { key: 'metropolis', icon: '🏰', label: 'Metropolises', show: ck },
+    { key: 'defender', icon: '🛡️', label: 'Defender of Catan', show: ck },
+    { key: 'cards', icon: ck ? '📜' : '🃏', label: ck ? 'Progress VP cards' : 'VP cards', show: true },
+    { key: 'merchant', icon: '🧺', label: 'Merchant', show: ck },
     { key: 'road', icon: '🛣️', label: sc.rules.ships ? 'Longest trade route' : 'Longest road', show: sc.rules.longestRoute },
-    { key: 'army', icon: '⚔️', label: 'Largest army', show: sc.rules.largestArmy },
+    { key: 'army', icon: '⚔️', label: 'Largest army', show: sc.rules.largestArmy && !ck },
     { key: 'other', icon: '⭐', label: otherLabel, show: rows.some((r) => r.b.other !== 0) },
   ];
   const shown = cols.filter((c) => c.show);
@@ -299,11 +325,38 @@ function leaders(view: GameView, score: (p: PlayerId) => number): { who: PlayerI
 }
 
 const produced = (ps: PlayerStats) => RESOURCE_LIST.reduce((n, r) => n + ps.produced[r], 0);
+/** Cities & Knights: commodities from the dice. */
+const commodities = (ps: PlayerStats) => COMMODITY_LIST.reduce((n, k) => n + (ps.producedCommodities?.[k] ?? 0), 0);
+/** Every card from the dice: what `expected36` counts (resources, and commodities in Cities & Knights). */
+const fromDice = (ps: PlayerStats) => produced(ps) + commodities(ps);
+/** A card kind's count in a player's production. */
+const producedOf = (ps: PlayerStats, k: Card) => (k in ps.produced ? ps.produced[k as keyof PlayerStats['produced']] : (ps.producedCommodities?.[k as 'paper'] ?? 0));
+
+/** The barbarian attacks of a Cities & Knights game, read from the log: won and lost, and the cities each player lost. */
+export function barbarianRecord(view: GameView): { won: number; lost: number; pillaged: number[] } {
+  let won = 0;
+  let lost = 0;
+  const pillaged = view.players.map(() => 0);
+  for (const e of view.log) {
+    const m = /^The barbarians attack: (\d+) against the knights' (\d+)$/.exec(e.msg);
+    if (m) {
+      if (Number(m[2]) >= Number(m[1])) won++;
+      else lost++;
+      continue;
+    }
+    const p = /^The barbarians pillage a city of (.+?)( and its city wall)?$/.exec(e.msg);
+    if (p) {
+      const who = view.players.find((x) => x.name === p[1]);
+      if (who) pillaged[who.id]++;
+    }
+  }
+  return { won, lost, pillaged };
+}
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function Highlights({ view, colors, stats }: { view: GameView; colors: PlayerColor[]; stats: Stats | null }) {
   const sc = getScenario(view.scenario);
-  const tiles: Array<{ label: string; who: PlayerId[]; sub: string }> = [];
+  const tiles: Array<{ label: string; who: PlayerId[]; sub: string; big?: string }> = [];
   const none = { label: '', who: [] as PlayerId[], sub: '' };
   if (stats) {
     const ps = stats.players;
@@ -326,7 +379,28 @@ function Highlights({ view, colors, stats }: { view: GameView; colors: PlayerCol
     const longest = Math.max(...view.longestRoute.lengths);
     tiles.push(h !== null ? { label, who: [h], sub: plural(view.longestRoute.lengths[h] ?? 0, 'segment') } : { ...none, label, sub: `Nobody held it (longest: ${longest})` });
   }
-  if (sc.rules.largestArmy) {
+  if (view.ck) {
+    const ck = view.ck;
+    const rec = barbarianRecord(view);
+    const attacks = rec.won + rec.lost;
+    tiles.push({
+      label: 'Barbarian attacks',
+      who: [],
+      big: attacks === 0 ? 'None' : `${rec.won} won · ${rec.lost} lost`,
+      sub: attacks === 0 ? `The ship got ${ck.barbarians} of ${ck.track} spaces` : `${plural(rec.pillaged.reduce((a, b) => a + b, 0), 'city', 'cities')} pillaged`,
+    });
+    const def = leaders(view, (p) => ck.players[p]?.defenders ?? 0);
+    tiles.push(
+      def.value > 0
+        ? { label: 'Defender of Catan', who: def.who, sub: plural(def.value, 'card') }
+        : { label: 'Defender of Catan', who: [], sub: 'Nobody defended Catan alone' },
+    );
+    if (stats) {
+      const com = leaders(view, (p) => commodities(stats.players[p]));
+      if (com.value > 0) tiles.push({ label: 'Most commodities', who: com.who, sub: `${plural(com.value, 'card')} of paper, cloth and coin` });
+    }
+  }
+  if (sc.rules.largestArmy && !view.ck) {
     const h = view.largestArmy.holder;
     const most = Math.max(...view.players.map((p) => p.playedKnights));
     tiles.push(
@@ -337,8 +411,8 @@ function Highlights({ view, colors, stats }: { view: GameView; colors: PlayerCol
   }
   if (stats) {
     const ps = stats.players;
-    // dice production against what the numbers they sat on should have given
-    const luck = (p: PlayerId) => (ps[p].expected36 > 0 ? (36 * produced(ps[p])) / ps[p].expected36 - 1 : -Infinity);
+    // dice production against what the numbers they sat on should have given (commodities included: expected36 counts every card)
+    const luck = (p: PlayerId) => (ps[p].expected36 > 0 ? (36 * fromDice(ps[p])) / ps[p].expected36 - 1 : -Infinity);
     const lucky = leaders(view, luck);
     if (lucky.value > -Infinity) {
       const p = lucky.who[0];
@@ -346,7 +420,7 @@ function Highlights({ view, colors, stats }: { view: GameView; colors: PlayerCol
       tiles.push({
         label: 'Luckiest roller',
         who: lucky.who,
-        sub: `${produced(ps[p])} cards from the dice, ${Math.round(ps[p].expected36 / 36)} expected (${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%)`,
+        sub: `${fromDice(ps[p])} cards from the dice, ${Math.round(ps[p].expected36 / 36)} expected (${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%)`,
       });
     }
     const sevens = leaders(view, (p) => ps[p].discarded + ps[p].stolen);
@@ -366,7 +440,7 @@ function Highlights({ view, colors, stats }: { view: GameView; colors: PlayerCol
         <div class="gs-tile" key={t.label}>
           <span class="stat-label">{t.label}</span>
           <span class="gs-tile-who">
-            {t.who.length === 0 ? '–' : t.who.map((p) => <Who key={p} view={view} colors={colors} p={p} line={false} />)}
+            {t.big ? <b class="gs-tile-big">{t.big}</b> : t.who.length === 0 ? '–' : t.who.map((p) => <Who key={p} view={view} colors={colors} p={p} line={false} />)}
           </span>
           <span class="stat-sub">{t.sub}</span>
         </div>
@@ -568,9 +642,10 @@ function VpTable({ view, colors, series, last }: { view: GameView; colors: Playe
 
 function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor[]; stats: Stats }) {
   const [ref, width] = useWidth(360);
-  const [focus, setFocus] = useState<{ p: PlayerId; r: Resource; x: number } | null>(null);
+  const [focus, setFocus] = useState<{ p: PlayerId; r: Card; x: number } | null>(null);
   const ps = stats.players;
-  const totals = ps.map(produced);
+  const kinds: Card[] = view.ck ? [...RESOURCE_LIST, ...COMMODITY_LIST] : RESOURCE_LIST;
+  const totals = ps.map(view.ck ? fromDice : produced);
   const max = Math.max(1, ...totals);
   const rowH = 30;
   const barH = 16;
@@ -584,21 +659,21 @@ function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor
   return (
     <div class="gs-chart" ref={ref}>
       <div class="gs-legend" aria-hidden="true">
-        {RESOURCE_LIST.map((r) => (
+        {kinds.map((r) => (
           <span key={r}>
-            <span class="gs-swatch" style={{ background: RESOURCE_INFO[r].color }} />
+            <span class="gs-swatch" style={{ background: CARD_INFO[r].color }} />
             <ResGlyph r={r} />
-            {RESOURCE_INFO[r].label}
+            {CARD_INFO[r].label}
           </span>
         ))}
       </div>
       <div class="gs-plot">
-        <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label={`Resources produced: ${view.players.map((p) => `${p.name} ${totals[p.id]}`).join(', ')}`}>
+        <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label={`${view.ck ? 'Cards' : 'Resources'} produced: ${view.players.map((p) => `${p.name} ${totals[p.id]}`).join(', ')}`}>
           <line x1={labelW} x2={labelW} y1={0} y2={H} class="gs-axis" />
           {ps.map((s, p) => {
             const cy = rowH * p + rowH / 2 + 2;
             let x0 = labelW;
-            const parts = RESOURCE_LIST.filter((r) => s.produced[r] > 0);
+            const parts = kinds.filter((r) => producedOf(s, r) > 0);
             return (
               <g key={p}>
                 <Marker seat={p} color={colors[p].fill} x={8} y={cy} r={4} />
@@ -606,7 +681,7 @@ function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor
                   {clip(view.players[p].name, Math.floor((labelW - 24) / 7))}
                 </text>
                 {parts.map((r, i) => {
-                  const w = s.produced[r] * scale;
+                  const w = producedOf(s, r) * scale;
                   const lastPart = i === parts.length - 1;
                   const drawW = Math.max(0.5, lastPart ? w : w - gapPx);
                   const xs = x0;
@@ -617,7 +692,7 @@ function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor
                   const on = focus?.p === p && focus.r === r;
                   return (
                     <g key={r} class={on ? 'gs-seg on' : 'gs-seg'}>
-                      <path d={d} fill={RESOURCE_INFO[r].color} />
+                      <path d={d} fill={CARD_INFO[r].color} />
                       {drawW >= 17 && <ResGlyph r={r} x={xs + drawW / 2} y={cy} size={12} />}
                       <rect
                         x={xs}
@@ -649,7 +724,7 @@ function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor
             }}
             role="status"
           >
-            <b>{ps[focus.p].produced[focus.r]}</b> {RESOURCE_INFO[focus.r].label.toLowerCase()} · {view.players[focus.p].name}
+            <b>{producedOf(ps[focus.p], focus.r)}</b> {CARD_INFO[focus.r].label.toLowerCase()} · {view.players[focus.p].name}
             <span class="gs-tip-sub"> of {totals[focus.p]} produced</span>
           </div>
         )}
@@ -661,8 +736,8 @@ function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor
             <thead>
               <tr>
                 <th>Player</th>
-                {RESOURCE_LIST.map((r) => (
-                  <th key={r} class="num" title={RESOURCE_INFO[r].label}>
+                {kinds.map((r) => (
+                  <th key={r} class="num" title={CARD_INFO[r].label}>
                     <ResGlyph r={r} />
                   </th>
                 ))}
@@ -675,9 +750,9 @@ function Produced({ view, colors, stats }: { view: GameView; colors: PlayerColor
                   <th scope="row">
                     <Who view={view} colors={colors} p={p} line={false} />
                   </th>
-                  {RESOURCE_LIST.map((r) => (
+                  {kinds.map((r) => (
                     <td key={r} class="num">
-                      {s.produced[r]}
+                      {producedOf(s, r)}
                     </td>
                   ))}
                   <td class="num gs-total">{totals[p]}</td>
@@ -698,8 +773,11 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, Math.max(1,
 function Ledger({ view, colors, stats }: { view: GameView; colors: PlayerColor[]; stats: Stats }) {
   const sc = getScenario(view.scenario);
   const ps = stats.players;
-  const rows: Array<{ icon: string; label: string; get(s: PlayerStats): number; show?: boolean; best?: 'high' }> = [
-    { icon: '🎲', label: 'From the dice', get: produced, best: 'high' },
+  const ck = view.ck;
+  const pillaged = ck ? barbarianRecord(view).pillaged : [];
+  const rows: Array<{ icon: string; label: string; get(s: PlayerStats, p: PlayerId): number; show?: boolean; best?: 'high' }> = [
+    { icon: '🎲', label: ck ? 'Resources from the dice' : 'From the dice', get: produced, best: 'high' },
+    { icon: '📜', label: 'Commodities from the dice', get: commodities, best: 'high', show: !!ck },
     { icon: '🤝', label: 'Player trades', get: (s) => s.trades, best: 'high' },
     { icon: '📥', label: 'Cards from trades', get: (s) => s.tradeIn },
     { icon: '🏦', label: 'Bank trades', get: (s) => s.bankTrades, best: 'high' },
@@ -708,9 +786,11 @@ function Ledger({ view, colors, stats }: { view: GameView; colors: PlayerColor[]
     { icon: '🗑️', label: 'Discarded on 7s', get: (s) => s.discarded },
     { icon: '🏴‍☠️', label: 'Lost to pirates', get: (s) => s.lost, show: ps.some((s) => s.lost > 0) },
     { icon: '🔨', label: 'Spent building', get: (s) => s.spent },
-    { icon: '🃏', label: 'Dev. cards bought', get: (s) => s.devBought },
-    { icon: '▶️', label: 'Dev. cards played', get: (s) => s.devPlayed },
-    { icon: '⚔️', label: 'Knights played', get: (s) => s.knights, show: sc.rules.largestArmy },
+    { icon: '🃏', label: 'Dev. cards bought', get: (s) => s.devBought, show: !ck },
+    { icon: '▶️', label: ck ? 'Progress cards played' : 'Dev. cards played', get: (s) => s.devPlayed },
+    { icon: '⚔️', label: 'Knights played', get: (s) => s.knights, show: sc.rules.largestArmy && !ck },
+    { icon: '🛡️', label: 'Defender of Catan', get: (_, p) => ck?.players[p]?.defenders ?? 0, best: 'high', show: !!ck },
+    { icon: '🔥', label: 'Cities pillaged', get: (_, p) => pillaged[p] ?? 0, show: !!ck },
   ];
   return (
     <div class="gs-scroll">
@@ -730,7 +810,7 @@ function Ledger({ view, colors, stats }: { view: GameView; colors: PlayerColor[]
           {rows
             .filter((r) => r.show !== false)
             .map((row) => {
-              const vals = ps.map(row.get);
+              const vals = ps.map((s, p) => row.get(s, p));
               const top = Math.max(...vals);
               return (
                 <tr key={row.label}>

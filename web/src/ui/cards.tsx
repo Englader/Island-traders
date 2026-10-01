@@ -1,6 +1,6 @@
-import type { DevCardType, Resource } from 'engine';
+import type { Card, DevCardType } from 'engine';
 import type { JSX } from 'preact';
-import { DEV_INFO, RESOURCE_INFO } from '../game/names';
+import { CARD_INFO, DEV_INFO } from '../game/names';
 import { ResGlyph } from './icons';
 
 /*
@@ -92,7 +92,34 @@ function Sheep({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
   );
 }
 
-const SCENES: Record<Resource, () => JSX.Element> = {
+/** A stack of coins, `n` high, its base at (x, y). */
+function CoinStack({ x, y, n }: { x: number; y: number; n: number }) {
+  return (
+    <g stroke="#7a4e0e" stroke-width="0.5">
+      {Array.from({ length: n }, (_, i) => (
+        <g key={i}>
+          <path d={`M${x - 5} ${y - i * 2.2} v1.8 a5 1.9 0 0 0 10 0 v-1.8 Z`} fill="#b97f1c" />
+          <ellipse cx={x} cy={y - i * 2.2} rx="5" ry="1.9" fill={i === n - 1 ? '#f2c64e' : '#e0a933'} />
+        </g>
+      ))}
+      <ellipse cx={x} cy={y - (n - 1) * 2.2} rx="2.8" ry="0.9" fill="none" stroke="#b9861f" stroke-width="0.45" />
+    </g>
+  );
+}
+
+/** A bolt of cloth lying on its side: a roll with its end towards the viewer's right. */
+function Bolt({ x, y, len, r, fill, light, dark }: { x: number; y: number; len: number; r: number; fill: string; light: string; dark: string }) {
+  return (
+    <g stroke={dark} stroke-width="0.6">
+      <rect x={x} y={y - r} width={len} height={r * 2} rx="1" fill={fill} />
+      <path d={`M${x + len * 0.3} ${y - r} v${r * 2} M${x + len * 0.62} ${y - r} v${r * 2}`} stroke={light} stroke-width="1.2" />
+      <ellipse cx={x + len} cy={y} rx={r * 0.62} ry={r} fill={light} />
+      <path d={`M${x + len} ${y - r * 0.45} a${r * 0.28} ${r * 0.45} 0 1 1 -0.2 ${r * 0.9}`} fill="none" stroke={dark} stroke-width="0.5" />
+    </g>
+  );
+}
+
+const SCENES: Record<Card, () => JSX.Element> = {
   brick: () => (
     <g>
       <Sky id="sky-brick" top="#9fd3ee" bottom="#f7e3c4" />
@@ -220,6 +247,97 @@ const SCENES: Record<Resource, () => JSX.Element> = {
       <path d="M12.5 49 l0.7 -1.5 l0.7 1.5 l-0.7 1.5 Z M42 49.6 l0.7 -1.5 l0.7 1.5 l-0.7 1.5 Z" fill="#8fd3ff" />
     </g>
   ),
+  // --- Cities & Knights commodities -----------------------------------------------
+  /** Paper: a mill by a forest stream, sheets and a scroll in front. */
+  paper: () => (
+    <g>
+      <Sky id="sky-paper" top="#b4dcef" bottom="#f4ecd2" />
+      <Cloud x={14} y={9} s={0.8} />
+      <path d={`M0 30 Q12 21 24 27 T${W} 24 V${H} H0 Z`} fill="#5f9a55" />
+      <Pine x={6} y={22} s={0.85} />
+      <Pine x={15} y={24} s={0.7} />
+      {/* the mill and its wheel */}
+      <g stroke="#5a3616" stroke-width="0.6">
+        <rect x="32" y="22" width="14" height="11" fill="#e8d3a8" />
+        <path d="M30.5 22.5 L39 15.5 L47.5 22.5 Z" fill="#a3542f" />
+        <rect x="37" y="27" width="3.4" height="6" fill="#6b4524" />
+        <rect x="42" y="24.5" width="2.6" height="2.6" fill="#8fc6e0" />
+        <circle cx="30.5" cy="30" r="5.2" fill="none" stroke="#7a4a22" stroke-width="1.2" />
+        <path d="M30.5 24.8 V35.2 M25.3 30 H35.7 M26.8 26.3 L34.2 33.7 M34.2 26.3 L26.8 33.7" stroke="#8a5a2b" stroke-width="0.7" />
+      </g>
+      <path d={`M0 36 Q14 33 26 35.5 T${W} 35 V39 Q30 37.5 0 40 Z`} fill="#6fb3d8" opacity="0.9" />
+      <path d={`M0 40 Q26 37 ${W} 40 V${H} H0 Z`} fill="#8a6a42" />
+      <ellipse cx="26" cy="52.5" rx="15" ry="1.6" fill="#000" opacity="0.18" />
+      {/* a stack of sheets */}
+      <g stroke="#8a6d3b" stroke-width="0.5">
+        <path d="M10 50 L30 50 L34 46 L14 46 Z" fill="#efe2c1" />
+        <path d="M10.5 48.6 L30.5 48.6 L34.5 44.6 L14.5 44.6 Z" fill="#f7ecd2" />
+        <path d="M11 47.2 L31 47.2 L35 43.2 L15 43.2 Z" fill="#fff8e6" />
+      </g>
+      <path d="M16 45.6 h12 M17.4 44.4 h9" stroke="#c9b58c" stroke-width="0.5" />
+      {/* a scroll tied with a ribbon */}
+      <g stroke="#7d6234" stroke-width="0.6">
+        <rect x="30" y="47" width="15" height="5" rx="2.5" fill="#f3e3bb" />
+        <ellipse cx="44.6" cy="49.5" rx="1.4" ry="2.5" fill="#e4c98f" />
+        <rect x="35.6" y="46.8" width="2" height="5.4" fill="#c0392b" stroke="#7c1d18" />
+      </g>
+    </g>
+  ),
+  /** Cloth: dyed lengths drying on a line over a meadow, bolts of cloth in front. */
+  cloth: () => (
+    <g>
+      <Sky id="sky-cloth" top="#a9d4f0" bottom="#f3eef7" />
+      <Cloud x={40} y={8} s={0.8} />
+      <path d={`M0 32 Q14 24 28 30 T${W} 27 V${H} H0 Z`} fill="#9fd060" />
+      <Sheep x={44} y={30} s={0.42} />
+      {/* the drying line */}
+      <g stroke="#6b4524" stroke-width="1">
+        <path d="M5 38 V14 M47 38 V14" />
+      </g>
+      <path d="M5 15.5 Q26 19.5 47 15.5" stroke="#5a3616" stroke-width="0.5" fill="none" />
+      <g stroke-width="0.5">
+        <path d="M9 16.2 L17 17.4 L16.4 29 L13.2 27.6 L9.6 29.4 Z" fill="#b65aab" stroke="#5a1f55" />
+        <path d="M19 17.6 L27 18 L27.4 31.5 L23.2 30 L19.4 31.6 Z" fill="#3e7cc4" stroke="#1d3f70" />
+        <path d="M29 17.8 L37 17.2 L37.6 28 L33.6 26.8 L29.4 28.4 Z" fill="#e2a62b" stroke="#7a560c" />
+        <path d="M11 20 L16.6 21 M21 22 L27 22.4 M31 21 L37 20.6" stroke="#fff" stroke-opacity="0.55" stroke-width="0.9" />
+      </g>
+      <path d={`M0 41 Q26 36 ${W} 41 V${H} H0 Z`} fill="#86c14f" />
+      <ellipse cx="27" cy="53" rx="17" ry="1.7" fill="#000" opacity="0.18" />
+      <Bolt x={11} y={49} len={22} r={3.4} fill="#a24f9a" light="#d98ccf" dark="#5a1f55" />
+      <Bolt x={16} y={43} len={20} r={3.2} fill="#c8577f" light="#f0a3bf" dark="#6e2140" />
+      <path d="M33 52 Q37 53 41 51.5 L42.5 47.5 Q38.5 49 35 48 Z" fill="#a24f9a" stroke="#5a1f55" stroke-width="0.5" />
+    </g>
+  ),
+  /** Coin: a mint below the mountains, stacks of new coins in front. */
+  coin: () => (
+    <g>
+      <Sky id="sky-coin" top="#9cc5e6" bottom="#f1ead8" />
+      <path d={`M0 34 L12 14 L21 25 L32 9 L${W} 31 V${H} H0 Z`} fill="#8f97a3" />
+      <path d="M12 14 L15.5 20 L13 19 L10 20.5 Z M32 9 L36.5 15 L33 14 L29 15.5 Z" fill="#fff" />
+      <path d="M21 25 L32 9 L35 20 Z" fill="#6b7380" opacity="0.6" />
+      {/* the mint: a stone house with a chimney */}
+      <g stroke="#3f444c" stroke-width="0.6">
+        <rect x="5" y="30" width="15" height="10" fill="#c9c2b4" />
+        <path d="M3.6 30.5 L12.5 24 L21.4 30.5 Z" fill="#7d4e2d" />
+        <rect x="16" y="23.5" width="2.6" height="5" fill="#8f8a80" />
+        <rect x="10.6" y="34" width="3.6" height="6" fill="#4b3a2a" />
+      </g>
+      <circle cx="17.6" cy="20.5" r="1.4" fill="#fff" opacity="0.6" />
+      <circle cx="19" cy="17.6" r="1.9" fill="#fff" opacity="0.45" />
+      <path d={`M0 42 Q26 37 ${W} 42 V${H} H0 Z`} fill="#77706a" />
+      <ellipse cx="30" cy="53" rx="17" ry="1.7" fill="#000" opacity="0.2" />
+      <CoinStack x={19} y={51} n={3} />
+      <CoinStack x={29} y={52} n={5} />
+      <CoinStack x={40} y={51} n={2} />
+      {/* a coin standing up in front, with a glint */}
+      <g stroke="#7a4e0e" stroke-width="0.6">
+        <circle cx="38" cy="43" r="6" fill="#f2c64e" />
+        <circle cx="38" cy="43" r="4.2" fill="none" stroke="#b9861f" stroke-width="0.6" />
+      </g>
+      <path d="M36 44.3 l0.5 -3 l1.5 1.3 l1.5 -1.3 l0.5 3 Z" fill="#b9861f" />
+      <path d="M33.6 39.6 l0.6 -1.4 l0.6 1.4 l1.4 0.6 l-1.4 0.6 l-0.6 1.4 l-0.6 -1.4 l-1.4 -0.6 Z" fill="#fff" />
+    </g>
+  ),
 };
 
 const DEV_SCENES: Record<DevCardType, () => JSX.Element> = {
@@ -321,13 +439,16 @@ const DEV_SCENES: Record<DevCardType, () => JSX.Element> = {
   ),
 };
 
-/** Ribbon colour for each resource's name. */
-const RIBBON: Record<Resource, string> = {
+/** Ribbon colour for each card's name. */
+const RIBBON: Record<Card, string> = {
   brick: '#a94a26',
   lumber: '#2f6b35',
   wool: '#5f9a35',
   grain: '#b8860b',
   ore: '#5b6270',
+  paper: '#8a6d3b',
+  cloth: '#8a3d84',
+  coin: '#9a6a1e',
 };
 
 function Art({ scene, crop }: { scene: () => JSX.Element; crop?: boolean }) {
@@ -343,8 +464,8 @@ function Art({ scene, crop }: { scene: () => JSX.Element; crop?: boolean }) {
  * count below), `mini` a small card in animations, `card` the full card with
  * its name ribbon.
  */
-export function ResourceCard({ r, n, look = 'card', empty }: { r: Resource; n?: number; look?: 'card' | 'tile' | 'mini'; empty?: boolean }) {
-  const label = RESOURCE_INFO[r].label;
+export function ResourceCard({ r, n, look = 'card', empty }: { r: Card; n?: number; look?: 'card' | 'tile' | 'mini'; empty?: boolean }) {
+  const label = CARD_INFO[r].label;
   if (look === 'tile') {
     return (
       <span class={empty ? `rtile r-${r} empty` : `rtile r-${r}`} title={label}>

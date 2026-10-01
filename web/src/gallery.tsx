@@ -1,10 +1,14 @@
 // Development page showing every card and board tile (npm run web:dev, then /gallery.html).
 import { render } from 'preact';
-import { createGame, hexCenter, parseHexId, viewFor, type DevCardType, type GameView, type Terrain } from 'engine';
+import { PROGRESS_CARD_NAMES, createGame, hexCenter, parseHexId, viewFor, type DevCardType, type GameView, type KnightLevel, type Terrain } from 'engine';
 import { Board, NO_TARGETS } from './board/Board';
-import { DEV_INFO, RESOURCE_LIST } from './game/names';
+import { COMMODITY_LIST, DEV_INFO, RESOURCE_LIST } from './game/names';
+import { TRACK_LIST } from './game/ck';
 import { PLAYER_COLORS } from './game/seats';
 import { DevCardView, ResourceCard } from './ui/cards';
+import { EventDie, GateGlyph, KnightGlyph, ProgressCardView, ShipGlyph, TowerGlyph, WallGlyph } from './ui/ckArt';
+import { ResGlyph } from './ui/icons';
+import './ui/ck.css';
 import './styles.css';
 
 const DEVS = Object.keys(DEV_INFO) as DevCardType[];
@@ -71,6 +75,71 @@ function Gallery() {
         ))}
         <span style={{ width: '120px', display: 'flex' }}>
           <DevCardView type={null} back />
+        </span>
+      </div>
+      <h2>Cities &amp; Knights: commodities</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+        {COMMODITY_LIST.map((r) => (
+          <span key={r} style={{ width: '120px', display: 'flex' }}>
+            <ResourceCard r={r} />
+          </span>
+        ))}
+        {COMMODITY_LIST.map((r) => (
+          <span key={`g${r}`} style={{ fontSize: '40px' }}>
+            <ResGlyph r={r} />
+          </span>
+        ))}
+      </div>
+      <h2>Cities &amp; Knights: progress cards</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+        {TRACK_LIST.map((t) => (
+          <span key={t} style={{ width: '120px', display: 'flex' }}>
+            <ProgressCardView deck={t} back />
+          </span>
+        ))}
+        {PROGRESS_CARD_NAMES.map((c) => (
+          <span key={c} style={{ width: '120px', display: 'flex' }}>
+            <ProgressCardView card={c} text />
+          </span>
+        ))}
+      </div>
+      <h2>Cities &amp; Knights: pieces, gates and the event die</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
+        {PLAYER_COLORS.slice(0, 4).map((c) =>
+          ([1, 2, 3] as KnightLevel[]).flatMap((l) =>
+            [false, true].map((on) => (
+              <span key={`${c.id}${l}${on}`} style={{ width: '64px', height: '60px', display: 'flex' }}>
+                <KnightGlyph level={l} active={on} fill={c.fill} stroke={c.stroke} />
+              </span>
+            )),
+          ),
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
+        {PLAYER_COLORS.slice(0, 3).map((c, i) => (
+          <span key={c.id} style={{ width: '50px', height: '90px', display: 'flex' }}>
+            <TowerGlyph track={TRACK_LIST[i]} fill={c.fill} stroke={c.stroke} />
+          </span>
+        ))}
+        {PLAYER_COLORS.slice(0, 3).map((c) => (
+          <span key={`w${c.id}`} style={{ width: '90px', height: '80px', display: 'flex' }}>
+            <WallGlyph fill={c.fill} stroke={c.stroke} />
+          </span>
+        ))}
+        {TRACK_LIST.map((t) => (
+          <span key={t} style={{ fontSize: '56px' }}>
+            <GateGlyph track={t} />
+          </span>
+        ))}
+        <span style={{ fontSize: '56px' }}>
+          <ShipGlyph />
+        </span>
+        <span class="dice three" style={{ display: 'flex', gap: '6px' }}>
+          {(['ship', 'trade', 'politics', 'science'] as const).map((f) => (
+            <span key={f} style={{ width: '56px', height: '56px', display: 'flex' }}>
+              <EventDie face={f} />
+            </span>
+          ))}
         </span>
       </div>
       <h2>Hand</h2>
