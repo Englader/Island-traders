@@ -1,3 +1,4 @@
+import { opponentKnightAt } from '../ck/basics.js';
 import { LONGEST_ROUTE_MIN } from '../core/constants.js';
 import type { EdgeId, GameState, PlayerId, VertexId } from '../core/types.js';
 import { scenarioOf } from '../scenarios/registry.js';
@@ -7,7 +8,8 @@ import { ownsBuildingAt, opponentBuildingAt, topo } from './queries.js';
  * Longest single trail (no edge reused) through a player's roads and ships.
  *
  * - Branches do not add up; loops count fully (a 6-road ring is 6).
- * - An opponent's settlement or city cuts the trail: it may end there but not pass through.
+ * - An opponent's settlement or city (or, in Cities & Knights, knight) cuts
+ *   the trail: it may end there but not pass through.
  * - Seafarers: switching between road and ship is only allowed at the player's own building.
  *
  * Depth-first search from every edge in both directions, marking visited edges
@@ -26,7 +28,7 @@ export function longestRouteLength(state: GameState, p: PlayerId): number {
     const [a, b] = t.edgeVertices[edge];
     const to = a === from ? b : a;
     let best = 0;
-    if (!opponentBuildingAt(state, p, to)) {
+    if (!opponentBuildingAt(state, p, to) && !opponentKnightAt(state, p, to)) {
       const kind = state.board.pieces[edge].type;
       const ownHere = ownsBuildingAt(state, p, to);
       for (const next of t.vertexEdges[to]) {

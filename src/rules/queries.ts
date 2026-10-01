@@ -1,5 +1,6 @@
 import { isLandTerrain } from '../board/mapSpec.js';
 import { getTopologyFor, type Topology } from '../board/topology.js';
+import { ckVP, commodityCount, knightAt, opponentKnightAt } from '../ck/basics.js';
 import { RESOURCES, VP } from '../core/constants.js';
 import type { EdgeId, GameState, HexId, PlayerId, Resource, Terrain, VertexId } from '../core/types.js';
 import { scenarioOf } from '../scenarios/registry.js';
@@ -87,6 +88,9 @@ function settlementSiteError(state: GameState, p: PlayerId, v: VertexId, setup: 
   if (!vertexTouchesLand(state, v)) return 'intersection is not on land';
   if (isBlockedVertex(state, v)) return 'intersection is reserved';
   if (!distanceRuleOk(state, v)) return 'distance rule: intersection or a neighbour is occupied';
+  // Cities & Knights: knights block building sites but ignore the distance rule.
+  const knight = knightAt(state, v);
+  if (knight) return knight.owner === p ? 'move your knight away first' : 'a knight stands there';
   const sc = scenarioOf(state);
   const zones = vertexZones(state, v);
   if (zones.some((z) => sc.rules.forbiddenZones.includes(z))) return 'this area may not be settled';
@@ -118,12 +122,15 @@ export function cityError(state: GameState, p: PlayerId, v: VertexId): string | 
   return null;
 }
 
-/** Road connects via an endpoint with your building, or your road where no opponent building sits. */
+/**
+ * Road connects via an endpoint with your building, or your road where no
+ * opponent building (or, in Cities & Knights, opposing knight) sits.
+ */
 export function roadConnects(state: GameState, p: PlayerId, e: EdgeId): boolean {
   const t = topo(state);
   for (const v of t.edgeVertices[e]) {
     if (ownsBuildingAt(state, p, v)) return true;
-    if (opponentBuildingAt(state, p, v)) continue;
+    if (opponentBuildingAt(state, p, v) || opponentKnightAt(state, p, v)) continue;
     for (const o of t.vertexEdges[v]) {
       if (o === e) continue;
       const piece = state.board.pieces[o];
@@ -138,7 +145,7 @@ export function shipConnects(state: GameState, p: PlayerId, e: EdgeId, ignore: E
   const t = topo(state);
   for (const v of t.edgeVertices[e]) {
     if (ownsBuildingAt(state, p, v)) return true;
-    if (opponentBuildingAt(state, p, v)) continue;
+    if (opponentBuildingAt(state, p, v) || opponentKnightAt(state, p, v)) continue;
     for (const o of t.vertexEdges[v]) {
       if (o === e || o === ignore) continue;
       const piece = state.board.pieces[o];
@@ -222,6 +229,7 @@ export function publicVP(state: GameState, p: PlayerId): number {
   if (state.largestArmy.holder === p) vp += VP.largestArmy;
   vp += state.players[p].bonusVP;
   vp += scenarioOf(state).hooks.extraVP?.(state, p) ?? 0;
+  vp += ckVP(state, p);
   return vp;
 }
 
@@ -233,9 +241,10 @@ export function totalVP(state: GameState, p: PlayerId): number {
   return publicVP(state, p) + hiddenVP(state, p);
 }
 
+/** Cards in hand: resources, and commodities in Cities & Knights. */
 export function handSize(state: GameState, p: PlayerId): number {
   const r = state.players[p].resources;
-  return r.brick + r.lumber + r.wool + r.grain + r.ore;
+  return r.brick + r.lumber + r.wool + r.grain + r.ore + commodityCount(state, p);
 }
 
 // --- robber & pirate -----------------------------------------------------------

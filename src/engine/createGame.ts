@@ -1,4 +1,7 @@
 import { generateMap } from '../board/mapSpec.js';
+import { CK_VICTORY_POINTS } from '../ck/constants.js';
+import { initCk } from '../ck/engine.js';
+import { ckMapSpec } from '../ck/map.js';
 import { layoutKeyFor } from '../board/topology.js';
 import { PIECES_PER_PLAYER } from '../core/constants.js';
 import { emptyCounts, filledCounts } from '../core/resources.js';
@@ -44,11 +47,14 @@ export function createGame(config: GameConfig): GameState {
     throw new Error(`${scenario.name} supports ${scenario.minPlayers}-${scenario.maxPlayers} players, got ${n}`);
   }
   const options: GameOptions = { ...DEFAULT_OPTIONS, ...(config.options ?? {}) };
+  const ck = options.citiesAndKnights === true;
+  if (ck && scenario.expansion !== 'base') throw new Error('Cities & Knights is played on the base game for now');
+  if (ck && n > 4) throw new Error('Cities & Knights supports 3-4 players for now');
   const seed = String(config.seed);
   const rng = seedRng(seed);
 
   const map = generateMap(
-    mapSpecFor(scenario, n, options),
+    (ck ? ckMapSpec(scenario, n, options) : null) ?? mapSpecFor(scenario, n, options),
     rng,
     {
       noAdjacentRed: options.noAdjacentRed,
@@ -58,7 +64,8 @@ export function createGame(config: GameConfig): GameState {
     options.tokenPlacement === 'spiral',
   );
 
-  const deckCounts = scenario.devDeck(n);
+  // Cities & Knights replaces the development cards with progress cards.
+  const deckCounts: Partial<Record<DevCardType, number>> = ck ? {} : scenario.devDeck(n);
   const deck: DevCardType[] = [];
   for (const [type, count] of Object.entries(deckCounts)) for (let i = 0; i < count; i++) deck.push(type as DevCardType);
   shuffle(rng, deck);
@@ -96,7 +103,7 @@ export function createGame(config: GameConfig): GameState {
     scenario: scenario.id,
     seed,
     options,
-    victoryTarget: options.victoryPoints ?? scenario.victoryPoints(n),
+    victoryTarget: options.victoryPoints ?? (ck ? CK_VICTORY_POINTS : scenario.victoryPoints(n)),
     rng,
     board: {
       layoutKey: layoutKeyFor(Object.keys(map.hexes)),
@@ -135,6 +142,10 @@ export function createGame(config: GameConfig): GameState {
   };
   if (map.fogStack) state.ext.fog = map.fogStack;
   scenario.hooks.init?.(state, map);
+  if (ck) {
+    state.ck = initCk(state);
+    for (const ps of state.stats!.players) ps.producedCommodities = { paper: 0, cloth: 0, coin: 0 };
+  }
   // New World: players place the harbor tokens before the starting placement.
   const pool = state.ext.harborPool as unknown[] | undefined;
   if (scenario.rules.playersPlaceHarbors && pool && pool.length > 0) {

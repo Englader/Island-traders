@@ -24,6 +24,16 @@ const WEIGHTS: Partial<Record<Action['type'], number>> = {
   cancelTrade: 1,
   endRoadBuilding: 1,
   endTurn: 5,
+  // Cities & Knights
+  improveCity: 40,
+  buildKnight: 15,
+  activateKnight: 12,
+  promoteKnight: 6,
+  buildCityWall: 8,
+  moveKnight: 2,
+  displaceKnight: 4,
+  chaseRobber: 6,
+  playProgress: 10,
 };
 
 /**

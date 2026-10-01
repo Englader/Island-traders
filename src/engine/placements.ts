@@ -1,3 +1,4 @@
+import { ckCityError, isTipped } from '../ck/engine.js';
 import type { EdgeId, GameState, PlayerId, VertexId } from '../core/types.js';
 import { cityError, roadError, settlementError, setupSettlementError, shipError, topo } from '../rules/queries.js';
 
@@ -11,6 +12,13 @@ export function legalSettlements(s: GameState, p: PlayerId): VertexId[] {
 }
 
 export function legalCities(s: GameState, p: PlayerId): VertexId[] {
+  if (s.ck) {
+    // Cities & Knights: a city pillaged onto its side is rebuilt first, with its own piece.
+    return Object.keys(s.board.buildings).filter(
+      (v) =>
+        (isTipped(s, v) ? s.board.buildings[v].owner === p : cityError(s, p, v) === null) && ckCityError(s, p, v) === null,
+    );
+  }
   return Object.keys(s.board.buildings).filter((v) => cityError(s, p, v) === null);
 }
 

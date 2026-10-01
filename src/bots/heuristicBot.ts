@@ -28,6 +28,7 @@ import {
   vertexZones,
 } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
+import { ckDiscardAction, ckMainAction, ckPhaseAction } from './ckBot.js';
 
 /**
  * A rule-of-thumb bot. It never looks at hidden information it could not see
@@ -819,7 +820,9 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     case 'setup':
       return setupAction(s, p, acts, pr);
     case 'discard':
-      return discardAction(s, p);
+      return s.ck ? ckDiscardAction(s, p) : discardAction(s, p);
+    case 'ck':
+      return ckPhaseAction(s, p, acts);
     case 'gold':
       return goldAction(s, p);
     case 'robber':
@@ -861,6 +864,10 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     }
     case 'main': {
       if (s.turn.actor !== p) return respondToTrades(s, p, acts, pr);
+      if (s.ck) {
+        const ck = ckMainAction(s, p, acts);
+        if (ck) return ck;
+      }
       return mainAction(s, p, acts, pr);
     }
     default:
@@ -893,7 +900,11 @@ export function simulateHeuristic(
         partSteps = 0;
       }
       // Safety valve: a part of a turn never runs forever.
-      if (++partSteps > 60 && s.phase.kind === 'main' && s.turn.actor === p) a = { type: 'endTurn', player: p };
+      if (++partSteps > 60 && s.phase.kind === 'main' && s.turn.actor === p) {
+        const end: Action = { type: 'endTurn', player: p };
+        // (Cities & Knights: not while over the progress card limit)
+        if (!s.ck || applyAction(s, end).ok) a = end;
+      }
       const r = applyAction(s, a);
       if (!r.ok) throw new Error(`bot move rejected: ${JSON.stringify(a)} -> ${r.error} (phase ${s.phase.kind})`);
       s = r.state;

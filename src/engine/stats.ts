@@ -1,6 +1,6 @@
-import { RESOURCES, TERRAIN_RESOURCE } from '../core/constants.js';
+import { COMMODITIES, RESOURCES, TERRAIN_RESOURCE } from '../core/constants.js';
 import { emptyCounts } from '../core/resources.js';
-import type { Action, GameState, GameStats, PartialCounts, PlayerId, PlayerStats } from '../core/types.js';
+import type { Action, Commodity, GameState, GameStats, PartialCounts, PlayerId, PlayerStats } from '../core/types.js';
 import { topo, totalVP } from '../rules/queries.js';
 
 /**
@@ -55,6 +55,15 @@ function expectedPerRoll(s: GameState): number[] {
   return out;
 }
 
+/** Cities & Knights: the commodities a roll dealt. */
+export function noteCommodityProduction(s: GameState, dealt: Record<number, Partial<Record<Commodity, number>>>): void {
+  if (!s.stats) return;
+  for (const [p, got] of Object.entries(dealt)) {
+    const produced = (s.stats.players[Number(p)].producedCommodities ??= { paper: 0, cloth: 0, coin: 0 });
+    for (const k of COMMODITIES) produced[k] += got[k] ?? 0;
+  }
+}
+
 /** Called with the cards a roll dealt, as they are dealt. */
 export function noteProduction(s: GameState, dealt: Record<number, PartialCounts>): void {
   if (!s.stats) return;
@@ -89,6 +98,17 @@ export function recordStats(prev: GameState, next: GameState, a: Action): void {
         g += d;
         by[r] = d;
       } else l -= d;
+    }
+    // Cities & Knights: commodity cards move like resources (production aside).
+    if (next.ck && prev.ck) {
+      const now = st.players[p].producedCommodities;
+      const was = before.players[p].producedCommodities;
+      for (const k of COMMODITIES) {
+        const dealt = (now?.[k] ?? 0) - (was?.[k] ?? 0);
+        const d = next.ck.players[p].commodities[k] - prev.ck.players[p].commodities[k] - dealt;
+        if (d > 0) g += d;
+        else l -= d;
+      }
     }
     gain.push(g);
     loss.push(l);
@@ -125,6 +145,8 @@ export function recordStats(prev: GameState, next: GameState, a: Action): void {
         break;
       case 'moveRobber':
       case 'playMonopoly':
+      case 'playProgress':
+      case 'progressChoice':
       case 'scenario':
         // cards the actor took from the others
         if (othersLost > 0 && othersLost <= gain[actor]) {
@@ -140,6 +162,11 @@ export function recordStats(prev: GameState, next: GameState, a: Action): void {
       case 'buildSettlement':
       case 'buildCity':
       case 'buyDevCard':
+      case 'buildKnight':
+      case 'activateKnight':
+      case 'promoteKnight':
+      case 'buildCityWall':
+      case 'improveCity':
         lossTo = 'spent';
         break;
       default:

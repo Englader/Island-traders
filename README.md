@@ -268,7 +268,8 @@ In summary:
 | Victory | Only on your own turn (or part); checked after every action and at the start of every turn and part |
 | Seafarers | Ships, moving one open-ended ship per turn, closed routes, pirate (blocks and robs ships), gold, fog, island bonuses |
 | 5–6 players | 2021 **paired players** (default: P2 is the 3rd player to the left, supply trades only, no roll) and the legacy **Special Build Phase** |
-| Options | `layout` official (default)/random, `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer` |
+| Cities & Knights | Engine core, not yet in the browser game: `citiesAndKnights: true` on the base game with 3–4 players. Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, the progress decks (card effects come next) and the beginners' map. [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
+| Options | `layout` official (default)/random, `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer`, `citiesAndKnights` |
 
 ### Scenarios
 

@@ -12,13 +12,14 @@ import type {
   ResourceCounts,
   TurnState,
 } from '../core/types.js';
+import { ckViewFor, type CkView } from '../ck/view.js';
 import { handSize, publicVP, totalVP } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
 
 export interface PlayerPublicView {
   id: PlayerId;
   name: string;
-  /** Hand size is public; players must answer truthfully when asked. */
+  /** Hand size is public; players must answer truthfully when asked (Cities & Knights: commodities included). */
   resourceCount: number;
   /** Only present for the viewer's own seat (or omniscient views). */
   resources?: ResourceCounts;
@@ -58,6 +59,8 @@ export interface GameView {
    * and hands, which are hidden during play). Missing for older saves.
    */
   stats?: GameStats;
+  /** Cities & Knights games only: the expansion's state as this seat may see it. */
+  ck?: CkView;
 }
 
 /**
@@ -79,6 +82,11 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameView {
     ext.harborPool = { remaining: pool.length, next: pool[pool.length - 1] ?? null };
   }
   const gameOver = s.phase.kind === 'gameOver';
+  // A progress card waiting on a choice may hold secrets (phase 2: what a Spy saw) for its player only.
+  let phase: Phase = s.phase;
+  if (phase.kind === 'ck' && phase.step === 'card' && phase.player !== viewer && phase.data !== undefined) {
+    phase = { ...phase, data: undefined };
+  }
   return {
     viewer,
     scenario: s.scenario,
@@ -90,7 +98,7 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameView {
     longestRoute: s.longestRoute,
     largestArmy: s.largestArmy,
     turn: s.turn,
-    phase: s.phase,
+    phase,
     firstPlayer: s.firstPlayer,
     players: s.players.map((pl) => {
       const own = viewer === pl.id || gameOver;
@@ -118,5 +126,6 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameView {
     log: s.log.filter((e) => !e.visibleTo || (viewer !== null && e.visibleTo.includes(viewer))),
     rolls: s.rolls ?? [],
     ...(gameOver && s.stats ? { stats: s.stats } : {}),
+    ...(s.ck ? { ck: ckViewFor(s, viewer) } : {}),
   };
 }
