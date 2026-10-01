@@ -925,7 +925,7 @@ describe('Progress cards: trade', () => {
 
 // ---------------------------------------------------------------------------
 
-describe('Progress cards: the fallback computer player', () => {
+describe('Progress cards: the computer player', () => {
   /** The bot's move for `p`, which must be one of the legal moves. */
   function botMove(s: GameState, p: PlayerId): Action {
     const a = heuristicAction(s, p);
@@ -1023,9 +1023,19 @@ describe('Progress cards: the fallback computer player', () => {
     expect(dice[1]).toBe(3); // the lowest red die for that number
     s.phase = { kind: 'main' };
     expect(botMove(s, 0)).toMatchObject({ type: 'playProgress', card: 'irrigation' });
+    // a monopoly on what the others produce and hold (hands are hidden: it goes by their production)
     const t = bare();
+    setHex(t, 1, 0, 'mountains', 6);
+    put(t, C(1, 0, 0), 1);
+    put(t, C(1, 0, 3), 2);
+    give(t, 1, { ore: 3 });
+    give(t, 2, { ore: 3 });
     hand(t, 0, 'resourceMonopoly');
-    expect(botMove(t, 0)).toMatchObject({ type: 'playProgress', card: 'resourceMonopoly' });
+    expect(botMove(t, 0)).toMatchObject({ type: 'playProgress', card: 'resourceMonopoly', args: { resource: 'ore' } });
+    // with nobody holding a card it keeps the monopoly for later
+    const u = bare();
+    hand(u, 0, 'resourceMonopoly');
+    expect(botMove(u, 0)).toMatchObject({ type: 'endTurn' });
   });
 });
 

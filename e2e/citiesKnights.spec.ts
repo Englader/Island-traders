@@ -62,8 +62,8 @@ async function answer(page: Page): Promise<boolean> {
   return false;
 }
 
-/** Places a starting piece when asked to: a settlement, the city of the second round, or a road. */
-async function place(page: Page): Promise<boolean> {
+/** Places a starting piece when asked to: a settlement, the city of the second round, or a road. `seen` gets the status it acts on. */
+async function place(page: Page, seen?: (status: string) => void): Promise<boolean> {
   if (await answer(page)) return true;
   if (await page.locator('.confirm-dialog').isVisible()) {
     await yes(page)
@@ -72,6 +72,7 @@ async function place(page: Page): Promise<boolean> {
     return true;
   }
   const status = (await page.locator('.status-text').textContent()) ?? '';
+  seen?.(status);
   const kind = /Place settlement|Place your city/.test(status) ? 'v' : /Place a road/.test(status) ? 'e' : null;
   if (!kind) return false;
   const targets = page.locator(`[data-pick^="${kind}:"]`);
@@ -117,9 +118,13 @@ test('a Cities & Knights game against the computer: the beginners’ map, a city
   const roll = page.locator('.action-bar').getByRole('button', { name: /Roll/ });
   const deadline = Date.now() + 90_000;
   let sawCity = false;
+  // (the prompt can come up between two reads of the status: note the one place() acts on too)
+  const note = (status: string) => {
+    if (/Place your city/.test(status)) sawCity = true;
+  };
   while (Date.now() < deadline && !(await roll.isVisible())) {
-    if (/Place your city/.test((await page.locator('.status-text').textContent()) ?? '')) sawCity = true;
-    if (!(await place(page))) await page.waitForTimeout(200);
+    note((await page.locator('.status-text').textContent()) ?? '');
+    if (!(await place(page, note))) await page.waitForTimeout(200);
   }
   expect(sawCity).toBe(true);
   await expect(page.locator('[data-tile][data-terrain="desert"]')).toHaveCount(1);

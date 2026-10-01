@@ -28,7 +28,7 @@ import {
   vertexZones,
 } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
-import { ckDiscardAction, ckMainAction, ckPhaseAction, ckPreRollAction } from './ckBot.js';
+import { ckHeuristicAction, type CkProfile } from './ckBot.js';
 
 /**
  * A rule-of-thumb bot. It never looks at hidden information it could not see
@@ -43,6 +43,8 @@ import { ckDiscardAction, ckMainAction, ckPhaseAction, ckPreRollAction } from '.
  * - The robber goes where it hurts the leader most, never on its own hexes.
  * - It answers domestic offers by comparing what it needs; it does not make
  *   offers itself.
+ * - Cities & Knights games have a strategy of their own (src/bots/ckBot.ts),
+ *   tuned by the profile's `ck` settings.
  */
 
 type Kind = Action['type'];
@@ -53,7 +55,7 @@ const ROAD_DECAY = 0.7;
 export type BotLevel = 'easy' | 'medium' | 'hard';
 export const BOT_LEVELS: BotLevel[] = ['easy', 'medium', 'hard'];
 
-interface Profile {
+export interface Profile {
   /** Mistakes when choosing spots and robber targets: 0 always takes the best. */
   noise: number;
   /** Saves up for a goal and trades with the bank and harbors to reach it. */
@@ -78,6 +80,8 @@ interface Profile {
   handGuard: boolean;
   /** How far down its list of goals a development card comes (lower: buys more of them). */
   devRank: number;
+  /** Cities & Knights (src/bots/ckBot.ts). */
+  ck: CkProfile;
 }
 
 const PROFILES: Record<BotLevel, Profile> = {
@@ -94,6 +98,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     offersPerTurn: 0,
     handGuard: false,
     devRank: 2.5,
+    ck: { barbarians: 0, commodities: 0, tracks: 0, cards: 0, knights: 0, walls: false },
   },
   medium: {
     noise: 0.4,
@@ -108,6 +113,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     offersPerTurn: 1,
     handGuard: false,
     devRank: 2.5,
+    ck: { barbarians: 1, commodities: 0.8, tracks: 1, cards: 1, knights: 1, walls: true },
   },
   hard: {
     noise: 0,
@@ -122,6 +128,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     offersPerTurn: 2,
     handGuard: true,
     devRank: 2.5,
+    ck: { barbarians: 2, commodities: 1.2, tracks: 2, cards: 2, knights: 2, walls: true },
   },
 };
 
@@ -133,7 +140,7 @@ export function botProfile(level: BotLevel): Readonly<Profile> {
  * A number in [0, 1) that depends on the game position, the player and a key:
  * lets an easy bot make "random" mistakes while simulations stay repeatable.
  */
-function wobble(s: GameState, p: PlayerId, key: string): number {
+export function wobble(s: GameState, p: PlayerId, key: string): number {
   let h = (2166136261 ^ Math.imul(s.log.length + 1, 2654435761) ^ Math.imul(p + 1, 40503) ^ Math.imul(s.turn.part + 1, 69069)) >>> 0;
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
   h ^= h >>> 13;
@@ -143,7 +150,7 @@ function wobble(s: GameState, p: PlayerId, key: string): number {
 }
 
 /** Like best(), but with the profile's noise added to every score. */
-function pickBest<T>(s: GameState, p: PlayerId, pr: Profile, items: T[], score: (x: T) => number, key: (x: T) => string): T | null {
+export function pickBest<T>(s: GameState, p: PlayerId, pr: Profile, items: T[], score: (x: T) => number, key: (x: T) => string): T | null {
   if (pr.noise <= 0 || items.length < 2) return best(items, score);
   const scored = items.map((x) => ({ x, v: score(x) }));
   const vs = scored.map((o) => o.v);
@@ -152,7 +159,7 @@ function pickBest<T>(s: GameState, p: PlayerId, pr: Profile, items: T[], score: 
 }
 
 /** Won't trade with someone this close to winning. */
-function nearWin(s: GameState, q: PlayerId, pr: Profile): boolean {
+export function nearWin(s: GameState, q: PlayerId, pr: Profile): boolean {
   return pr.leaderGuard >= 0 && publicVP(s, q) >= s.victoryTarget - pr.leaderGuard;
 }
 
@@ -299,7 +306,7 @@ function touchesOwnNetwork(s: GameState, p: PlayerId, v: VertexId): boolean {
   return topo(s).vertexEdges[v].some((e) => s.board.pieces[e]?.owner === p);
 }
 
-function edgeScore(s: GameState, p: PlayerId, e: EdgeId, pot: Map<VertexId, number>): number {
+export function edgeScore(s: GameState, p: PlayerId, e: EdgeId, pot: Map<VertexId, number>): number {
   const [a, b] = topo(s).edgeVertices[e];
   const na = touchesOwnNetwork(s, p, a);
   const nb = touchesOwnNetwork(s, p, b);
@@ -351,7 +358,7 @@ function byType<T extends Kind>(acts: Action[], type: T): Array<Extract<Action, 
   return acts.filter((a): a is Extract<Action, { type: T }> => a.type === type);
 }
 
-function best<T>(items: T[], score: (x: T) => number): T | null {
+export function best<T>(items: T[], score: (x: T) => number): T | null {
   let out: T | null = null;
   let top = -Infinity;
   for (const x of items) {
@@ -364,7 +371,7 @@ function best<T>(items: T[], score: (x: T) => number): T | null {
   return out;
 }
 
-function leaderWeight(s: GameState, p: PlayerId, focus = 1, me?: PlayerId): number {
+export function leaderWeight(s: GameState, p: PlayerId, focus = 1, me?: PlayerId): number {
   const vp = publicVP(s, p);
   let w = 1 + (vp / Math.max(1, s.victoryTarget)) * 2 * focus;
   // a focused robber goes after whoever leads the others
@@ -372,7 +379,7 @@ function leaderWeight(s: GameState, p: PlayerId, focus = 1, me?: PlayerId): numb
   return w;
 }
 
-function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>, pr: Profile = PROFILES.medium): number {
+export function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>, pr: Profile = PROFILES.medium): number {
   const t = topo(s);
   let score = 0;
   if (a.piece === 'robber') {
@@ -813,6 +820,8 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
   const pr = botProfile(level);
   const acts = legalActions(s, p);
   if (acts.length === 0) return null;
+  // Cities & Knights has a strategy of its own (src/bots/ckBot.ts)
+  if (s.ck) return ckHeuristicAction(s, p, acts, pr);
   const ph = s.phase;
   switch (ph.kind) {
     case 'harborPlacement':
@@ -820,9 +829,7 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     case 'setup':
       return setupAction(s, p, acts, pr);
     case 'discard':
-      return s.ck ? ckDiscardAction(s, p) : discardAction(s, p);
-    case 'ck':
-      return ckPhaseAction(s, p, acts);
+      return discardAction(s, p);
     case 'gold':
       return goldAction(s, p);
     case 'robber':
@@ -852,8 +859,6 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     case 'preRoll': {
       const dev = devCardAction(s, p, acts, null, pr);
       if (dev) return dev;
-      const alchemist = s.ck ? ckPreRollAction(s, p, acts) : null;
-      if (alchemist) return alchemist;
       return acts.find((a) => a.type === 'rollDice') ?? acts[0];
     }
     case 'specialBuild': {
@@ -866,10 +871,6 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     }
     case 'main': {
       if (s.turn.actor !== p) return respondToTrades(s, p, acts, pr);
-      if (s.ck) {
-        const ck = ckMainAction(s, p, acts);
-        if (ck) return ck;
-      }
       return mainAction(s, p, acts, pr);
     }
     default:
