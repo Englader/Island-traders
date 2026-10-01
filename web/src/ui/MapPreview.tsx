@@ -77,7 +77,8 @@ export function MapPreview({
   const hidden = Object.values(view.board.hexes).some((h) => h.terrain === 'fog');
   let note: string;
   if (!printed) note = varies === 'nothing' ? 'This map is the same in every game.' : generatedNote(scenario, name);
-  else if (options.citiesAndKnights) note = 'The beginners’ map from the Cities & Knights rulebook.';
+  else if (options.citiesAndKnights && players <= 4) note = 'The beginners’ map from the Cities & Knights rulebook.';
+  else if (options.citiesAndKnights) note = 'The 5–6 beginners’ map of the CATAN 5–6 rules: Cities & Knights prints none for 5–6.';
   else if (varies === 'map' && dealtInPart(scenario, players, full)) note = 'Official map from the rulebook, which deals part of it at random — tap 🎲 for another.';
   else if (varies === 'map') note = 'The rulebook deals this map at random — tap 🎲 for another.';
   else if (varies === 'harbors') note = 'Official map from the rulebook. Its harbors are shuffled — tap 🎲 for another.';

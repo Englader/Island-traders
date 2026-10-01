@@ -25,8 +25,11 @@ GitHub Actions)
 - Base game (3–6 players) and the nine Seafarers scenarios; Heading for New
   Shores, The Four Islands (The Six Islands), The Fog Islands, Through the
   Desert and New World also take 5–6 players, on the Seafarers 5-6 maps
-- Cities & Knights: turn it on under the base game for 3–4 players and 13
-  VP, on the C&K beginners' map or a random one.
+- Cities & Knights: turn it on under the base game for 3–6 players and 13
+  VP, on the C&K beginners' map or a random one; with 5–6 players (the C&K
+  5-6 extension: 18 of each commodity, 8 Defender of Catan cards, paired
+  players or the special build phase) on the base game's 5–6 map or a
+  random one.
   Three dice (the event die shows the barbarian ship or a city gate, and
   says what it did), commodities (paper, cloth and coin) in the hand, the
   trades and the discards, knights to hire, activate, promote, move, use to
@@ -119,7 +122,7 @@ be changed from the menu:
 | Its own offers | none | one per turn, one card for the one it needs | up to two, the second one two cards for one |
 | Answering open offers | generous, card for card | card for card when it gains | asks for up to one card more |
 
-`npm run bots:league -- [games] [scenarios] [official|random] [players]`
+`npm run bots:league -- [games] [scenarios] [official|random] [players] [paired|specialBuild]`
 seats one player of each level at a table (with more players the levels
 repeat round the table), rotates the seats and counts wins. Over 60 base
 games, hard won 68%, medium 28% and easy 3%. Over the nine Seafarers
@@ -139,7 +142,7 @@ merchant or a Merchant Fleet) and discard the cards they need least.
 | | Easy | Medium | Hard |
 |---|---|---|---|
 | Set-up | often not the best spot; a commodity counts as an ordinary card | its city where forest, pasture and mountains give commodities, sometimes not the best spot | the same, the best spot it sees, commodities weighted most |
-| Barbarians | notices the ship only in its last two moves, and not always | from three moves out keeps a knight ready; wakes knights when an attack before its next turn is likely and it would lose a city as the weakest defender | from five moves out; weighs the odds of an attack before its next turn and the others' idle knights, and races for Defender of Catan |
+| Barbarians | notices the ship only in its last two moves, and not always | from three moves out keeps a knight ready; wakes knights when an attack before its next turn is likely and it would lose a city as the weakest defender | from five moves out; weighs the odds of an attack before its next turn and the others' idle knights, and races for Defender of Catan (with 5–6 players only when one knight level wins it) |
 | Knights | hires one when it has none; chases the robber off its hexes | also guards its best hexes against the robber | also moves knights into opponents' paths and displaces knights in its way |
 | City improvements | whatever it can afford | one main track by commodity income, toward a metropolis; the cheap levels of the others | also weighs the level-3 abilities (Aqueduct for a weak producer, Merchant Guild for a heavy commodity producer, Fortress for strong knights) and the others' levels: a race it can win, level 5 to take or keep a metropolis, never a metropolis locked at level 5 |
 | City walls | none | when its hand is large, under a metropolis first | the same |
@@ -159,6 +162,26 @@ all, every one finished:
 
 In all, hard won 68%, medium 31% and easy 1%. A computer move took 0.6 ms
 on average and 34 ms at the slowest, the engine's own work included.
+
+With 5–6 players the bots build, hire, wall, improve and wake knights in
+the special build phase and play their whole C&K turn as paired player 2.
+`npm run bots:league -- 120 ck official 5 paired` (and `random`, 6
+players, `specialBuild`) over 120 games per setting, 960 in all, every one
+finished:
+
+| Setting | Easy | Medium | Hard | Turns a game (all players) |
+|---|---|---|---|---|
+| 5 players, paired, 5–6 beginners' map | 3% | 34% | 63% | 67 |
+| 5 players, paired, random map | 1% | 37% | 63% | 65 |
+| 5 players, special build, 5–6 beginners' map | 3% | 38% | 59% | 64 |
+| 5 players, special build, random map | 0% | 36% | 64% | 62 |
+| 6 players, paired, 5–6 beginners' map | 0% | 43% | 58% | 72 |
+| 6 players, paired, random map | 0% | 35% | 65% | 69 |
+| 6 players, special build, 5–6 beginners' map | 3% | 38% | 60% | 69 |
+| 6 players, special build, random map | 0% | 41% | 59% | 71 |
+
+In all, hard won 61%, medium 38% and easy 1%. A move took 1.4–1.7 ms on
+average and 126 ms at the slowest.
 
 ### Dice
 
@@ -319,7 +342,7 @@ In summary:
 | Victory | Only on your own turn (or part); checked after every action and at the start of every turn and part |
 | Seafarers | Ships, moving one open-ended ship per turn, closed routes, pirate (blocks and robs ships), gold, fog, island bonuses |
 | 5–6 players | 2021 **paired players** (default: P2 is the 3rd player to the left, supply trades only, no roll) and the legacy **Special Build Phase** |
-| Cities & Knights | In the browser game, progress cards included: `citiesAndKnights: true` on the base game with 3–4 players. Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, all 54 progress cards with their effects, and the beginners' map. [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
+| Cities & Knights | In the browser game, progress cards included: `citiesAndKnights: true` on the base game with 3–6 players (5–6: the 5-6 Player Extension's commodities and Defender cards, paired players with knights and progress cards for player 2, or the special build phase with knights, walls, improvements, activating and promoting). Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, all 54 progress cards with their effects, and the beginners' map. [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
 | Options | `layout` official (default)/random, `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer`, `citiesAndKnights` |
 
 ### Scenarios
@@ -448,6 +471,9 @@ and the differences between printings.
   the simulations double as a fuzzer.
 - **Purity and determinism:** inputs are never mutated, and the same seed and
   actions always produce the same state.
+- **Regression fingerprints** (`test/regression.test.ts`): base and
+  Seafarers games replay exactly as before Cities & Knights existed, and
+  3–4 player Cities & Knights games as before its 5–6 extension.
 
 - **Heuristic bots** finish a full game in every scenario, supported player
   count and layout, using only moves the engine accepts.
@@ -477,11 +503,13 @@ and the differences between printings.
   to start, three dice), a knight hired and activated, a city improvement
   paid in commodities, the barbarian track advancing and an attack with the
   city the player loses, an online game where a friend sees their own
-  commodities and only counts for the others, and progress cards played
+  commodities and only counts for the others, progress cards played
   from crafted saves: the Alchemist's dice before the roll, the Spy taking
   a card, the Inventor's swap, the Diplomat's road, the Merchant and the
   Commercial Harbor's offers, a card that says why it can't be played, and
-  a friend playing the Spy online who alone sees the cards.
+  a friend playing the Spy online who alone sees the cards; and a 6-player
+  game on the 5–6 board played up to a special build phase with knights
+  and improvements on offer.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 

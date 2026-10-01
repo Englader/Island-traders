@@ -100,8 +100,8 @@ test('a Cities & Knights game against the computer: the beginners’ map, a city
   await expect(page.locator('.ck-toggle')).toContainText('Knights, barbarians, city improvements · 13 VP');
   await sw.click();
   await expect(sw).toBeChecked();
-  // 3-4 players for now: the stepper stops at 4
-  await expect(page.getByRole('button', { name: 'more' }).first()).toBeDisabled();
+  // 3-6 players: the stepper goes on past 4 (6 players: e2e/ck56.spec.ts)
+  await expect(page.getByRole('button', { name: 'more' }).first()).toBeEnabled();
   await expect(page.locator('.map-note')).toContainText('beginners’ map from the Cities & Knights rulebook');
   // the preview shows the beginners' map: a sleeping robber on the desert, mountains 2 at the top
   await expect(page.locator('.map-thumb [data-asleep="true"]')).toHaveCount(1);

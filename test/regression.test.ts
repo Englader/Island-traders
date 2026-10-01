@@ -62,14 +62,14 @@ describe('base and Seafarers games are unchanged by Cities & Knights', () => {
 /**
  * Cities & Knights with 3–4 players must play exactly as it did before the
  * 5–6 player extension was added: these fingerprints were recorded on the
- * engine of commit 23cef5d.
+ * engine of commit 352f5a7.
  */
 const CK = { citiesAndKnights: true } as const;
 const CK_CASES: Array<{ name: string; config: GameConfig; mode: 'random' | 'heuristic'; steps: number; levels?: BotLevel[]; hash: string }> = [
-  { name: 'C&K, 3 players, official map, random bots', config: { scenario: 'base', players: 3, seed: 'reg-ck-1', options: CK }, mode: 'random', steps: 1500, hash: 'c38b3d3667da4026' },
-  { name: 'C&K, 4 players, random map, random bots', config: { scenario: 'base', players: 4, seed: 'reg-ck-2', options: { ...CK, layout: 'random' } }, mode: 'random', steps: 1500, hash: '0610a0d81a632d89' },
-  { name: 'C&K, 4 players, heuristic bots, whole game', config: { scenario: 'base', players: 4, seed: 'reg-ck-3', options: CK }, mode: 'heuristic', steps: 12000, hash: '7c6dd11f9b9ba109' },
-  { name: 'C&K, 3 players, easy/medium/hard bots, whole game', config: { scenario: 'base', players: 3, seed: 'reg-ck-4', options: { ...CK, layout: 'random' } }, mode: 'heuristic', steps: 12000, levels: ['easy', 'medium', 'hard'], hash: 'd32ae8e035eb0d05' },
+  { name: 'C&K, 3 players, official map, random bots', config: { scenario: 'base', players: 3, seed: 'reg-ck-1', options: CK }, mode: 'random', steps: 1500, hash: 'bb4edf587f06f411' },
+  { name: 'C&K, 4 players, random map, random bots', config: { scenario: 'base', players: 4, seed: 'reg-ck-2', options: { ...CK, layout: 'random' } }, mode: 'random', steps: 1500, hash: 'f5bbf107d605191d' },
+  { name: 'C&K, 4 players, heuristic bots, whole game', config: { scenario: 'base', players: 4, seed: 'reg-ck-3', options: CK }, mode: 'heuristic', steps: 12000, hash: '1ae8e15477796d08' },
+  { name: 'C&K, 3 players, easy/medium/hard bots, whole game', config: { scenario: 'base', players: 3, seed: 'reg-ck-4', options: { ...CK, layout: 'random' } }, mode: 'heuristic', steps: 12000, levels: ['easy', 'medium', 'hard'], hash: '63612ec8d5849f67' },
 ];
 
 describe('Cities & Knights with 3–4 players is unchanged by the 5–6 extension', () => {

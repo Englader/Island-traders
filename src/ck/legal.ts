@@ -4,6 +4,7 @@ import { topo } from '../rules/queries.js';
 import { bankOf, cardRates, handOf, hasCards } from './cards.js';
 import { CK_COSTS, PROGRESS_CARDS, TRACKS } from './constants.js';
 import {
+  ckActionPart,
   improvementError,
   metropolisSites,
   pillageableCities,
@@ -102,7 +103,7 @@ export function progressPlays(s: GameState, p: PlayerId): Action[] {
  */
 export function progressTurnChoices(s: GameState, p: PlayerId): Action[] {
   const out: Action[] = [];
-  if (s.phase.kind !== 'main' || s.turn.actor !== p || s.turn.role !== 'active') return out;
+  if (s.phase.kind !== 'main' || s.turn.actor !== p || !ckActionPart(s)) return out;
   for (const card of distinct(s.ck!.turnEffects.filter((e) => e.player === p).map((e) => e.effect))) {
     const effect = progressEffect(card as ProgressCardName);
     for (const args of effect?.turnChoices?.(s, p) ?? []) out.push({ type: 'progressChoice', player: p, args });

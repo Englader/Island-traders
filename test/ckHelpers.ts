@@ -7,6 +7,8 @@ import {
   PROGRESS_CARD_NAMES,
   RESOURCES,
   buildingsOf,
+  commodityBank,
+  defenderCards,
   isLandHex,
   nextInt,
   publicVP,
@@ -140,13 +142,15 @@ export function countedVP(s: GameState, p: PlayerId): number {
 export function checkInvariants(s: GameState, view = false): void {
   const ck = s.ck!;
   // cards: the bank and the hands always hold every card, none negative
+  // 5-6 players: the CATAN 5-6 bank, and the C&K 5-6 extension's commodities and Defender cards
+  const seats = s.players.length;
   for (const r of RESOURCES) {
-    expect(s.bank[r] + s.players.reduce((n, p) => n + p.resources[r], 0), r).toBe(19);
+    expect(s.bank[r] + s.players.reduce((n, p) => n + p.resources[r], 0), r).toBe(seats >= 5 ? 24 : 19);
     expect(s.bank[r]).toBeGreaterThanOrEqual(0);
     for (const pl of s.players) expect(pl.resources[r]).toBeGreaterThanOrEqual(0);
   }
   for (const k of COMMODITIES) {
-    expect(ck.bank[k] + ck.players.reduce((n, p) => n + p.commodities[k], 0), k).toBe(12);
+    expect(ck.bank[k] + ck.players.reduce((n, p) => n + p.commodities[k], 0), k).toBe(commodityBank(seats));
     expect(ck.bank[k]).toBeGreaterThanOrEqual(0);
     for (const pl of ck.players) expect(pl.commodities[k]).toBeGreaterThanOrEqual(0);
   }
@@ -162,7 +166,7 @@ export function checkInvariants(s: GameState, view = false): void {
     for (const c of pl.vpCards) expect(PROGRESS_CARDS[c].vp).toBe(true);
     for (const c of pl.progress) expect(PROGRESS_CARDS[c].vp).toBeUndefined();
   }
-  expect(ck.defenderCards + ck.players.reduce((n, p) => n + p.defenders, 0)).toBe(6);
+  expect(ck.defenderCards + ck.players.reduce((n, p) => n + p.defenders, 0)).toBe(defenderCards(seats));
   for (const pl of s.players) {
     const mine = Object.values(ck.knights).filter((k) => k.owner === pl.id);
     for (const level of [1, 2, 3]) expect(mine.filter((k) => k.level === level).length).toBeLessThanOrEqual(2);

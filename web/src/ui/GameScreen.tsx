@@ -895,22 +895,6 @@ export function GameScreen(props: GameScreenProps) {
             <span class="al">Cards{devCount > 0 ? ` ${devCount}` : ''}</span>
           </button>,
         );
-        if (ck) {
-          bar.push(
-            <button type="button" key="knights" class={knightModeOn ? 'action on' : 'action'} onClick={toggleKnights} aria-pressed={knightModeOn}>
-              <span class="ai">{knightModeOn ? '✕' : <span class="ai-helm"><HelmIcon /></span>}</span>
-              <span class="al">{knightModeOn ? 'Cancel' : 'Knights'}</span>
-            </button>,
-          );
-          bar.push(
-            <button type="button" key="improve" class={canImprove ? 'action glow' : 'action'} onClick={() => setSheet('improve')}>
-              <span class="ai ai-gate">
-                <GateGlyph track="science" />
-              </span>
-              <span class="al">Improve</span>
-            </button>,
-          );
-        }
         if (has('moveShip'))
           bar.push(
             <button
@@ -930,6 +914,23 @@ export function GameScreen(props: GameScreenProps) {
               <span class="al">Special</span>
             </button>,
           );
+      }
+      // Cities & Knights: knights and improvements also in the special build phase (C&K 5-6, 2020)
+      if (ck) {
+        bar.push(
+          <button type="button" key="knights" class={knightModeOn ? 'action on' : 'action'} onClick={toggleKnights} aria-pressed={knightModeOn}>
+            <span class="ai">{knightModeOn ? '✕' : <span class="ai-helm"><HelmIcon /></span>}</span>
+            <span class="al">{knightModeOn ? 'Cancel' : 'Knights'}</span>
+          </button>,
+        );
+        bar.push(
+          <button type="button" key="improve" class={canImprove ? 'action glow' : 'action'} onClick={() => setSheet('improve')}>
+            <span class="ai ai-gate">
+              <GateGlyph track="science" />
+            </span>
+            <span class="al">Improve</span>
+          </button>,
+        );
       }
       if (has('endTurn'))
         bar.push(
