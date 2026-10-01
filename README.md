@@ -25,8 +25,8 @@ GitHub Actions)
 - Base game (3–6 players) and the nine Seafarers scenarios; Heading for New
   Shores, The Four Islands (The Six Islands), The Fog Islands, Through the
   Desert and New World also take 5–6 players, on the Seafarers 5-6 maps
-- Cities & Knights (progress cards coming next): turn it on under the base
-  game for 3–4 players and 13 VP, on the C&K beginners' map or a random one.
+- Cities & Knights: turn it on under the base game for 3–4 players and 13
+  VP, on the C&K beginners' map or a random one.
   Three dice (the event die shows the barbarian ship or a city gate, and
   says what it did), commodities (paper, cloth and coin) in the hand, the
   trades and the discards, knights to hire, activate, promote, move, use to
@@ -34,8 +34,15 @@ GitHub Actions)
   the three city improvement tracks with their abilities and metropolises,
   and a barbarian track in the header with both sides' strength. The attack
   plays out in the middle of the screen: the ship lands, barbarians against
-  knights, then who loses a city or becomes Defender of Catan. Progress cards
-  are drawn and held (with a card turning over), but not played yet
+  knights, then who loses a city or becomes Defender of Catan. All 25
+  progress cards have their own illustrated face; you draw them (with a card
+  turning over), hold them and play them: each card's choices are made first
+  (the Alchemist's two dice with a preview of the roll, a player, two
+  numbers, a road or a hex picked on the board, the Commercial Harbor's
+  offers), then confirmed with the card's face. A card you can't play yet
+  says why. Played cards show to everyone in the middle of the screen
+  ("Ada plays Spy on you"), and chips by the action buttons show what lasts
+  the turn (Crane, Merchant Fleet, Commercial Harbor, Warlord)
 - Pass-and-play on one device: a hand-over screen keeps hands hidden
 - Computer players at three levels (easy, medium, hard), in Cities & Knights
   too, and an adjustable pace, with a feed of their moves
@@ -312,7 +319,7 @@ In summary:
 | Victory | Only on your own turn (or part); checked after every action and at the start of every turn and part |
 | Seafarers | Ships, moving one open-ended ship per turn, closed routes, pirate (blocks and robs ships), gold, fog, island bonuses |
 | 5–6 players | 2021 **paired players** (default: P2 is the 3rd player to the left, supply trades only, no roll) and the legacy **Special Build Phase** |
-| Cities & Knights | In the browser game (progress cards are drawn and held; playing them in the browser comes next): `citiesAndKnights: true` on the base game with 3–4 players. Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, all 54 progress cards with their effects, and the beginners' map. [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
+| Cities & Knights | In the browser game, progress cards included: `citiesAndKnights: true` on the base game with 3–4 players. Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, all 54 progress cards with their effects, and the beginners' map. [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
 | Options | `layout` official (default)/random, `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer`, `citiesAndKnights` |
 
 ### Scenarios
@@ -469,8 +476,12 @@ and the differences between printings.
   against the computer from the new-game screen (the beginners' map, a city
   to start, three dice), a knight hired and activated, a city improvement
   paid in commodities, the barbarian track advancing and an attack with the
-  city the player loses, and an online game where a friend sees their own
-  commodities and only counts for the others.
+  city the player loses, an online game where a friend sees their own
+  commodities and only counts for the others, and progress cards played
+  from crafted saves: the Alchemist's dice before the roll, the Spy taking
+  a card, the Inventor's swap, the Diplomat's road, the Merchant and the
+  Commercial Harbor's offers, a card that says why it can't be played, and
+  a friend playing the Spy online who alone sees the cards.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 

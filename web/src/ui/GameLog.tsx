@@ -1,4 +1,4 @@
-import type { Card, GameView, PlayerId } from 'engine';
+import { PROGRESS_CARDS, PROGRESS_CARD_NAMES, type Card, type GameView, type PlayerId, type ProgressCardName } from 'engine';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { PlayerColor } from '../game/seats';
@@ -40,11 +40,16 @@ export function logItems(view: GameView, limit = 300): LogItem[] {
 type Tok =
   | { t: 'text'; s: string }
   | { t: 'name'; s: string; id: PlayerId }
-  | { t: 'roll'; n: number; a: number; b: number }
-  | { t: 'res'; n: number | null; r: Card };
+  | { t: 'roll'; n: number; a: number; b: number; verb: string }
+  | { t: 'res'; n: number | null; r: Card }
+  /** Cities & Knights: a progress card's name, in its deck's colour. */
+  | { t: 'card'; s: string; card: ProgressCardName };
 
 /** Resources, and the Cities & Knights commodities. */
 const RES = '(brick|lumber|wool|grain|ore|paper|cloth|coin)';
+/** Progress card names, longest first ("Merchant Fleet" before "Merchant"). */
+const CARD_TITLES = PROGRESS_CARD_NAMES.map((c) => PROGRESS_CARDS[c].title).sort((a, b) => b.length - a.length);
+const CARD_BY_TITLE = new Map(PROGRESS_CARD_NAMES.map((c) => [PROGRESS_CARDS[c].title, c]));
 const WORDISH = /[\p{L}\p{N}]/u;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -56,7 +61,8 @@ function pattern(view: GameView) {
   if (cached?.key !== key) {
     const names = view.players.filter((p) => p.name).sort((a, b) => b.name.length - a.name.length);
     const alt = names.length > 0 ? names.map((p) => escape(p.name)).join('|') : '[^\\s\\S]';
-    const re = new RegExp(`(${alt})|rolls (\\d+) \\((\\d)\\+(\\d)\\)|(\\d+) ${RES}\\b|\\b${RES}\\b`, 'g');
+    const cards = CARD_TITLES.map(escape).join('|');
+    const re = new RegExp(`(${alt})|(rolls|sets the dice to) (\\d+) \\((\\d)\\+(\\d)\\)|(\\d+) ${RES}\\b|\\b${RES}\\b|\\b(${cards})\\b`, 'g');
     cached = { key, re, names: names.map((p) => ({ id: p.id, name: p.name })) };
   }
   return cached;
@@ -82,10 +88,11 @@ function tokenize(msg: string, view: GameView): Tok[] {
     if (m.index > last) out.push({ t: 'text', s: msg.slice(last, m.index) });
     if (m[1] !== undefined) out.push({ t: 'name', s: m[1], id: names.find((p) => p.name === m![1])!.id });
     else if (m[2] !== undefined) {
-      out.push({ t: 'text', s: 'rolls ' });
-      out.push({ t: 'roll', n: Number(m[2]), a: Number(m[3]), b: Number(m[4]) });
-    } else if (m[5] !== undefined) out.push({ t: 'res', n: Number(m[5]), r: m[6] as Card });
-    else out.push({ t: 'res', n: null, r: m[7] as Card });
+      out.push({ t: 'text', s: `${m[2]} ` });
+      out.push({ t: 'roll', n: Number(m[3]), a: Number(m[4]), b: Number(m[5]), verb: m[2] });
+    } else if (m[6] !== undefined) out.push({ t: 'res', n: Number(m[6]), r: m[7] as Card });
+    else if (m[8] !== undefined) out.push({ t: 'res', n: null, r: m[8] as Card });
+    else out.push({ t: 'card', s: m[9], card: CARD_BY_TITLE.get(m[9])! });
     last = m.index + m[0].length;
   }
   if (last < msg.length) out.push({ t: 'text', s: msg.slice(last) });
@@ -115,6 +122,12 @@ export function RichText({ msg, view, colors }: { msg: string; view: GameView; c
                   <Die n={k.b} red />
                 </span>
               </span>
+            );
+          case 'card':
+            return (
+              <b key={i} class={`lg-card deck-${PROGRESS_CARDS[k.card]?.deck ?? 'science'}`}>
+                {k.s}
+              </b>
             );
           case 'res':
             return k.n === null ? (
@@ -148,7 +161,7 @@ export function LogLine({ item, view, colors }: { item: LogItem; view: GameView;
       </li>
     );
   }
-  const roll = / rolls \d+ \(/.test(item.msg);
+  const roll = / (rolls|sets the dice to) \d+ \(/.test(item.msg);
   return (
     <li class={`lg-e${item.secret ? ' secret' : ''}${roll ? ' is-roll' : ''}${pc ? '' : ' system'}`} style={style}>
       <span class="lg-dot" aria-hidden="true" />

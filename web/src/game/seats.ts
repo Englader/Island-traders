@@ -83,7 +83,7 @@ export function botDelay(speed: BotSpeed, last: Action | null): number {
   const base = BOT_DELAY[speed];
   if (!last) return base;
   // the dice animation, then a moment to see what the roll produced (Cities & Knights: the event die too)
-  if (last.type === 'rollDice') return rollDuration(speed) + base * 0.8;
+  if (last.type === 'rollDice' || (last.type === 'playProgress' && last.card === 'alchemist')) return rollDuration(speed) + base * 0.8;
   // a trade or a development card is shown first
   if (FX_ACTIONS.has(last.type)) return FX_TIME[speed] + base * 0.6;
   if (last.type === 'endTurn') return base * 1.4;

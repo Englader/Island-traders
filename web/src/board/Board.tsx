@@ -33,8 +33,16 @@ export interface Targets {
 }
 
 export interface Ghost {
-  kind: 'settlement' | 'city' | 'road' | 'ship' | 'robber' | 'pirate' | 'harbor' | 'knight' | 'wall' | 'metropolis';
+  /**
+   * Cities & Knights progress cards add: the merchant on a hex, two number
+   * tokens swapped (`swap`: `id` and `id2` get `n` and `n2`), a road taken
+   * up (`cut`) and a knight driven off (`mark`).
+   */
+  kind: 'settlement' | 'city' | 'road' | 'ship' | 'robber' | 'pirate' | 'harbor' | 'knight' | 'wall' | 'metropolis' | 'merchant' | 'swap' | 'cut' | 'mark';
   id: string;
+  id2?: string;
+  n?: number;
+  n2?: number;
   owner: number;
   /** Cities & Knights: the knight's strength (and whether it is active), or the metropolis' track. */
   level?: KnightLevel;
@@ -61,6 +69,10 @@ interface Props {
   turned?: boolean;
   /** An intersection picked for a move (Cities & Knights: the knight whose moves are shown), ringed. */
   selected?: VertexId | null;
+  /** A hex picked for a move (the Inventor's first number), ringed. */
+  selectedHex?: string | null;
+  /** The number tokens are what is picked (the Inventor): the tokens of target hexes are ringed, the others dimmed. */
+  focusTokens?: boolean;
 }
 
 interface Pt {
@@ -188,7 +200,7 @@ export function useTurned(layoutKey: string | null): boolean {
   return tall && aspect > 1.15;
 }
 
-export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned, selected }: Props) {
+export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned, selected, selectedHex, focusTokens }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 360, h: 360 });
@@ -508,8 +520,10 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               const red = hex.token === 6 || hex.token === 8;
               const blocked = b.robber === h;
               const r = 0.3;
+              const focus = focusTokens ? (targets.hexes.has(h) || selectedHex === h ? ' focus' : ' dim') : '';
               return (
-                <g key={`tk${h}`} class={blocked ? 'token blocked' : 'token'}>
+                <g key={`tk${h}`} class={(blocked ? 'token blocked' : 'token') + focus}>
+                  {focus === ' focus' && <ellipse cx={c.x} cy={c.y + 0.02} rx={r + 0.07} ry={(r + 0.07) * TILT} class="token-focus" stroke={accent} />}
                   <ellipse cx={c.x + 0.03} cy={c.y + 0.07} rx={r} ry={r * TILT} class="token-shadow" />
                   <ellipse cx={c.x} cy={c.y + 0.045} rx={r} ry={r * TILT} class="token-rim" />
                   <ellipse cx={c.x} cy={c.y} rx={r} ry={r * TILT} fill="url(#token-top)" class="token-top" />
@@ -719,6 +733,9 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
                 </g>
               ) : null,
             )}
+            {selectedHex && hexPts[selectedHex] && (
+              <polygon points={polygon(scaleAround(hexPts[selectedHex], centers[selectedHex], 0.9))} class="selected-hex" stroke={accent} data-selected-hex={selectedHex} />
+            )}
             {selected && vpt[selected] && (
               <ellipse cx={vpt[selected].x} cy={vpt[selected].y + 0.03} rx={0.27} ry={0.27 * TILT} class="selected-ring" stroke={accent} data-selected={selected} />
             )}
@@ -730,7 +747,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
             )}
       </>
     );
-  }, [view, g, targets, ghost, flash, colors, accent, selected]);
+  }, [view, g, targets, ghost, flash, colors, accent, selected, selectedHex, focusTokens]);
 
   return (
     <div class="board-wrap" ref={wrap}>
@@ -976,6 +993,58 @@ function PirateShip({ p }: { p: Pt }) {
 
 function GhostPiece({ ghost, g, colors }: { ghost: Ghost; g: ReturnType<typeof useGeometry>; colors: PlayerColor[] }) {
   const col = colors[ghost.owner] ?? colors[0];
+  if (ghost.kind === 'merchant') {
+    const c = g.centers[ghost.id];
+    if (!c) return null;
+    return (
+      <g transform={`translate(${fmt(c.x - 0.32)} ${fmt(c.y + 0.12)})`} class="ghost">
+        <MerchantShape fill={col.fill} stroke={col.stroke} />
+      </g>
+    );
+  }
+  if (ghost.kind === 'swap') {
+    // the numbers as they will be: each token shows the other's number
+    return (
+      <g class="ghost-swap">
+        {(
+          [
+            [ghost.id, ghost.n],
+            [ghost.id2, ghost.n2],
+          ] as Array<[string | undefined, number | undefined]>
+        ).map(([h, n]) => {
+          const c = h ? g.centers[h] : undefined;
+          if (!c || n === undefined) return null;
+          const red = n === 6 || n === 8;
+          return (
+            <g key={h}>
+              <ellipse cx={c.x} cy={c.y} rx={0.33} ry={0.33 * TILT} class="ghost-token" stroke={col.fill} />
+              <T x={c.x} y={c.y - 0.02} s={0.24} cls={red ? 'token-num red' : 'token-num'}>
+                {n}
+              </T>
+            </g>
+          );
+        })}
+      </g>
+    );
+  }
+  if (ghost.kind === 'cut') {
+    const ends = g.t.edgeVertices[ghost.id];
+    if (!ends) return null;
+    const a = g.vpt[ends[0]];
+    const c = g.vpt[ends[1]];
+    const m = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
+    return (
+      <g class="ghost-cut">
+        <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} class="cut-line" />
+        <path d={`M${fmt(m.x - 0.09)} ${fmt(m.y - 0.09)} L${fmt(m.x + 0.09)} ${fmt(m.y + 0.09)} M${fmt(m.x + 0.09)} ${fmt(m.y - 0.09)} L${fmt(m.x - 0.09)} ${fmt(m.y + 0.09)}`} class="cut-x" />
+      </g>
+    );
+  }
+  if (ghost.kind === 'mark') {
+    const p = g.vpt[ghost.id];
+    if (!p) return null;
+    return <ellipse cx={p.x} cy={p.y + 0.03} rx={0.3} ry={0.3 * TILT} class="ghost-mark" />;
+  }
   if (ghost.kind === 'knight' || ghost.kind === 'wall' || ghost.kind === 'metropolis') {
     const p = g.vpt[ghost.id];
     if (!p) return null;

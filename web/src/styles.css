@@ -3103,6 +3103,46 @@ svg.board text {
   opacity: 0.8;
   stroke-dasharray: 0.06 0.05;
 }
+/* Cities & Knights progress cards: what a card would do, before it is played */
+.selected-hex {
+  fill: rgba(255, 255, 255, 0.22);
+  stroke-width: 0.08;
+  stroke-dasharray: 0.14 0.08;
+  pointer-events: none;
+}
+.token.dim {
+  opacity: 0.38;
+}
+.token-focus {
+  fill: rgba(255, 255, 255, 0.55);
+  stroke-width: 0.06;
+}
+.ghost-token {
+  fill: #fbf1d8;
+  stroke-width: 0.06;
+  stroke-dasharray: 0.1 0.05;
+}
+.ghost-swap {
+  pointer-events: none;
+}
+.cut-line {
+  stroke: #d62f2f;
+  stroke-width: 0.08;
+  stroke-linecap: round;
+  stroke-dasharray: 0.09 0.07;
+}
+.cut-x {
+  stroke: #d62f2f;
+  stroke-width: 0.06;
+  stroke-linecap: round;
+}
+.ghost-mark {
+  fill: rgba(214, 47, 47, 0.12);
+  stroke: #d62f2f;
+  stroke-width: 0.06;
+  stroke-dasharray: 0.09 0.06;
+  pointer-events: none;
+}
 .target-vertex {
   opacity: 0.95;
   stroke: #fff;

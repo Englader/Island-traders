@@ -122,8 +122,15 @@ export function describeAction(a: Action, view: GameView): string {
     }
     case 'improveCity':
       return 'Put the metropolis on this city?';
-    case 'progressChoice':
-      return view.phase.kind === 'ck' && view.phase.step === 'card' && view.phase.stage === 'desert' ? 'Remove this knight?' : 'Choose this?';
+    case 'progressChoice': {
+      const ph = view.phase;
+      const stage = ph.kind === 'ck' && ph.step === 'card' ? ph.stage : undefined;
+      if (stage === 'desert') return 'Remove this knight?';
+      if (stage === 'promote') return 'Promote this knight for free?';
+      if (stage === 'place') return 'Place your knight here?';
+      if (stage === 'rebuild') return 'Place your road here again?';
+      return 'Choose this?';
+    }
     default:
       return 'Confirm?';
   }

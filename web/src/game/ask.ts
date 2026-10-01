@@ -12,9 +12,11 @@ import {
   type ImprovementTrack,
   type KnightLevel,
   type PlayerId,
+  type ProgressCardName,
 } from 'engine';
 import { ACTIVATE_COST, KNIGHT_COST, KNIGHT_LABEL, PROMOTE_COST, TRACK_INFO, WALL_COST, improvementName, sevenLimitOf, spotLabel, unlocks } from './ck';
 import { CARD_INFO, CARD_LIST, WONDER_INFO, handOfView, harborLabel } from './names';
+import { hasCrane, improvementPriceOf, playAsk, type PlayAction } from './progress';
 
 /*
  * "Ask before building": what the confirmation dialog says about a build, a
@@ -39,7 +41,9 @@ export type AskArt =
   | 'wall'
   | `gate-${ImprovementTrack}`
   | `metro-${ImprovementTrack}`
-  | 'robber';
+  | 'robber'
+  /** A progress card being played: the dialog shows its face (`Ask.card`). */
+  | 'progress';
 
 export interface AskChoice {
   action: Action;
@@ -58,6 +62,8 @@ export interface Ask {
   left: Array<{ r: Card; n: number }>;
   /** Anything worth knowing first ("This is your last settlement piece"). */
   notes: string[];
+  /** Playing a progress card: its face is shown. */
+  card?: ProgressCardName;
 }
 
 /** The wonder a player has claimed and how far it is built (The Wonders scenario). */
@@ -217,7 +223,8 @@ function one(a: Action, view: GameView, seat: PlayerId): { title: string; choice
       const info = TRACK_INFO[a.track];
       const name = improvementName(a.track, level);
       notes.push(...unlocks(view, seat, a.track, level));
-      const cost = { [info.commodity]: improvementCost(level) } as CardCounts;
+      const cost = { [info.commodity]: improvementPriceOf(view, seat, level) } as CardCounts;
+      if (hasCrane(view, seat)) notes.push(`The Crane takes 1 off: ${improvementPriceOf(view, seat, level)} instead of ${improvementCost(level)}`);
       if (a.vertex !== undefined)
         return {
           title: `Build the ${name} and a metropolis?`,
@@ -289,4 +296,19 @@ export function askFor(actions: Action[], view: GameView, seat: PlayerId): Ask |
     left,
     notes,
   };
+}
+
+/**
+ * Playing a progress card, always confirmed: the card's face, what it will
+ * do with the choices made, and (Medicine) what it costs. `second`: the
+ * Smith's second knight.
+ */
+export function progressAsk(a: PlayAction, view: GameView, seat: PlayerId, second?: string): Ask {
+  const p = playAsk(view, seat, a, second);
+  const hand = handOfView(view, seat);
+  const cost = p.cost;
+  const left = cost ? CARD_LIST.filter((r) => (cost[r] ?? 0) > 0).map((r) => ({ r, n: Math.max(0, (hand[r] ?? 0) - (cost[r] ?? 0)) })) : [];
+  const notes = [...p.notes];
+  if (a.card === 'medicine' && view.options.tradeBuildMode === 'separate' && !view.turn.buildingStarted) notes.push("After this you can't trade any more this turn");
+  return { title: p.title, choices: [{ action: a, art: 'progress', label: p.label }], cost, left, notes, card: a.card };
 }

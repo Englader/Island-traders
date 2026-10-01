@@ -29,7 +29,7 @@ function Sky({ id, top, bottom }: { id: string; top: string; bottom: string }) {
   );
 }
 
-function Cloud({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+export function Cloud({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
   return (
     <g fill="#fff" opacity="0.85" transform={`translate(${x} ${y}) scale(${s})`}>
       <ellipse cx="0" cy="0" rx="5" ry="2.2" />
@@ -39,7 +39,7 @@ function Cloud({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
   );
 }
 
-function Pine({ x, y, s = 1, dark = '#245a2a', light = '#3f8f45' }: { x: number; y: number; s?: number; dark?: string; light?: string }) {
+export function Pine({ x, y, s = 1, dark = '#245a2a', light = '#3f8f45' }: { x: number; y: number; s?: number; dark?: string; light?: string }) {
   return (
     <g transform={`translate(${x} ${y}) scale(${s})`}>
       <rect x="-0.9" y="8" width="1.8" height="4" fill="#6b4524" />
@@ -51,7 +51,7 @@ function Pine({ x, y, s = 1, dark = '#245a2a', light = '#3f8f45' }: { x: number;
   );
 }
 
-function Log({ x, y, len, r = 3 }: { x: number; y: number; len: number; r?: number }) {
+export function Log({ x, y, len, r = 3 }: { x: number; y: number; len: number; r?: number }) {
   return (
     <g stroke="#5a3616" stroke-width="0.6">
       <rect x={x} y={y - r} width={len} height={r * 2} rx={r} fill="#9b6233" />
@@ -62,7 +62,7 @@ function Log({ x, y, len, r = 3 }: { x: number; y: number; len: number; r?: numb
   );
 }
 
-function Sheep({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+export function Sheep({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
   const puffs: Array<[number, number, number]> = [
     [-4, 0, 4.2],
     [1, -2.5, 4.4],
@@ -93,7 +93,7 @@ function Sheep({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
 }
 
 /** A stack of coins, `n` high, its base at (x, y). */
-function CoinStack({ x, y, n }: { x: number; y: number; n: number }) {
+export function CoinStack({ x, y, n }: { x: number; y: number; n: number }) {
   return (
     <g stroke="#7a4e0e" stroke-width="0.5">
       {Array.from({ length: n }, (_, i) => (
@@ -108,7 +108,7 @@ function CoinStack({ x, y, n }: { x: number; y: number; n: number }) {
 }
 
 /** A bolt of cloth lying on its side: a roll with its end towards the viewer's right. */
-function Bolt({ x, y, len, r, fill, light, dark }: { x: number; y: number; len: number; r: number; fill: string; light: string; dark: string }) {
+export function Bolt({ x, y, len, r, fill, light, dark }: { x: number; y: number; len: number; r: number; fill: string; light: string; dark: string }) {
   return (
     <g stroke={dark} stroke-width="0.6">
       <rect x={x} y={y - r} width={len} height={r * 2} rx="1" fill={fill} />

@@ -516,8 +516,12 @@ export function RulesSheet({ close }: { close(): void }) {
           </li>
           <li>
             <b>The event die.</b> A ship moves the barbarians one space; a city gate draws progress cards for players whose improvement of its colour
-            shows the red die (level 1: red 1–2, each level one more). You hold up to 4 progress cards, under <b>Cards</b>; playing them comes in the
-            next update.
+            shows the red die (level 1: red 1–2, each level one more).
+          </li>
+          <li>
+            <b>Progress cards.</b> You hold up to 4 (victory point cards count at once). Play any number on your turn after the roll, under{' '}
+            <b>Cards</b> (key C): pick its choices (a player, a spot on the board, a resource), then confirm. The <b>Alchemist</b> is played
+            before the roll, from the button beside <b>Roll</b> (key A): you choose both production dice. A card you can't play yet says why.
           </li>
           <li>
             <b>Knights</b> <Cost cost={CK_COSTS.knight} /> stand on your roads and block others. Activate one <Cost cost={CK_COSTS.activate} />, promote it{' '}

@@ -14,7 +14,7 @@ import {
   type VertexId,
 } from 'engine';
 import type { ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import {
   ACTIVATE_COST,
   KNIGHT_LABEL,
@@ -37,6 +37,7 @@ import { Cost, Die, ResIcon, Sheet, cleanCounts } from './common';
 import { GateGlyph, HelmIcon, KnightGlyph, ProgressCardView, ShipGlyph, TowerGlyph } from './ckArt';
 import { ResGlyph } from './icons';
 import { ForcedSheet, PeekLine, PickCards } from './sheets';
+import { hasCrane, improvementPriceOf, progressWhy } from '../game/progress';
 import './ck.css';
 
 /*
@@ -236,7 +237,7 @@ function improveWhy(view: GameView, seat: PlayerId, track: ImprovementTrack, lat
   if (cities.length === 0) return 'You need a city first';
   const com = TRACK_INFO[track].commodity;
   const have = handOfView(view, seat)[com] ?? 0;
-  const cost = improvementCost(level + 1);
+  const cost = improvementPriceOf(view, seat, level + 1);
   if (have < cost) return `You need ${cost - have} more ${com}`;
   if (level + 1 >= METROPOLIS_LEVEL) return 'You need a city without a metropolis';
   return 'Not possible right now';
@@ -279,6 +280,8 @@ function TrackColumn({
   const levels = [1, 2, 3, 4, 5];
   const why = seat !== null ? improveWhy(view, seat, track, later, can) : null;
   const next = mine + 1;
+  // a Crane played this turn: one commodity off the next improvement
+  const crane = seat !== null && hasCrane(view, seat);
   return (
     <section
       class={`flip-col tr-${track}`}
@@ -357,7 +360,8 @@ function TrackColumn({
         ) : (
           <button type="button" class="primary flip-buy" disabled={!can} title={why ?? undefined} onClick={onBuy} data-track={track}>
             <span class="fb-l">Build {improvementName(track, next)}</span>
-            <Cost cost={{ [info.commodity]: improvementCost(next) }} />
+            {crane && <span class="fb-crane">Crane −1</span>}
+            {crane && improvementPriceOf(view, seat!, next) === 0 ? <span class="fb-free">free</span> : <Cost cost={{ [info.commodity]: crane ? improvementPriceOf(view, seat!, next) : improvementCost(next) }} />}
           </button>
         ))}
       {seat !== null && why && mine < MAX_IMPROVEMENT && <p class="flip-why">{why}</p>}
@@ -422,7 +426,7 @@ export function ImprovementsSheet({
 
 // --- progress cards --------------------------------------------------------------------------------
 
-function CardRow({ card, children }: { card: ProgressCardName; children?: ComponentChildren }) {
+function CardRow({ card, why, children }: { card: ProgressCardName; why?: string | null; children?: ComponentChildren }) {
   const deck = progressDeck(card);
   return (
     <div class={`prog-row deck-${deck}`} data-card={card}>
@@ -432,22 +436,61 @@ function CardRow({ card, children }: { card: ProgressCardName; children?: Compon
       <div class="prog-info">
         <strong>{progressTitle(card)}</strong>
         <span>{PROGRESS_TEXT[card]}</span>
-        <span class="prog-deck">
-          <GateGlyph track={deck} /> {TRACK_INFO[deck].label} deck
-        </span>
+        {why ? (
+          <span class="prog-why">{why}</span>
+        ) : (
+          <span class="prog-deck">
+            <GateGlyph track={deck} /> {TRACK_INFO[deck].label} deck
+          </span>
+        )}
       </div>
       {children && <div class="prog-actions">{children}</div>}
     </div>
   );
 }
 
-/** Your progress cards (held and VP), with a "Play" waiting for phase 4b, and the discards over the limit on your own turn. */
-export function ProgressSheet({ view, legal, seat, send, close }: { view: GameView; legal: Action[]; seat: PlayerId; send(a: Action): void; close(): void }) {
+/**
+ * Your progress cards (held and VP). "Play" opens a card's choices; a card
+ * the engine doesn't offer now says why (whose turn, before or after the
+ * roll, nothing to target). Over the limit on your own turn, cards go back
+ * before the turn ends. Wide screens: 1-4 play a card.
+ */
+export function ProgressSheet({
+  view,
+  legal,
+  seat,
+  send,
+  close,
+  onPlay,
+  desk,
+}: {
+  view: GameView;
+  legal: Action[];
+  seat: PlayerId;
+  send(a: Action): void;
+  close(): void;
+  onPlay(card: ProgressCardName): void;
+  /** Wide screens: key hints. */
+  desk?: boolean;
+}) {
   const ck = view.ck!;
   const me = ck.players[seat];
   const hand = me.progress ?? [];
   const over = Math.max(0, hand.length - PROGRESS_HAND_LIMIT);
   const discardable = (c: ProgressCardName) => legal.some((a) => a.type === 'discardProgress' && a.card === c);
+  const why = hand.map((c) => progressWhy(view, seat, c, legal));
+  useEffect(() => {
+    if (!desk) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('.confirm-backdrop')) return;
+      const i = Number(e.key) - 1;
+      if (!Number.isInteger(i) || i < 0 || i >= hand.length || why[i]) return;
+      e.preventDefault();
+      onPlay(hand[i]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   return (
     <Sheet title="Progress cards" onClose={close} wide>
       {over > 0 && (
@@ -463,11 +506,22 @@ export function ProgressSheet({ view, legal, seat, send, close }: { view: GameVi
       ) : (
         <div class="prog-list">
           {hand.map((card, i) => (
-            <CardRow key={`${card}${i}`} card={card}>
-              <button type="button" class="primary" disabled title="Playing progress cards comes in the next update">
+            <CardRow key={`${card}${i}`} card={card} why={why[i]}>
+              <button
+                type="button"
+                class="primary prog-play"
+                disabled={!!why[i]}
+                title={why[i] ?? `Play the ${progressTitle(card)}`}
+                aria-label={`Play ${progressTitle(card)}`}
+                onClick={() => onPlay(card)}
+              >
                 Play
+                {desk && !why[i] && i < 9 && (
+                  <kbd class="key" aria-hidden="true">
+                    {i + 1}
+                  </kbd>
+                )}
               </button>
-              <span class="prog-soon">Coming soon</span>
               {over > 0 && discardable(card) && (
                 <button type="button" onClick={() => send({ type: 'discardProgress', player: seat, card })}>
                   Put back
@@ -486,7 +540,8 @@ export function ProgressSheet({ view, legal, seat, send, close }: { view: GameVi
         </div>
       )}
       <p class="hint">
-        You may hold {PROGRESS_HAND_LIMIT} (victory point cards are played at once and don't count). Cards left: {TRACK_LIST.map((t) => `${TRACK_INFO[t].label.toLowerCase()} ${ck.decks[t]}`).join(' · ')}.
+        Play any number after your roll, the Alchemist before it. You may hold {PROGRESS_HAND_LIMIT} (victory point cards are played at once and don't
+        count). Cards left: {TRACK_LIST.map((t) => `${TRACK_INFO[t].label.toLowerCase()} ${ck.decks[t]}`).join(' · ')}.
       </p>
     </Sheet>
   );

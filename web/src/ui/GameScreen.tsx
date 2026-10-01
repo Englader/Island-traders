@@ -1,10 +1,11 @@
-import { PROGRESS_CARDS, getScenario, type Action, type GameView, type ImprovementTrack, type PlayerId, type VertexId } from 'engine';
+import { PROGRESS_CARDS, getScenario, type Action, type GameView, type ImprovementTrack, type PlayerId, type ProgressCardName, type VertexId } from 'engine';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
-import { askFor } from '../game/ask';
+import { askFor, progressAsk } from '../game/ask';
+import { PICK_PROMPT, PICK_STATUS, PLAY_KIND, playsOf, smithSeconds, type PlayAction } from '../game/progress';
 import { CARD_INFO, COMMODITY_LIST, RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel, progressTitle } from '../game/names';
-import { TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, namesList, sevenLimitOf } from '../game/ck';
+import { KNIGHT_LABEL, PROGRESS_TEXT, TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, namesList, progressDeck, sevenLimitOf } from '../game/ck';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import type { ClockFeed } from '../game/clock';
@@ -36,6 +37,7 @@ import {
   ProgressDiscardSheet,
   ProgressSheet,
 } from './CkPanels';
+import { AlchemistSheet, CardBar, HarborOfferSheet, KindPickSheet, MasterMerchantSheet, PlayerPickSheet, SpyTakeSheet, TurnChips } from './ProgressPlay';
 import {
   BuildSheet,
   CardsSheet,
@@ -85,9 +87,11 @@ type Mode =
   // Cities & Knights: pick one of your knights, then what it does, then (moving) where it goes
   | { kind: 'knights' }
   | { kind: 'knight'; at: VertexId }
-  | { kind: 'knightTo'; from: VertexId };
+  | { kind: 'knightTo'; from: VertexId }
+  // a progress card whose spot is picked on the board (the Inventor and the Smith: `first`, then a second)
+  | { kind: 'card'; card: ProgressCardName; first?: string };
 
-type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice' | 'improve' | 'barbarians';
+type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice' | 'improve' | 'barbarians' | 'harbor';
 
 /** How long a moment is shown: the barbarians' attack has three beats, drawn cards turn over. */
 function fxTime(kind: string, base: number): number {
@@ -123,6 +127,10 @@ interface Pending {
   done?: () => void;
   /** Asked even with "Ask before building" off: a choice to make (the city for a metropolis). */
   force?: boolean;
+  /** A progress card about to be played (always asked, with its face): the Smith's second knight. */
+  card?: { second?: VertexId };
+  /** "No" goes back to the progress cards (nothing was picked on the way). */
+  back?: boolean;
 }
 
 const BUILD_ACTION: Record<BuildPiece, Action['type']> = {
@@ -206,10 +214,29 @@ function spotActions(view: GameView, legal: Action[], mode: Mode): Map<string, A
       case 'retreatKnight':
         add(`v:${a.to}`, a);
         break;
-      // a progress card asks for one of your intersections (the Deserter: the knight you remove)
+      // a progress card asks for one of your intersections (the Deserter: the knight you remove), or a road (the Diplomat's rebuild)
       case 'progressChoice':
         if (ph === 'ck' && typeof a.args?.vertex === 'string') add(`v:${a.args.vertex}`, a);
+        else if (ph === 'ck' && typeof a.args?.edge === 'string') add(`e:${a.args.edge}`, a);
         break;
+      // playing a progress card: its spots on the board (the Smith's second knight is added by the caller)
+      case 'playProgress': {
+        if (mode?.kind !== 'card' || a.card !== mode.card) break;
+        const args = a.args ?? {};
+        if (typeof args.vertex === 'string') {
+          if (!(a.card === 'smith' && mode.first)) add(`v:${args.vertex}`, a);
+        } else if (typeof args.hex === 'string') add(`h:${args.hex}`, a);
+        else if (typeof args.edge === 'string') add(`e:${args.edge}`, a);
+        else if (Array.isArray(args.hexes)) {
+          const [h1, h2] = args.hexes as string[];
+          if (!mode.first) {
+            add(`h:${h1}`, a);
+            add(`h:${h2}`, a);
+          } else if (h1 === mode.first) add(`h:${h2}`, a);
+          else if (h2 === mode.first) add(`h:${h1}`, a);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -282,9 +309,59 @@ function ghostFor(a: Action, seat: PlayerId, view: GameView): Ghost | null {
       return { kind: 'harbor', id: a.edge, owner: seat };
     case 'moveRobber':
       return { kind: a.piece, id: a.hex, owner: seat };
+    // --- progress cards: what the card will do ---
+    case 'playProgress': {
+      const args = a.args ?? {};
+      const v = typeof args.vertex === 'string' ? args.vertex : null;
+      switch (a.card) {
+        case 'engineer':
+          return v ? { kind: 'wall', id: v, owner: seat } : null;
+        case 'medicine':
+          return v ? { kind: 'city', id: v, owner: seat } : null;
+        case 'smith': {
+          const k = v ? knight(v) : undefined;
+          return v ? { kind: 'knight', id: v, owner: seat, level: Math.min(3, (k?.level ?? 1) + 1) as 1 | 2 | 3, active: !!k?.active } : null;
+        }
+        case 'intrigue':
+          return v ? { kind: 'mark', id: v, owner: seat } : null;
+        case 'merchant':
+          return typeof args.hex === 'string' ? { kind: 'merchant', id: args.hex, owner: seat } : null;
+        case 'diplomat':
+          return typeof args.edge === 'string' ? { kind: 'cut', id: args.edge, owner: seat } : null;
+        case 'inventor': {
+          const [h1, h2] = (args.hexes as string[] | undefined) ?? [];
+          if (!h1 || !h2) return null;
+          return { kind: 'swap', id: h1, id2: h2, n: view.board.hexes[h2]?.token ?? undefined, n2: view.board.hexes[h1]?.token ?? undefined, owner: seat };
+        }
+        default:
+          return null;
+      }
+    }
+    case 'progressChoice': {
+      const ph = view.phase;
+      if (ph.kind !== 'ck' || ph.step !== 'card') return null;
+      if (typeof a.args?.edge === 'string') return { kind: 'road', id: a.args.edge, owner: seat };
+      const v = a.args?.vertex;
+      if (typeof v !== 'string') return null;
+      if (ph.stage === 'promote') {
+        const k = knight(v);
+        return { kind: 'knight', id: v, owner: seat, level: Math.min(3, (k?.level ?? 1) + 1) as 1 | 2 | 3, active: !!k?.active };
+      }
+      if (ph.stage === 'place') {
+        const d = ph.data as { level?: 1 | 2 | 3; active?: boolean } | undefined;
+        return { kind: 'knight', id: v, owner: seat, level: d?.level ?? 1, active: !!d?.active };
+      }
+      return null;
+    }
     default:
       return null;
   }
+}
+
+/** Whether `a` is the follow-up the player chose before playing the card (compared field by field). */
+function sameChoice(a: Action, b: Action): boolean {
+  if (a.type !== 'progressChoice' || b.type !== 'progressChoice' || a.player !== b.player) return false;
+  return JSON.stringify(a.args ?? null) === JSON.stringify(b.args ?? null);
 }
 
 function choiceLabel(a: Action, view: GameView): string {
@@ -349,7 +426,25 @@ function ckStatus(view: GameView, seat: PlayerId | null): string {
         if (ph.stage === 'desert') return `${title}: remove one of your knights`;
         return `${title}: your choice`;
       }
-      return ph.player === seat ? `Finish playing ${title}` : `${by} plays ${title}`;
+      if (ph.player === seat) {
+        // your own card waits on others, or on your next choice
+        if (ph.pending) {
+          const who = Object.keys(ph.pending).map(Number);
+          const s = who.length === 1 && who[0] !== seat ? 's' : '';
+          const names = waitingNames(view, ph.pending, seat);
+          if (ph.stage === 'give') return `${title}: ${names} choose${s} cards for you`;
+          if (ph.stage === 'discard') return `${title}: ${names} discard${s}`;
+          if (ph.stage === 'exchange') return `${title}: ${names} choose${s} a commodity`;
+          if (ph.stage === 'desert') return `${title}: ${names} remove${s} a knight`;
+          return `${title}: waiting for ${names}`;
+        }
+        if (ph.stage === 'promote') return 'Smith: promote a second knight?';
+        if (ph.stage === 'place') return 'Deserter: place your knight?';
+        if (ph.stage === 'rebuild') return 'Diplomat: place your road again?';
+        if (ph.stage === 'take') return ph.card === 'spy' ? 'Spy: take a card, or none' : 'Master Merchant: take your cards';
+        return `Finish playing ${title}`;
+      }
+      return `${by} plays ${title}`;
     }
     default:
       return '';
@@ -416,6 +511,10 @@ export function GameScreen(props: GameScreenProps) {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [diceFor, setDiceFor] = useState<PlayerId | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  // Cities & Knights: a progress card whose choices are made in a sheet (a player, a card kind, the Alchemist's dice)
+  const [flow, setFlow] = useState<{ card: ProgressCardName } | null>(null);
+  // a choice picked before the card was played, sent once the engine asks for it (the Smith's second knight)
+  const [followUp, setFollowUp] = useState<{ action: Action; after: number } | null>(null);
   // "Ask before building" (the menu): builds, buys and placements are confirmed in a dialog
   const askOn = useAskBeforeBuilding();
   const sc = getScenario(view.scenario);
@@ -461,7 +560,16 @@ export function GameScreen(props: GameScreenProps) {
     setMode((m) => (m && (ph.kind === 'main' || ph.kind === 'specialBuild') && m.kind !== 'robber' ? m : null));
   }, [phaseKey]);
   // Drop a build mode that no longer has any legal spot.
-  const spots = useMemo(() => spotActions(view, legal, mode), [view, legal, mode]);
+  const spots = useMemo(() => {
+    const out = spotActions(view, legal, mode);
+    // the Smith's second knight: any other knight still promotable once the first is
+    if (mode?.kind === 'card' && mode.card === 'smith' && mode.first && seat !== null) {
+      const plays = playsOf(legal, 'smith');
+      const first = plays.find((a) => a.args?.vertex === mode.first);
+      if (first) for (const v of smithSeconds(view, seat, plays, mode.first)) out.set(`v:${v}`, [first]);
+    }
+    return out;
+  }, [view, legal, mode]);
   useEffect(() => {
     if (!mode || mode.kind === 'robber') return;
     if (mode.kind === 'knight') {
@@ -483,12 +591,27 @@ export function GameScreen(props: GameScreenProps) {
     const id = setTimeout(props.clearError, 3500);
     return () => clearTimeout(id);
   }, [props.error]);
+  // A card chosen in a sheet that can't be played any more (the game moved on): close its sheet.
+  useEffect(() => {
+    if (flow && !pending && playsOf(legal, flow.card).length === 0) setFlow(null);
+  }, [legal, flow, pending]);
+  // Send the choice made in advance once the card asks for it; drop it if the card asks nothing.
+  useEffect(() => {
+    if (!followUp || view.log.length <= followUp.after) return;
+    const hit = legal.find((a) => sameChoice(a, followUp.action));
+    setFollowUp(null);
+    if (hit) send(hit);
+  }, [view, legal, followUp]);
 
   const targets = useMemo(() => toTargets(spots), [spots]);
   const accent = colors[seat ?? view.turn.actor]?.fill ?? '#fff';
 
   const doSend = (a: Action) => {
     setPending(null);
+    if (a.type === 'playProgress') {
+      setMode(null);
+      setFlow(null);
+    }
     if (
       a.type === 'buildRoad' ||
       a.type === 'buildShip' ||
@@ -522,12 +645,41 @@ export function GameScreen(props: GameScreenProps) {
       setPending(null);
       return;
     }
+    if (mode?.kind === 'card') {
+      // the Inventor's first number, the Smith's first knight: then the second
+      if (mode.card === 'inventor' && !mode.first) {
+        setMode({ ...mode, first: id });
+        setPending(null);
+        return;
+      }
+      if (mode.card === 'smith' && !mode.first && smithSeconds(view, seat, playsOf(legal, 'smith'), id).length > 0) {
+        setMode({ ...mode, first: id });
+        setPending(null);
+        return;
+      }
+      setPending({ key, actions: acts, card: mode.card === 'smith' && mode.first ? { second: id } : {} });
+      return;
+    }
     setPending({ key, actions: acts });
   };
 
-  const ghost = pending && seat !== null ? ghostFor(pending.actions[pending.preview ?? 0] ?? pending.actions[0], seat, view) : null;
-  // builds, buys and placements ask first (the robber and harbors keep the confirm bar); a metropolis always asks which city
-  const ask = pending && seat !== null && (askOn || pending.force) ? askFor(pending.actions, view, seat) : null;
+  const smithSecond = pending?.card?.second;
+  const ghost =
+    pending && seat !== null
+      ? smithSecond && pending.actions[0]?.type === 'playProgress'
+        ? ghostFor({ ...pending.actions[0], args: { vertex: smithSecond } }, seat, view)
+        : ghostFor(pending.actions[pending.preview ?? 0] ?? pending.actions[0], seat, view)
+      : null;
+  // builds, buys and placements ask first (the robber and harbors keep the confirm bar); a metropolis always asks which city;
+  // a progress card is always asked, with its face
+  const ask =
+    pending && seat !== null
+      ? pending.card && pending.actions[0]?.type === 'playProgress'
+        ? progressAsk(pending.actions[0], view, seat, pending.card.second)
+        : askOn || pending.force
+          ? askFor(pending.actions, view, seat)
+          : null
+      : null;
   /** Makes a move, or first asks when it is a build or a purchase and the menu says to ask. */
   const askOrSend = (a: Action, key: string, done?: () => void) => {
     if (askOn && seat !== null && askFor([a], view, seat)) {
@@ -569,10 +721,74 @@ export function GameScreen(props: GameScreenProps) {
     setMode({ kind: 'knights' });
   };
   const confirmPending = (a: Action) => {
-    const done = pending?.done;
+    const was = pending;
     doSend(a);
-    done?.();
+    was?.done?.();
+    if (a.type === 'playProgress' && seat !== null) {
+      // the Smith: the second knight (or none) is answered as soon as the engine asks
+      if (a.card === 'smith')
+        setFollowUp({
+          action: was?.card?.second ? { type: 'progressChoice', player: seat, args: { vertex: was.card.second } } : { type: 'progressChoice', player: seat },
+          after: view.log.length,
+        });
+      // the Commercial Harbor: on to the offers; the Crane: on to the improvements, one commodity cheaper
+      if (a.card === 'commercialHarbor') setSheet('harbor');
+      if (a.card === 'crane') setSheet('improve');
+    }
   };
+  /**
+   * Plays one of your progress cards: its choices first (on the board, or in
+   * a sheet), then the confirmation with its face. A card with nothing to
+   * choose, or a single choice, goes straight to the confirmation.
+   */
+  const startPlay = (card: ProgressCardName) => {
+    const plays = playsOf(legal, card);
+    const kind = PLAY_KIND[card];
+    if (seat === null || plays.length === 0 || !kind) return;
+    setSheet(null);
+    setPending(null);
+    setFlow(null);
+    const board = kind === 'vertex' || kind === 'hex' || kind === 'edge' || kind === 'smith' || kind === 'hexPair';
+    if (kind === 'confirm' || (board && kind !== 'hexPair' && plays.length === 1)) {
+      setMode(null);
+      setPending({ key: `card:${card}`, actions: [plays[0]], card: {}, back: true });
+    } else if (board) setMode({ kind: 'card', card });
+    else setFlow({ card });
+  };
+  /** Leaves a card's choices: the card stays in the hand, which opens again. */
+  const cancelCard = () => {
+    setPending(null);
+    setMode(null);
+    setFlow(null);
+    setSheet('cards');
+  };
+  const alchemist = playsOf(legal, 'alchemist').length > 0;
+
+  /** A card's choices made in its sheet: on to the confirmation. */
+  const pickCardArgs = (a: PlayAction) => setPending({ key: `card:${a.card}`, actions: [a], card: {} });
+  /** What the bar says while a card's spot is picked. */
+  const cardPickText = (card: ProgressCardName, first?: string) => {
+    const tapWord = desk ? 'Click' : 'Tap';
+    if (card === 'inventor' && first) return `${tapWord} the number to swap with the ${view.board.hexes[first]?.token ?? ''}`;
+    if (card === 'smith' && first) return `${tapWord} a second knight, or promote only this one`;
+    return `${tapWord} ${PICK_PROMPT[card] ?? 'a highlighted spot'}`;
+  };
+  /** Your own card's next choice on the board (the Smith's second knight, the Deserter's knight, the Diplomat's road), with the way to skip it. */
+  const ownStage = (() => {
+    if (seat === null || ph.kind !== 'ck' || ph.step !== 'card' || ph.player !== seat || ph.pending) return null;
+    const choices = legal.filter((a) => a.type === 'progressChoice');
+    if (!choices.some((a) => a.type === 'progressChoice' && (typeof a.args?.vertex === 'string' || typeof a.args?.edge === 'string'))) return null;
+    const skip = choices.find((a) => a.type === 'progressChoice' && !a.args);
+    const tapWord = desk ? 'Click' : 'Tap';
+    if (ph.stage === 'promote') return { card: ph.card, text: `${tapWord} a second knight to promote for free, or stop`, skip, skipLabel: 'Done' };
+    if (ph.stage === 'place') {
+      const d = ph.data as { level?: 1 | 2 | 3; active?: boolean } | undefined;
+      const what = `${KNIGHT_LABEL[d?.level ?? 1].toLowerCase()}${d?.active ? ' (active)' : ''}`;
+      return { card: ph.card, text: `${tapWord} a spot on your roads for your ${what}`, skip, skipLabel: 'Skip' };
+    }
+    if (ph.stage === 'rebuild') return { card: ph.card, text: `${tapWord} where your road goes again, or keep it in your supply`, skip, skipLabel: 'Keep it' };
+    return { card: ph.card, text: `${tapWord} a highlighted spot`, skip, skipLabel: 'Skip' };
+  })();
 
   // --- forced sheets ---------------------------------------------------------------
   // Under another sheet (the log, the scores) the choice waits, hidden, with what was picked so far.
@@ -594,11 +810,16 @@ export function GameScreen(props: GameScreenProps) {
       forced = <CardPickSheet view={view} seat={seat} send={doSend} covered={covered} />;
     else if (ph.kind === 'ck' && ph.step === 'card' && ph.pending?.[seat] && ph.stage === 'exchange')
       forced = <HarborAnswerSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
+    // your own Spy or Master Merchant: what you see, and what you take
+    else if (ph.kind === 'ck' && ph.step === 'card' && ph.player === seat && !ph.pending && ph.card === 'spy' && legal.some((a) => a.type === 'progressChoice'))
+      forced = <SpyTakeSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
+    else if (ph.kind === 'ck' && ph.step === 'card' && ph.player === seat && !ph.pending && ph.card === 'masterMerchant' && legal.some((a) => a.type === 'progressChoice'))
+      forced = <MasterMerchantSheet view={view} seat={seat} send={doSend} covered={covered} />;
     else if (
       ph.kind === 'ck' &&
       ph.step === 'card' &&
       legal.some((a) => a.type === 'progressChoice') &&
-      !legal.some((a) => a.type === 'progressChoice' && typeof a.args?.vertex === 'string')
+      !legal.some((a) => a.type === 'progressChoice' && (typeof a.args?.vertex === 'string' || typeof a.args?.edge === 'string'))
     )
       forced = <CardChoiceSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
     else if (
@@ -627,7 +848,7 @@ export function GameScreen(props: GameScreenProps) {
   const knightMoves = legal.some((a) => a.type === 'activateKnight' || a.type === 'promoteKnight' || a.type === 'moveKnight' || a.type === 'displaceKnight' || a.type === 'chaseRobber');
   const canImprove = legal.some((a) => a.type === 'improveCity');
   const waitingFor = mustAct(view).filter((p) => p !== seat);
-  const status = statusText(view, seat, legal);
+  const status = mode?.kind === 'card' ? `${progressTitle(mode.card)}: ${PICK_STATUS[mode.card] ?? 'pick a spot'}` : statusText(view, seat, legal);
 
   const bar: JSX.Element[] = [];
   if (isActor && canAct && !gameOver) {
@@ -638,6 +859,15 @@ export function GameScreen(props: GameScreenProps) {
           <span class="al">Roll</span>
         </button>,
       );
+      if (alchemist)
+        bar.push(
+          <button type="button" key="alchemist" class="action alc-action" onClick={() => startPlay('alchemist')} title="Choose both production dice instead of rolling">
+            <span class="ai ai-card">
+              <ProgressCardView card="alchemist" look="mini" />
+            </span>
+            <span class="al">Alchemist</span>
+          </button>,
+        );
       if (has('playKnight') || devCount > 0)
         bar.push(
           <button type="button" key="cards" class="action" onClick={() => setSheet('cards')}>
@@ -765,7 +995,19 @@ export function GameScreen(props: GameScreenProps) {
   const primary: DeckButton[] = [];
   const secondary: DeckButton[] = [];
   if (desk && seat !== null && me?.resources && !gameOver) {
-    if (roll) primary.push({ key: 'roll', label: 'Roll', icon: <RollIcon />, kbd: 'R', tone: 'roll', title: 'Roll the dice', onClick: roll });
+    if (roll) {
+      primary.push({ key: 'roll', label: 'Roll', icon: <RollIcon />, kbd: 'R', tone: 'roll', title: 'Roll the dice', onClick: roll });
+      if (alchemist)
+        primary.push({
+          key: 'alchemist',
+          label: 'Alchemist',
+          icon: <ProgressCardView card="alchemist" look="mini" />,
+          kbd: 'A',
+          tone: 'plain',
+          title: 'Play the Alchemist: choose both production dice instead of rolling',
+          onClick: () => startPlay('alchemist'),
+        });
+    }
     else if (finish && ph.kind === 'roadBuilding')
       primary.push({ key: 'done', label: 'Done building', icon: <CheckIcon />, kbd: 'E', tone: 'end', title: 'Stop placing free roads', onClick: finish });
     else if (finish) primary.push({ key: 'end', label: 'End turn', icon: <EndIcon />, kbd: 'E', tone: 'end', title: 'Pass the dice to the next player', onClick: finish });
@@ -892,8 +1134,13 @@ export function GameScreen(props: GameScreenProps) {
       const covered = document.querySelector('.sheet-backdrop, .confirm-backdrop') !== null;
       if (e.key === 'Escape') {
         if (sheet) setSheet(null);
+        else if (flow) cancelCard();
         else if (covered) return;
         else if (pending) setPending(null);
+        else if (mode?.kind === 'card') {
+          if (mode.first) setMode({ kind: 'card', card: mode.card });
+          else cancelCard();
+        }
         else if (mode?.kind === 'knight' || mode?.kind === 'knightTo') setMode({ kind: 'knights' });
         else if (mode && mode.kind !== 'robber') setMode(null);
         else return;
@@ -905,6 +1152,7 @@ export function GameScreen(props: GameScreenProps) {
       const slot = BUILD_KEYS.indexOf(k);
       const piece = slot >= 0 ? buildOrder(view)[slot] : undefined;
       if (k === 'r' && roll) roll();
+      else if (k === 'a' && roll && alchemist) startPlay('alchemist');
       else if (k === 'e' && finish) finish();
       else if (k === 't' && seat !== null && tradeWhy === null) setSheet('trade');
       else if (k === 'c' && seat !== null && (devCount > 0 || (ck?.players[seat]?.vpCards.length ?? 0) > 0)) setSheet('cards');
@@ -947,6 +1195,11 @@ export function GameScreen(props: GameScreenProps) {
       else if (e?.kind === 'attack') setEventNote({ key: l.at, title: `The barbarians attack: ${e.barbarians} against ${e.knights}`, sub: e.outcome, tone: 'attack' });
       else if (e?.kind === 'draw' && e.draws.some((d) => d.p === seat && d.card))
         setEventNote({ key: l.at, title: `You draw ${e.draws.filter((d) => d.p === seat && d.card).map((d) => progressTitle(d.card!)).join(' and ')}`, sub: 'A progress card', tone: e.draws[0].deck });
+      else if (e?.kind === 'progPlay' && e.by !== seat) {
+        const who = view.players[e.by]?.name ?? 'A player';
+        const on = e.target === undefined ? '' : ` on ${e.target === seat ? 'you' : view.players[e.target]?.name}`;
+        setEventNote({ key: l.at, title: `${who} plays ${progressTitle(e.card)}${on}`, sub: e.detail || PROGRESS_TEXT[e.card], tone: progressDeck(e.card) });
+      }
     }
     prevView.current = view;
   }, [view]);
@@ -1070,7 +1323,9 @@ export function GameScreen(props: GameScreenProps) {
           targets={targets}
           accent={accent}
           ghost={ghost}
-          selected={mode?.kind === 'knight' ? mode.at : mode?.kind === 'knightTo' ? mode.from : null}
+          selected={mode?.kind === 'knight' ? mode.at : mode?.kind === 'knightTo' ? mode.from : mode?.kind === 'card' && mode.card === 'smith' ? (mode.first ?? null) : null}
+          selectedHex={mode?.kind === 'card' && mode.card === 'inventor' ? (mode.first ?? null) : null}
+          focusTokens={mode?.kind === 'card' && mode.card === 'inventor'}
           flash={rolling && rollFlash ? null : props.flash}
           onPick={onPick}
           tools={
@@ -1144,7 +1399,7 @@ export function GameScreen(props: GameScreenProps) {
             </div>
           </div>
         )}
-        {!pending && mode && mode.kind !== 'robber' && mode.kind !== 'knight' && (
+        {!pending && mode && mode.kind !== 'robber' && mode.kind !== 'knight' && mode.kind !== 'card' && (
           <div class="mode-hint">
             {mode.kind === 'build'
               ? mode.piece === 'knight'
@@ -1171,10 +1426,40 @@ export function GameScreen(props: GameScreenProps) {
             {ph.step === 'pillage' ? `${tap} the city you lose (it becomes a settlement)` : `${tap} where your displaced knight retreats`}
           </div>
         )}
-        {!pending && !mode && ph.kind === 'ck' && ph.step === 'card' && seat !== null && legal.some((a) => a.type === 'progressChoice' && typeof a.args?.vertex === 'string') && (
+        {!pending && !mode && ph.kind === 'ck' && ph.step === 'card' && seat !== null && ph.player !== seat && legal.some((a) => a.type === 'progressChoice' && typeof a.args?.vertex === 'string') && (
           <div class="mode-hint forced-hint">
             {ph.stage === 'desert' ? `${tap} the knight you remove (${view.players[ph.player]?.name} played the ${progressTitle(ph.card)})` : `${tap} a highlighted spot (${progressTitle(ph.card)})`}
           </div>
+        )}
+        {!pending && mode?.kind === 'card' && seat !== null && (
+          <CardBar card={mode.card} text={cardPickText(mode.card, mode.first)} onCancel={cancelCard}>
+            {mode.first && mode.card === 'smith' && (
+              <button
+                type="button"
+                class="primary"
+                onClick={() => {
+                  const first = playsOf(legal, 'smith').find((a) => a.args?.vertex === mode.first);
+                  if (first) setPending({ key: `v:${mode.first}`, actions: [first], card: {} });
+                }}
+              >
+                Only this one
+              </button>
+            )}
+            {mode.first && (
+              <button type="button" onClick={() => setMode({ kind: 'card', card: mode.card })}>
+                Back
+              </button>
+            )}
+          </CardBar>
+        )}
+        {!pending && !mode && !followUp && ownStage && (
+          <CardBar card={ownStage.card} text={ownStage.text}>
+            {ownStage.skip && (
+              <button type="button" onClick={() => doSend(ownStage.skip!)}>
+                {ownStage.skipLabel}
+              </button>
+            )}
+          </CardBar>
         )}
         {!pending && mode?.kind === 'knight' && seat !== null && (
           <KnightBar
@@ -1206,6 +1491,7 @@ export function GameScreen(props: GameScreenProps) {
         {desk && me?.resources ? (
           <div class="tray">
             <Hand view={view} seat={seat!} desk onCards={() => setSheet('cards')} />
+            {ck && <TurnChips view={view} seat={seat} onHarbor={() => setSheet('harbor')} />}
             {!gameOver && (
               <ActionDeck
                 view={view}
@@ -1225,6 +1511,7 @@ export function GameScreen(props: GameScreenProps) {
         ) : (
           <>
             {me?.resources && <Hand view={view} seat={seat!} desk={false} onCards={() => setSheet('cards')} />}
+            {ck && <TurnChips view={view} seat={seat} onHarbor={() => setSheet('harbor')} />}
             <nav class={bar.length >= 6 ? 'action-bar six' : 'action-bar'}>{bar}</nav>
           </>
         )}
@@ -1248,7 +1535,19 @@ export function GameScreen(props: GameScreenProps) {
       )}
       {sheet === 'trade' && seat !== null && <TradeSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} close={() => setSheet(null)} />}
       {sheet === 'cards' && seat !== null && !ck && <CardsSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} close={() => setSheet(null)} />}
-      {sheet === 'cards' && seat !== null && ck && <ProgressSheet view={view} legal={legal} seat={seat} send={doSend} close={() => setSheet(null)} />}
+      {sheet === 'cards' && seat !== null && ck && (
+        <ProgressSheet view={view} legal={legal} seat={seat} send={doSend} close={() => setSheet(null)} onPlay={startPlay} desk={desk} />
+      )}
+      {sheet === 'harbor' && seat !== null && ck && <HarborOfferSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} close={() => setSheet(null)} />}
+      {flow && seat !== null && !gameOver && sheet === null && PLAY_KIND[flow.card] === 'player' && (
+        <PlayerPickSheet view={view} seat={seat} colors={colors} card={flow.card} legal={legal} onPick={pickCardArgs} onCancel={cancelCard} />
+      )}
+      {flow && seat !== null && !gameOver && sheet === null && PLAY_KIND[flow.card] === 'kind' && (
+        <KindPickSheet view={view} seat={seat} card={flow.card} legal={legal} onPick={pickCardArgs} onCancel={cancelCard} />
+      )}
+      {flow && seat !== null && !gameOver && sheet === null && PLAY_KIND[flow.card] === 'dice' && (
+        <AlchemistSheet view={view} seat={seat} legal={legal} onPick={pickCardArgs} onCancel={cancelCard} />
+      )}
       {sheet === 'improve' && ck && (
         <ImprovementsSheet view={view} legal={legal} seat={seat} colors={colors} later={seat !== null ? notNowReason(view, seat) : null} onBuy={buyImprovement} close={() => setSheet(null)} />
       )}
@@ -1287,7 +1586,11 @@ export function GameScreen(props: GameScreenProps) {
           ask={ask}
           color={colors[seat]}
           onYes={(i) => confirmPending(ask.choices[i]?.action ?? ask.choices[0].action)}
-          onNo={() => setPending(null)}
+          onNo={() => {
+            // a card with nothing to pick goes back to the hand; otherwise back to its choices
+            if (pending?.back) cancelCard();
+            else setPending(null);
+          }}
           onPreview={(i) => setPending((p) => (p && p.preview !== i ? { ...p, preview: i } : p))}
         />
       )}

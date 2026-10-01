@@ -7,7 +7,7 @@ import { loadJson, saveJson } from '../game/storage';
 import { DevCardView } from './cards';
 import { ResGlyph } from './icons';
 import { PieceGlyph } from './pieces';
-import { GateGlyph, KnightGlyph, TowerGlyph, WallGlyph } from './ckArt';
+import { GateGlyph, KnightGlyph, ProgressCardView, TowerGlyph, WallGlyph } from './ckArt';
 
 // --- "Ask before building": a setting kept in this browser, on unless turned off -------------
 
@@ -84,7 +84,7 @@ function RobberGlyph() {
 }
 
 function Art({ art, color }: { art: AskArt; color: PlayerColor }) {
-  if (art === 'dev') return <DevCardView type={null} back look="mini" />;
+  if (art === 'dev' || art === 'progress') return <DevCardView type={null} back look="mini" />;
   if (art === 'wonder') return <WonderGlyph />;
   if (art === 'robber') return <RobberGlyph />;
   if (art === 'wall') return <WallGlyph fill={color.fill} stroke={color.stroke} />;
@@ -228,14 +228,20 @@ export function ConfirmDialog({
     >
       {spot && <span class="ask-ring" aria-hidden="true" />}
       <section ref={box} class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-body">
-        <div class="ask-head">
-          <span class={multi ? 'ask-art two' : `ask-art art-${ask.choices[0].art}`} aria-hidden="true">
-            {ask.choices.map((c, i) => (
-              <span key={i} class="ask-piece">
-                <Art art={c.art} color={color} />
-              </span>
-            ))}
-          </span>
+        <div class={ask.card ? 'ask-head with-card' : 'ask-head'}>
+          {ask.card ? (
+            <span class="ask-card" aria-hidden="true">
+              <ProgressCardView card={ask.card} text />
+            </span>
+          ) : (
+            <span class={multi ? 'ask-art two' : `ask-art art-${ask.choices[0].art}`} aria-hidden="true">
+              {ask.choices.map((c, i) => (
+                <span key={i} class="ask-piece">
+                  <Art art={c.art} color={color} />
+                </span>
+              ))}
+            </span>
+          )}
           <h2 id="ask-title">{ask.title}</h2>
         </div>
         <div id="ask-body" class="ask-body">

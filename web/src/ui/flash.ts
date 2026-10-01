@@ -39,6 +39,14 @@ export function flashOf(a: Action | undefined, key: number): Flash | null {
       return { kind: 'hex', id: a.hex, key, by };
     case 'rollDice':
       return { kind: 'roll', id: '', key, by };
+    // Cities & Knights progress cards: the Alchemist's dice roll like a roll, the merchant and a free wall or city show where
+    case 'playProgress': {
+      if (a.card === 'alchemist') return { kind: 'roll', id: '', key, by };
+      const args = a.args ?? {};
+      if (a.card === 'merchant' && typeof args.hex === 'string') return { kind: 'hex', id: args.hex, key, by };
+      if ((a.card === 'engineer' || a.card === 'medicine') && typeof args.vertex === 'string') return { kind: 'vertex', id: args.vertex, key, by };
+      return null;
+    }
     default:
       return null;
   }
