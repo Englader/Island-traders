@@ -8,6 +8,7 @@ import {
   knightActions,
   ownTurnProgressDiscards,
   progressPlays,
+  progressTurnChoices,
 } from '../ck/legal.js';
 import { COSTS, RESOURCES } from '../core/constants.js';
 import { hasAtLeast, total } from '../core/resources.js';
@@ -120,6 +121,11 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
     case 'robber': {
       if (!isActor) return [];
       for (const m of robberPhaseMoves(s)) {
+        // Cities & Knights, the Bishop: one card from everyone next to the robber, no victim to name
+        if (ph.reason === 'bishop') {
+          out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex });
+          continue;
+        }
         const victims = robberVictimsAt(s, player, m.piece, m.hex);
         if (victims.length === 0) out.push({ type: 'moveRobber', player, piece: m.piece, hex: m.hex });
         for (const v of victims) {
@@ -175,6 +181,7 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
         if (s.turn.role === 'active') {
           out.push(...knightActions(s, player));
           out.push(...progressPlays(s, player));
+          out.push(...progressTurnChoices(s, player));
           out.push(...ownTurnProgressDiscards(s, player));
         }
       }

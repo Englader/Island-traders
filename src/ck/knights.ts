@@ -43,12 +43,19 @@ export function onOwnRoute(s: GameState, p: PlayerId, v: VertexId): boolean {
   return (topo(s).vertexEdges[v] ?? []).some((e) => s.board.pieces[e]?.owner === p);
 }
 
-export function knightPlacementError(s: GameState, p: PlayerId, v: VertexId): string | null {
+/** Where a new knight may stand: an empty intersection on land touching the player's road (p. 6). */
+export function knightSiteError(s: GameState, p: PlayerId, v: VertexId): string | null {
   if (!topo(s).vertexEdges[v]) return 'no such intersection';
   if (!empty(s, v)) return 'the intersection is occupied';
   // A new knight goes on land; only a moved knight may stand at sea (p. 13).
   if (!vertexTouchesLand(s, v)) return 'knights are placed on land';
   if (!onOwnRoute(s, p, v)) return 'a knight must be placed on your road';
+  return null;
+}
+
+export function knightPlacementError(s: GameState, p: PlayerId, v: VertexId): string | null {
+  const site = knightSiteError(s, p, v);
+  if (site) return site;
   if (knightsInSupply(s, p, 1) <= 0) return 'you have no basic knight left (promote one first)';
   return null;
 }

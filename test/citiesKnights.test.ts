@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOT_LEVELS,
-  CARDS,
-  COMMODITIES,
-  EVENT_DIE,
-  PIECES_PER_PLAYER,
   PROGRESS_CARDS,
   PROGRESS_CARD_NAMES,
   RESOURCES,
@@ -16,12 +12,10 @@ import {
   heuristicAction,
   legalActions,
   longestRouteLength,
-  nextInt,
   offsetId,
   placeMerchant,
   playersToAct,
   publicVP,
-  rollDie,
   seedRng,
   simulate,
   simulateHeuristic,
@@ -29,88 +23,12 @@ import {
   totalVP,
   viewFor,
   type Action,
-  type Commodity,
-  type EventFace,
   type GameState,
-  type KnightLevel,
   type PlayerId,
-  type ProgressCardName,
   type VertexId,
 } from '../src/index.js';
+import { CK, bare, checkInvariants, ckGame, giveC, has, knight, laterTurn, roll, stack } from './ckHelpers.js';
 import { C, H, act, blank, fail, give, put, road, setHex, trail } from './helpers.js';
-
-const CK = { citiesAndKnights: true } as const;
-
-/** A C&K game after the set-up: player 0's turn 1, rolled, empty board and hands (the base random board, centred on 0,0). */
-function ckGame(players = 3, seed = 'ck'): GameState {
-  return blank('base', players, CK, seed);
-}
-
-/** Every land hex barren and numberless, no harbors, the robber parked in a corner. */
-function bare(players = 3): GameState {
-  const s = ckGame(players);
-  for (const h of Object.values(s.board.hexes)) {
-    if (h.terrain !== 'sea') {
-      h.terrain = 'desert';
-      h.token = null;
-    }
-  }
-  s.board.harbors = [];
-  s.board.robber = H(2, -2);
-  return s;
-}
-
-function giveC(s: GameState, p: PlayerId, c: Partial<Record<Commodity, number>>): void {
-  for (const [k, n] of Object.entries(c) as Array<[Commodity, number]>) {
-    s.ck!.bank[k] -= n;
-    s.ck!.players[p].commodities[k] += n;
-  }
-}
-
-/** Sets the RNG so the next roll is `yellow`, `red` and the event die `event`. */
-function withRoll(s: GameState, yellow: number, red: number, event: EventFace): GameState {
-  for (let seed = 1; seed < 5_000_000; seed++) {
-    const r = { s: seed };
-    if (rollDie(r) === yellow && rollDie(r) === red && EVENT_DIE[nextInt(r, EVENT_DIE.length)] === event) {
-      s.rng = { s: seed };
-      return s;
-    }
-  }
-  throw new Error('no seed found');
-}
-
-/** Player `p` rolls the given dice (from a pre-roll phase). */
-function roll(s: GameState, yellow: number, red: number, event: EventFace = 'politics', p: PlayerId = 0): GameState {
-  s.phase = { kind: 'preRoll' };
-  s.turn.actor = p;
-  s.turn.current = p;
-  return act(withRoll(s, yellow, red, event), { type: 'rollDice', player: p });
-}
-
-function knight(s: GameState, v: VertexId, p: PlayerId, level: KnightLevel = 1, active = false): void {
-  s.ck!.knights[v] = { owner: p, level, active, activatedPart: -1, promotedPart: -1 };
-}
-
-/** Moves on to a later turn of player `p` (main phase), as if the others had played. */
-function laterTurn(s: GameState, p: PlayerId = 0): GameState {
-  s.turn.number += 3;
-  s.turn.part += 3;
-  s.turn.current = p;
-  s.turn.actor = p;
-  s.phase = { kind: 'main' };
-  return s;
-}
-
-/** Puts `card` on top of a deck. */
-function stack(s: GameState, card: ProgressCardName): void {
-  const deck = s.ck!.decks[PROGRESS_CARDS[card].deck];
-  deck.splice(deck.indexOf(card), 1);
-  deck.push(card);
-}
-
-function has(acts: Action[], a: Partial<Action>): boolean {
-  return acts.some((x) => Object.entries(a).every(([k, v]) => JSON.stringify((x as Record<string, unknown>)[k]) === JSON.stringify(v)));
-}
 
 // ---------------------------------------------------------------------------
 
@@ -330,11 +248,11 @@ describe('Cities & Knights: the event die and progress cards', () => {
     expect(s.turn.current).toBe(1);
   });
 
-  it('progress cards have no effects yet: none is offered and playing one is refused', () => {
+  it('progress cards are played after the roll on your own turn; one that would do nothing is not offered', () => {
     const s = bare();
     s.ck!.players[0].progress = ['warlord', 'merchant'];
-    expect(legalActions(s, 0).some((a) => a.type === 'playProgress')).toBe(false);
-    fail(s, { type: 'playProgress', player: 0, card: 'warlord' }, /cannot be played yet/);
+    expect(legalActions(s, 0).some((a) => a.type === 'playProgress')).toBe(false); // no knights, no buildings
+    fail(s, { type: 'playProgress', player: 0, card: 'warlord' }, /no knights/);
     fail(s, { type: 'playProgress', player: 0, card: 'spy' }, /do not have/);
     s.phase = { kind: 'preRoll' };
     fail(s, { type: 'playProgress', player: 0, card: 'warlord' }, /roll the dice first/);
@@ -924,42 +842,6 @@ describe('Cities & Knights: hidden information', () => {
 // ---------------------------------------------------------------------------
 // Whole games
 // ---------------------------------------------------------------------------
-
-/** Rules that must hold after every action of a Cities & Knights game. */
-function checkInvariants(s: GameState): void {
-  const ck = s.ck!;
-  for (const r of RESOURCES) {
-    expect(s.bank[r] + s.players.reduce((n, p) => n + p.resources[r], 0), r).toBe(19);
-  }
-  for (const k of COMMODITIES) {
-    expect(ck.bank[k] + ck.players.reduce((n, p) => n + p.commodities[k], 0), k).toBe(12);
-  }
-  for (const pl of s.players) for (const k of CARDS) expect(k in pl.resources ? pl.resources[k as 'ore'] : ck.players[pl.id].commodities[k as Commodity]).toBeGreaterThanOrEqual(0);
-  const cards = [...ck.decks.trade, ...ck.decks.politics, ...ck.decks.science, ...ck.players.flatMap((p) => [...p.progress, ...p.vpCards])];
-  for (const name of PROGRESS_CARD_NAMES) expect(cards.filter((c) => c === name).length, name).toBe(PROGRESS_CARDS[name].count);
-  expect(ck.defenderCards + ck.players.reduce((n, p) => n + p.defenders, 0)).toBe(6);
-  for (const pl of s.players) {
-    const mine = Object.values(ck.knights).filter((k) => k.owner === pl.id);
-    for (const level of [1, 2, 3]) expect(mine.filter((k) => k.level === level).length).toBeLessThanOrEqual(2);
-    const walls = ck.players[pl.id].walls;
-    expect(walls.length).toBeLessThanOrEqual(3);
-    for (const v of walls) expect(s.board.buildings[v]).toMatchObject({ owner: pl.id, type: 'city' });
-    const buildings = Object.entries(s.board.buildings).filter(([, b]) => b.owner === pl.id);
-    const tipped = buildings.filter(([v]) => ck.tipped.includes(v)).length;
-    expect(pl.supply.settlements + buildings.filter(([, b]) => b.type === 'settlement').length - tipped).toBe(PIECES_PER_PLAYER.settlements);
-    expect(pl.supply.cities + buildings.filter(([, b]) => b.type === 'city').length + tipped).toBe(PIECES_PER_PLAYER.cities);
-    expect(ck.players[pl.id].progress.length).toBeLessThanOrEqual(s.turn.actor === pl.id || s.phase.kind === 'ck' ? 54 : 4);
-  }
-  for (const v of Object.keys(ck.knights)) expect(s.board.buildings[v]).toBeUndefined();
-  for (const t of ['trade', 'politics', 'science'] as const) {
-    const m = ck.metropolises[t];
-    if (m) {
-      expect(s.board.buildings[m.vertex]).toMatchObject({ owner: m.owner, type: 'city' });
-      expect(ck.players[m.owner].improvements[t]).toBeGreaterThanOrEqual(4);
-    }
-  }
-  expect(ck.barbarians).toBeLessThan(7);
-}
 
 describe('Cities & Knights: whole games', () => {
   it('the same seed plays the same game', () => {
