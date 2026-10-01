@@ -206,10 +206,10 @@ state in `GameState.ck`, code in `src/ck/`) rather than a scenario, so it can
 later combine with the Seafarers scenarios and 5–6 players; for now it plays on
 the base game with 3–4 players. It follows the 5th-edition *Game Rules &
 Almanac* (2020), with the 2025 rulebook for unclear points. The rules as
-implemented, every engine choice, the full list of progress cards and the
-beginners' map are in [`cities-and-knights.md`](cities-and-knights.md).
-Progress-card effects, C&K computer players, the browser UI and the 5–6 player
-extension come in later phases.
+implemented, every engine choice, the progress cards and how each is played,
+and the beginners' map are in [`cities-and-knights.md`](cities-and-knights.md).
+Stronger C&K computer players, the browser UI and the 5–6 player extension
+come in later phases.
 
 ## Scenario rules and their sources
 

@@ -114,7 +114,12 @@ export function recordStats(prev: GameState, next: GameState, a: Action): void {
     loss.push(l);
     gained.push(by);
   }
-  const othersLost = loss.reduce((sum, l, p) => (p === actor ? sum : sum + l), 0);
+  // Cities & Knights: a progress card's effect (a choice answered for it counts for the card's player).
+  const ph = prev.phase;
+  const answered = a.type === 'progressChoice' && ph.kind === 'ck' && ph.step === 'card';
+  const card = a.type === 'playProgress' ? a.card : answered ? ph.card : a.type === 'progressChoice' ? a.args?.card : undefined;
+  const taker: PlayerId = answered ? ph.player : actor;
+  const othersLost = loss.reduce((sum, l, p) => (p === taker ? sum : sum + l), 0);
 
   for (let p = 0; p < n; p++) {
     const ps = st.players[p];
@@ -148,14 +153,24 @@ export function recordStats(prev: GameState, next: GameState, a: Action): void {
       case 'playProgress':
       case 'progressChoice':
       case 'scenario':
-        // cards the actor took from the others
-        if (othersLost > 0 && othersLost <= gain[actor]) {
-          if (p === actor) {
+        if (card === 'commercialHarbor') {
+          gainTo = 'tradeIn';
+          lossTo = 'tradeOut';
+          if (gain[p] + loss[p] > 0) ps.trades++;
+          break;
+        }
+        if (card === 'saboteur') {
+          lossTo = 'discarded';
+          break;
+        }
+        // cards the actor (or the card's player) took from the others
+        if (othersLost > 0 && othersLost <= gain[taker]) {
+          if (p === taker) {
             ps.stole += othersLost;
             g -= othersLost;
           } else lossTo = 'stolen';
         }
-        if (p === actor) lossTo = 'spent';
+        if (p === taker) lossTo = 'spent';
         break;
       case 'buildRoad':
       case 'buildShip':
@@ -177,12 +192,19 @@ export function recordStats(prev: GameState, next: GameState, a: Action): void {
   }
 
   const me = st.players[actor];
+  const rolled = () => {
+    const exp = expectedPerRoll(prev);
+    for (let p = 0; p < n; p++) st.players[p].expected36 += exp[p];
+  };
   switch (a.type) {
-    case 'rollDice': {
-      const exp = expectedPerRoll(prev);
-      for (let p = 0; p < n; p++) st.players[p].expected36 += exp[p];
+    case 'rollDice':
+      rolled();
       break;
-    }
+    case 'playProgress':
+      // Cities & Knights: progress cards count as played cards; the Alchemist's dice are a roll
+      me.devPlayed++;
+      if (a.card === 'alchemist') rolled();
+      break;
     case 'buyDevCard':
       me.devBought++;
       break;

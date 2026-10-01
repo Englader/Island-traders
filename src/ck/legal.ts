@@ -73,6 +73,8 @@ export function ckPhaseActions(s: GameState, p: PlayerId): Action[] {
       for (const v of retreatSpots(s, p, ph.from)) out.push({ type: 'retreatKnight', player: p, to: v });
       return out;
     case 'card': {
+      const waiting = ph.pending ? !!ph.pending[p] : ph.player === p;
+      if (!waiting) return out;
       const effect = progressEffect(ph.card);
       for (const args of effect?.choices?.(s, p) ?? []) out.push({ type: 'progressChoice', player: p, ...(args ? { args } : {}) });
       return out;
@@ -90,6 +92,20 @@ export function progressPlays(s: GameState, p: PlayerId): Action[] {
     const effect = progressEffect(card);
     if (!effect || !PROGRESS_CARDS[card]) continue;
     for (const args of effect.options(s, p)) out.push({ type: 'playProgress', player: p, card, ...(args ? { args } : {}) });
+  }
+  return out;
+}
+
+/**
+ * Moves that cards played earlier this turn still allow (Commercial Harbor
+ * offers): `progressChoice` in the main phase, with `args.card`.
+ */
+export function progressTurnChoices(s: GameState, p: PlayerId): Action[] {
+  const out: Action[] = [];
+  if (s.phase.kind !== 'main' || s.turn.actor !== p || s.turn.role !== 'active') return out;
+  for (const card of distinct(s.ck!.turnEffects.filter((e) => e.player === p).map((e) => e.effect))) {
+    const effect = progressEffect(card as ProgressCardName);
+    for (const args of effect?.turnChoices?.(s, p) ?? []) out.push({ type: 'progressChoice', player: p, args });
   }
   return out;
 }

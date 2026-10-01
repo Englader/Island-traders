@@ -1,9 +1,9 @@
 # Cities & Knights: rules as implemented
 
 This is the specification the engine follows for the *Cities & Knights*
-expansion, with the source page for each rule. Phase 1 (this document and the
-engine core in `src/ck/`) covers everything except the progress-card effects,
-which are listed in full below for phase 2.
+expansion, with the source page for each rule. Phase 1 built the engine core
+in `src/ck/`; phase 2 added every progress card's effect (`src/ck/effects.ts`,
+section 10).
 
 ## Sources
 
@@ -17,6 +17,12 @@ which are listed in full below for phase 2.
   `sites/default/files/2025-03/CN3087 CATAN–Cities&Knights_ Rulebook.pdf`,
   16 pages). It renames several improvements and progress cards and moves
   some rules (noted where it matters).
+- **For the progress cards, also:** catan.com's official *Cities & Knights
+  FAQ* (`catan.com/faq/cities-knights`, cited as "FAQ n" by its question
+  number), and the German *Almanach* of the current edition (KOSMOS 2022,
+  catan.de `sites/default/files/2022-08/CATAN_SuR34_Manual.pdf`, pp.
+  10–11), whose Intrigue and Diplomat texts settle two unclear English
+  passages.
 - **For phase 5:** the *Cities & Knights 5-6 Player Extension* rules (2020;
   catan.com `sites/default/files/2021-08/catan_c_k_5-6_2020_rules.pdf`, 4
   pages).
@@ -116,8 +122,9 @@ prints different harbors and is not used.
 
 ## 3. The turn (p. 5, p. 20)
 
-1. Roll all three dice (`rollDice`). The Alchemist (phase 2) is the only card
-   played before the roll.
+1. Roll all three dice (`rollDice`). The Alchemist is the only card played
+   before the roll: it sets both production dice and only the event die is
+   rolled (`playProgress`, section 10).
 2. **The event die first.**
    - **Ship:** the barbarian ship moves one space; on reaching the end of the
      track the barbarians attack (section 6).
@@ -249,13 +256,19 @@ is removed with its city when the barbarians pillage it.
   `discardProgress`). The player whose turn it is may keep more until the end
   of their turn (2025 rulebook: "until the end of your Action phase"): the
   engine refuses `endTurn` until they are back to 4.
-- Played after the roll on your own turn, any number per turn, also the turn
-  they are drawn; the Alchemist only before rolling. They are never traded or
-  stolen by the robber. A played card goes face down under its deck.
-- Phase 1 has no card effects: `playProgress` refuses every card and
-  `legalActions` offers none, so bots discard down to the limit.
+- Played after the roll on your own turn (p. 6, 9), any number per turn,
+  also the turn they are drawn; the Alchemist only before rolling. Never on
+  another player's turn and never in the middle of another decision (FAQ 95:
+  not before the roll is resolved). They are never traded or stolen by the
+  robber. A played card is shown to everyone (`ck.played`, the log) and goes
+  face down under its deck.
+- A card whose effect is known in advance to be nothing may not be played
+  (FAQ 98: not Mining without a mountains hex, but Trade Monopoly, whose
+  effect nobody can know): the engine neither offers nor accepts it
+  (conditions per card below). Cards whose effect depends on
+  hidden hands (the Monopolies) are always playable.
 
-### The 54 cards (for phase 2)
+### The 54 cards
 
 Names are the 2020 booklet's; the 2025 name follows where it differs.
 
@@ -282,7 +295,7 @@ Names are the 2020 booklet's; the 2025 name follows where it differs.
 | Constitution | 1 | 1 VP, played at once face up. | 16 |
 | Deserter (Treason) | 2 | An opponent removes one knight of their choice; you may place one of yours of equal strength (2025: equal or lower) with the same status, following the placement rules. If you have none of that strength left you may place a basic one; a mighty one even without the Fortress. The opponent removes the knight even if you cannot place one. | 16 |
 | Diplomat (Diplomacy) | 2 | Remove an "open" road: at the end of a chain, with no knight, settlement or city of its colour at one end (2025: also not part of a route linking two of your buildings/knights). An opponent's road returns to them; your own you may rebuild at once for free (Seafarers: a removed ship is rebuilt as a ship). | 16 |
-| Intrigue | 2 | Displace an opponent's knight standing on an intersection connected to your roads or ships, without a knight of your own (it retreats as usual, or is removed); playable with no knights. **Open for phase 2:** the Almanac's last sentence ("After the knight is displaced), you may place a basic knight instead, following the normal rules") is garbled, and neither the card nor the 2025 rulebook mentions a free knight. | 16 |
+| Intrigue | 2 | Displace an opponent's knight standing on an intersection connected to your roads or ships, without a knight of your own (it retreats as usual, or is removed); playable with no knights. No free knight: see ambiguity 16. | 16 |
 | Saboteur (Sabotage) | 2 | Every other player with at least as many VP as you discards half (rounded down) of their resource/commodity cards, of their choice. | 17 |
 | Spy (Espionage) | 3 | Look at another player's progress cards and take one (not a VP card; a Spy may be taken). | 17 |
 | Warlord (Encouragement) | 2 | Activate all your knights for free (they still cannot act the turn they are activated). | 17 |
@@ -298,6 +311,54 @@ Names are the 2020 booklet's; the 2025 name follows where it differs.
 | Merchant Fleet | 2 | For the rest of the turn, trade one resource or commodity of your choice 2:1 with the bank, any number of times. | 18 |
 | Resource Monopoly | 4 | Name a resource: each other player gives you 2 of it (1 if they have only 1). | 18 |
 | Trade Monopoly | 2 | Name a commodity: each other player gives you 1 of it. | 18 |
+
+### How the engine plays them (`src/ck/effects.ts`)
+
+- **`playProgress { card, args }`.** `args` carry the choices made as the
+  card is played; `legalActions` lists every legal `args`, so a client can
+  let the player pick and only then commit the card.
+- **Choices that follow** wait in the phase `{ kind: 'ck', step: 'card',
+  card, player, stage, target?, pending?, data?, resume }`: the `pending`
+  players answer (each owes `pending[p]` cards), or `player` when there is no
+  `pending`; `playersToAct` lists them. They answer with `progressChoice {
+  args }`; `progressChoice` with no `args` declines an optional step. `data`
+  is the card's and `viewFor` shows it to `player` only (what a Spy or Master
+  Merchant sees); `stage` and `target` are public. A choice with only one
+  possible answer is made at once (a single knight to remove, a hand of one
+  kind of card, a single commodity kind).
+- Some cards use the engine's own phases: the Bishop the `robber` phase with
+  `reason: 'bishop'` (`moveRobber` with no `victim`), Road Building the
+  `roadBuilding` phase (`buildRoad`/`buildShip`, `endRoadBuilding`), and
+  Intrigue's displaced knight the `retreat` step (`retreatKnight`).
+- **Turn effects** (`ck.turnEffects`, public): `crane`, `merchantFleet`
+  (`data`: the card kind), `commercialHarbor` (`data.offered`). Commercial
+  Harbor's offers are `progressChoice { card: 'commercialHarbor', to,
+  resource }` in the main phase (`progressTurnChoices` lists them).
+
+| Card | `args` to play | Then | Not playable when |
+|---|---|---|---|
+| Alchemist | `{ dice: [yellow, red] }` (1–6 each, 36 options) | the event die is rolled and resolved, then production, as after `rollDice`; the roll is recorded with `chosen: true` | after the roll |
+| Crane | – | the next `improveCity` this turn costs one commodity less | a Crane is already waiting; no track can be improved (no city, all at 5, or beyond 3 without a metropolis site) |
+| Engineer | `{ vertex }`: your city without a wall | – | 3 walls, or no city without one |
+| Inventor | `{ hexes: [a, b] }` | – | fewer than two tokens other than 2, 12, 6, 8; equal numbers are not offered |
+| Irrigation, Mining | – | – | no fields (mountains) hex next to your buildings, or none of that resource in the bank |
+| Medicine | `{ vertex }`: a settlement you may upgrade | pays 2 ore, 1 grain | not those cards, or no settlement to upgrade (a pillaged city on its side first, as `buildCity`) |
+| Road Building | – | `roadBuilding` phase, 2 free roads (or ships) | nowhere to build |
+| Smith | `{ vertex }`: the first knight | stage `promote`: `{ vertex }`, or no args to stop | no knight can be promoted |
+| Bishop | – | `robber` phase, reason `bishop` | before the first barbarian attack |
+| Deserter | `{ target }` | stage `desert` (target): `{ vertex }` of their knight; stage `place` (you): `{ vertex }` or no args; `data: { level, active }` | no opponent has a knight |
+| Diplomat | `{ edge }`: an open road (or ship), anyone's | your own: stage `rebuild`: `{ edge }` or no args | no open road |
+| Intrigue | `{ vertex }`: an opposing knight touching your road | `retreat` step for its owner | no such knight |
+| Saboteur | – | stage `discard` (each player with at least your VP): `{ cards }` | nobody would discard |
+| Spy | `{ target }`: a player with progress cards | stage `take`, `data.cards`: `{ card }` or no args | nobody has progress cards |
+| Warlord | – | – | no inactive knight |
+| Wedding | – | stage `give` (each richer player with cards): `{ cards }` | nobody would give |
+| Commercial Harbor | – | offers `{ card: 'commercialHarbor', to, resource }`; stage `exchange` (`to`): `{ commodity }` | no opponent holds a commodity |
+| Master Merchant | `{ target }`: a richer player with cards | stage `take`, `data.hand`: `{ cards }` (2, or 1 if they hold one) | no such player |
+| Merchant | `{ hex }` | – | where the merchant already is yours |
+| Merchant Fleet | `{ resource }` or `{ commodity }` | 2:1 for it this turn | kinds already at 2:1 are not offered |
+| Resource Monopoly | `{ resource }` | – | – |
+| Trade Monopoly | `{ commodity }` | – | – |
 
 ## 11. Trading (p. 6, p. 7, p. 8, p. 12)
 
@@ -366,6 +427,61 @@ cards, no Largest Army. Longest Road stays.
 15. **Players with no city** still defend with their active knights and can
     be best defender (p. 11).
 
+The progress cards (phase 2):
+
+16. **Intrigue** (Almanac p. 16) ends with a garbled sentence: "After the
+    knight is displaced), you may place a basic knight instead, following the
+    normal rules." Neither the card nor the 2025 rulebook ("Take the
+    'Displace a Knight' action without using one of your knights") gives a
+    free knight, and the official German Almanac (p. 11) reads: "Natürlich
+    kann an der Stelle, an der der Ritter vertrieben wurde, ein neuer Ritter
+    gebaut werden (von beiden Beteiligten)", i.e. *of course a new knight may
+    then be built where the knight was driven off, by either player*. Engine:
+    Intrigue only displaces (any strength, no knight of yours needed; it
+    retreats along its owner's roads or leaves); the vacated intersection is
+    open to a normal, paid `buildKnight`.
+17. **Deserter's knight.** 2020 (and the German Almanac): a knight of the same
+    strength, or a basic one when you have none of that strength left; 2025
+    allows "the same strength or lower". Engine: 2020. It takes the removed
+    knight's status and, if active, may act at once (FAQ 83). The target
+    chooses the knight (FAQ 87); with a single knight it goes at once.
+18. **An "open" road** (Diplomat): at one of its ends nothing of its colour is
+    attached, no settlement, city, knight, road or ship (the German Almanac
+    spells out the ship). An opponent's piece at the end or in the middle
+    does not close it (FAQ 89), and a road whose removal would leave a knight
+    of its colour without a road is not open (FAQ 90). The Seafarers FAQ's
+    special cases for loops of ships are not applied to roads. A removed
+    road of your own goes back "somewhere else" (p. 16): not on the same
+    spot, as the same piece (FAQ 64, 92); Longest Road is settled once it is
+    back (FAQ 88).
+19. **Cards with no effect** (FAQ 98) are not playable; see the table above.
+    The engine knows every count the table needs from public information
+    (hand sizes, commodity counts, knights, VP).
+20. **Commercial Harbor.** The offered resource is handed over face down (FAQ
+    78), so the answering player chooses the commodity without seeing it;
+    `data.resource` is the offerer's. Offers go only to players who hold a
+    commodity (their count is public; to anyone else the offer would be
+    void). Each card allows one offer per opponent; a second card played the
+    same turn starts a new round.
+21. **Irrigation and Mining** are not production: the robber does not stop
+    them. With too few cards in the bank the player takes what is left
+    (2025).
+22. **Bishop:** the robber may go anywhere a 7 could send it, the desert and
+    hexes with nobody next to them included (FAQ 75); the friendly-robber
+    option applies. The cards stolen are logged to thief and victim only.
+23. **Wedding, Saboteur, Master Merchant** compare VP, which are all public
+    in Cities & Knights. The Saboteur's discards (FAQ 110) and the Wedding's
+    gifts are chosen by the giving players, in parallel; a player with only
+    one way to choose answers at once.
+24. **Spy:** the target's hand is shown to the spy only (`data.cards`); taking
+    nothing is allowed ("you may choose"). The card taken is logged to the
+    two players only. The spy may go over 4 cards and then discards by the
+    end of the turn (section 10).
+25. **Statistics:** progress cards count as played cards (`devPlayed`), the
+    Alchemist's dice as a roll (`expected36`), Commercial Harbor exchanges as
+    trades, the Saboteur's cards as discards and the Wedding's, Master
+    Merchant's, Bishop's and Monopolies' cards as stolen.
+
 ## 14. Engine design and seams for later phases
 
 State (`src/core/types.ts`):
@@ -391,21 +507,24 @@ knights on paths, used by the core rules), `cards.ts` (hands, bank, rates),
 `map.ts`. `engine/apply.ts`, `legal.ts`, `view.ts` and `stats.ts` call into
 them only when `state.ck` exists.
 
-- **Phase 2, progress cards.** Register an effect per card with
-  `registerProgressEffect(card, { options, play, respond?, choices? })` in
-  `src/ck/progress.ts`. The engine already checks timing, removes the card,
-  puts it under its deck and calls `play`; `legalActions` lists
-  `options(...)`. Cards that need other players' choices set the phase to
-  `{ kind: 'ck', step: 'card', ... }` and answer `progressChoice`. Ready for
-  them: `ckRollDice(s, p, fixed)` (Alchemist), `turnEffects` with `crane`
-  (already honoured by `improvementPrice`) and `merchantFleet` (honoured by
-  `cardRates`), `placeMerchant`, `pillage`-style helpers, knight queries
-  (`knightPlacementError`, `promoteError`, `retreatSpots`) and the robber
-  phase's `reason: 'chase'` / `piece` (Bishop moves the robber only).
+- **Phase 2, progress cards (done).** `src/ck/effects.ts` registers an
+  effect per card with `registerProgressEffect(card, { options, play,
+  choices?, respond?, turnChoices?, turnAct? })` (`src/ck/progress.ts`). The
+  engine checks the timing, removes the card, records it in `ck.played`,
+  puts it under its deck and calls `play`; `legalActions` lists `options`,
+  the `card` step's `choices` for the players it waits on, and
+  `turnChoices` in the main phase. Section 10 has the API per card;
+  `test/progressCards.test.ts` covers each card, `test/progressStress.test.ts`
+  plays whole games with every card.
 - **Phase 3, bots.** `src/bots/ckBot.ts` is a simple fallback (improvements,
-  knights when the ship is near, walls, legal answers to every decision).
+  knights when the ship is near, walls, legal answers to every decision,
+  progress cards played when they plainly help: `ckPreRollAction` for the
+  Alchemist, `ckMainAction` for the rest, `ckPhaseAction` for the card
+  steps).
 - **Phase 4, UI.** `viewFor(...).ck` (`CkView`) has everything public plus the
-  viewer's own commodities and progress cards. `PlayerStats.producedCommodities`
+  viewer's own commodities and progress cards, and `played`, the progress
+  cards played so far. A card step's `data` (what a Spy or Master Merchant
+  sees) is in `viewFor(...).phase` for its player only. `PlayerStats.producedCommodities`
   counts commodities; `expected36` counts all cards a roll should give, so
   compare it with resources plus commodities.
 - **Phase 5, 5–6 players and Seafarers.** `createGame` refuses C&K with

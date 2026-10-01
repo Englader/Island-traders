@@ -28,7 +28,7 @@ import {
   vertexZones,
 } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
-import { ckDiscardAction, ckMainAction, ckPhaseAction } from './ckBot.js';
+import { ckDiscardAction, ckMainAction, ckPhaseAction, ckPreRollAction } from './ckBot.js';
 
 /**
  * A rule-of-thumb bot. It never looks at hidden information it could not see
@@ -852,6 +852,8 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     case 'preRoll': {
       const dev = devCardAction(s, p, acts, null, pr);
       if (dev) return dev;
+      const alchemist = s.ck ? ckPreRollAction(s, p, acts) : null;
+      if (alchemist) return alchemist;
       return acts.find((a) => a.type === 'rollDice') ?? acts[0];
     }
     case 'specialBuild': {
@@ -884,6 +886,7 @@ export function simulateHeuristic(
   initial: GameState,
   maxSteps = 5000,
   levels: BotLevel | BotLevel[] = 'medium',
+  onStep?: (s: GameState, a: Action) => void,
 ): { state: GameState; steps: number } {
   const levelOf = (p: PlayerId): BotLevel => (Array.isArray(levels) ? (levels[p] ?? 'medium') : levels);
   let s = initial;
@@ -908,6 +911,7 @@ export function simulateHeuristic(
       const r = applyAction(s, a);
       if (!r.ok) throw new Error(`bot move rejected: ${JSON.stringify(a)} -> ${r.error} (phase ${s.phase.kind})`);
       s = r.state;
+      onStep?.(s, a);
       acted = true;
       break;
     }

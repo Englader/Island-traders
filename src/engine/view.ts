@@ -64,6 +64,20 @@ export interface GameView {
 }
 
 /**
+ * A progress card waiting on a choice may hold secrets for its player only
+ * (Cities & Knights: the cards a Spy or Master Merchant looks at), in the
+ * current phase or one it resumes.
+ */
+function redactPhase(ph: Phase, viewer: PlayerId | null): Phase {
+  if (!('resume' in ph)) return ph;
+  const resume = redactPhase(ph.resume, viewer);
+  if (ph.kind === 'ck' && ph.step === 'card' && ph.player !== viewer && ph.data !== undefined) {
+    return { ...ph, data: undefined, resume };
+  }
+  return resume === ph.resume ? ph : { ...ph, resume };
+}
+
+/**
  * The information one seat is allowed to see. Hidden state (other hands,
  * development card identities, deck order, RNG state, fog stack, face-down
  * scenario tokens) is removed. `viewer = null` gives a spectator view.
@@ -82,11 +96,7 @@ export function viewFor(state: GameState, viewer: PlayerId | null): GameView {
     ext.harborPool = { remaining: pool.length, next: pool[pool.length - 1] ?? null };
   }
   const gameOver = s.phase.kind === 'gameOver';
-  // A progress card waiting on a choice may hold secrets (phase 2: what a Spy saw) for its player only.
-  let phase: Phase = s.phase;
-  if (phase.kind === 'ck' && phase.step === 'card' && phase.player !== viewer && phase.data !== undefined) {
-    phase = { ...phase, data: undefined };
-  }
+  const phase = redactPhase(s.phase, viewer);
   return {
     viewer,
     scenario: s.scenario,

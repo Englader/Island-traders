@@ -1,4 +1,6 @@
 import { bankHas, cardKinds, cardRates, hasCards, moveCards, sameCards, stealRandomCard, validCards } from '../ck/cards.js';
+// Cities & Knights: registers the progress-card effects
+import '../ck/effects.js';
 import { CHASED_ROBBER_NEEDS_NUMBER } from '../ck/constants.js';
 import {
   ckAction,
@@ -569,6 +571,7 @@ function moveRobber(s: GameState, a: A<'moveRobber'>): string | null {
   const err = a.piece === 'robber' ? robberHexError(s, a.player, a.hex) : pirateHexError(s, a.hex);
   if (err) return err;
   const victims = robberVictimsAt(s, a.player, a.piece, a.hex);
+  if (ph.reason === 'bishop') return bishopRobs(s, a, victims);
   if (victims.length > 0) {
     if (a.victim === undefined) return 'choose a player to rob';
     if (!victims.includes(a.victim)) return 'that player cannot be robbed from here';
@@ -591,6 +594,24 @@ function moveRobber(s: GameState, a: A<'moveRobber'>): string | null {
       else stealRandom(s, a.player, a.victim);
     } else hooks.steal!(s, a.player, a.victim, take);
   }
+  s.phase = ph.resume;
+  return null;
+}
+
+/**
+ * Cities & Knights, the Bishop (Almanac p. 16): the robber moves as usual and
+ * its mover draws one random card (resource or commodity) from every player
+ * with a settlement or city next to its new hex, one per player.
+ */
+function bishopRobs(s: GameState, a: A<'moveRobber'>, victims: PlayerId[]): string | null {
+  const ph = s.phase as Extract<Phase, { kind: 'robber' }>;
+  if (a.victim !== undefined || (a.take !== undefined && a.take !== 'resource')) {
+    return 'the Bishop takes a card from every player next to the robber: name no victim';
+  }
+  s.board.robber = a.hex;
+  log(s, `${nameOf(s, a.player)} moves the robber`);
+  if (victims.length === 0) log(s, 'Nobody is next to the robber');
+  for (const v of victims) stealRandomCard(s, a.player, v);
   s.phase = ph.resume;
   return null;
 }

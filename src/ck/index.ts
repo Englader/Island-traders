@@ -49,6 +49,7 @@ export {
   knightCanAct,
   knightPlacementError,
   knightReach,
+  knightSiteError,
   knightsInSupply,
   knightsOf,
   moveKnightError,
@@ -56,10 +57,12 @@ export {
   promoteError,
   retreatSpots,
 } from './knights.js';
-export { cardCombinations, ckBankTradeActions, ckBuildActions, knightActions, progressPlays } from './legal.js';
+export { cardCombinations, ckBankTradeActions, ckBuildActions, knightActions, progressPlays, progressTurnChoices } from './legal.js';
+export { openRoadError } from './effects.js';
 export { CK_BEGINNERS, ckMapSpec } from './map.js';
 export {
   drawProgress,
+  effectCards,
   newDecks,
   progressDiscardsDue,
   progressEffect,

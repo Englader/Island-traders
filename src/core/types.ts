@@ -167,8 +167,10 @@ export type Phase =
   /**
    * `piece` limits the move to the robber or the pirate. `chase`: a Cities &
    * Knights knight chases the piece away (the robber goes to a numbered hex).
+   * `bishop`: the Bishop progress card, which robs every player next to the
+   * robber's new hex (moveRobber without a victim).
    */
-  | { kind: 'robber'; reason: 'seven' | 'knight' | 'chase'; resume: Phase; piece?: 'robber' | 'pirate' }
+  | { kind: 'robber'; reason: 'seven' | 'knight' | 'chase' | 'bishop'; resume: Phase; piece?: 'robber' | 'pirate' }
   | { kind: 'gold'; pending: Record<string, number>; resume: Phase }
   | { kind: 'main' }
   | { kind: 'roadBuilding'; remaining: number; resume: Phase }
@@ -196,15 +198,20 @@ export type CkPhase =
   /** A displaced knight's owner moves it along their own roads (it left `from`). */
   | { kind: 'ck'; step: 'retreat'; player: PlayerId; from: VertexId; knight: Knight; resume: Phase }
   /**
-   * A progress card waiting on a player's choice (phase 2: Spy, Deserter,
-   * Commercial Harbor...). The card's effect owns `data` and answers
-   * `progressChoice` actions from `player` (or the `pending` players).
+   * A progress card waiting on a choice (src/ck/effects.ts): `player` played
+   * `card`; `stage` names the choice asked for; the `pending` players answer
+   * it (how many cards each owes), or `player` when there is no `pending`.
+   * `target` is the opponent the card was played on. `data` belongs to the
+   * card's effect and is shown to `player` only (what a Spy or Master
+   * Merchant saw). Answered with `progressChoice` actions.
    */
   | {
       kind: 'ck';
       step: 'card';
       card: ProgressCardName;
       player: PlayerId;
+      stage?: string;
+      target?: PlayerId;
       pending?: Record<string, number>;
       data?: unknown;
       resume: Phase;
@@ -279,6 +286,8 @@ export interface DiceRoll {
   turn: number;
   /** Cities & Knights: the event die. */
   event?: EventFace;
+  /** Cities & Knights: the production dice were set with the Alchemist, not rolled. */
+  chosen?: true;
 }
 
 /**
@@ -444,10 +453,14 @@ export interface CkState {
   /** The event die of the current turn (null before the roll). */
   event: EventFace | null;
   /**
-   * Effects that last for the rest of a part of a turn (phase 2: Crane,
-   * Merchant Fleet, Commercial Harbor). Cleared when a part begins.
+   * Effects that last for the rest of a part of a turn: 'crane' (the next
+   * improvement costs one commodity less), 'merchantFleet' (`data`: the card
+   * kind traded 2:1) and 'commercialHarbor' (`data.offered`: the opponents
+   * already offered a trade). Cleared when a part begins.
    */
   turnEffects: Array<{ player: PlayerId; effect: string; data?: unknown }>;
+  /** Progress cards played so far, oldest first (public; games saved before part 2 lack it). */
+  played?: Array<{ player: PlayerId; card: ProgressCardName; turn: number }>;
   players: CkPlayerState[];
 }
 
@@ -523,9 +536,16 @@ export type Action =
   | { type: 'discardProgress'; player: PlayerId; card: ProgressCardName }
   /** Aqueduct: the resource you take after a roll that gave you nothing (none: decline). */
   | { type: 'aqueduct'; player: PlayerId; resource?: Resource }
-  /** Play a progress card; `args` depend on the card (effects: src/ck/progress.ts). */
+  /**
+   * Play a progress card; `args` carry the choices made as it is played
+   * (per card: src/ck/effects.ts and docs/cities-and-knights.md, section 10).
+   */
   | { type: 'playProgress'; player: PlayerId; card: ProgressCardName; args?: Record<string, unknown> }
-  /** Answer a progress card that waits on your choice (phase 'ck', step 'card'). */
+  /**
+   * Answer a progress card that waits on your choice (phase 'ck', step
+   * 'card'; no `args`: decline an optional step), or make a Commercial
+   * Harbor offer in the main phase (`args: { card: 'commercialHarbor', to, resource }`).
+   */
   | { type: 'progressChoice'; player: PlayerId; args?: Record<string, unknown> }
   /** Scenario-specific actions (claim wonder, attack fortress, convert warship, ...). */
   | { type: 'scenario'; player: PlayerId; name: string; args?: Record<string, unknown> };

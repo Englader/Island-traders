@@ -11,9 +11,9 @@ import { PROGRESS_CARD_NAMES, PROGRESS_CARDS, PROGRESS_HAND_LIMIT, TRACKS } from
  * once, the player whose turn it is by the end of the turn. Played and
  * discarded cards go face down under their deck.
  *
- * The card effects are phase 2: they register here with
- * `registerProgressEffect`, and the engine offers and plays only the cards
- * that have an effect.
+ * The card effects (src/ck/effects.ts) register here with
+ * `registerProgressEffect`; the engine offers and plays only the cards that
+ * have an effect.
  */
 
 export function newDecks(rng: RngState): Record<ImprovementTrack, ProgressCardName[]> {
@@ -81,7 +81,7 @@ export function progressDiscardsDue(s: GameState): Record<string, number> {
 }
 
 // ---------------------------------------------------------------------------
-// Effects (phase 2)
+// Effects (src/ck/effects.ts)
 // ---------------------------------------------------------------------------
 
 export type ProgressArgs = Record<string, unknown> | undefined;
@@ -92,16 +92,25 @@ export type ProgressArgs = Record<string, unknown> | undefined;
  * hand and puts it under its deck, then calls `play` on the cloned state.
  * Returning an error rejects the whole action.
  *
- * A card that needs other players' choices (Spy, Deserter, Commercial
- * Harbor, Saboteur...) sets the phase to `{ kind: 'ck', step: 'card', ... }`
- * and answers the `progressChoice` actions in `respond`; `choices` lists them.
+ * A card that needs more choices (Spy, Deserter, Wedding, Saboteur...) sets
+ * the phase to `{ kind: 'ck', step: 'card', ... }`; the engine sends the
+ * `progressChoice` actions of the players it waits on to `respond`, and
+ * `choices` lists them. A card with a lasting effect that offers moves later
+ * in the turn (Commercial Harbor) lists them in `turnChoices` and answers
+ * them in `turnAct` (`progressChoice` in the main phase, `args.card` naming
+ * the card).
  */
 export interface ProgressEffect {
   /** Every legal `args` for playing the card now (empty: not playable now). */
   options(s: GameState, p: PlayerId): ProgressArgs[];
   play(s: GameState, p: PlayerId, args: ProgressArgs): string | null;
+  /** Answers a choice of this card's 'card' step from a player it waits on. */
   respond?(s: GameState, p: PlayerId, args: ProgressArgs): string | null;
+  /** Every legal answer of a player the 'card' step waits on. */
   choices?(s: GameState, p: PlayerId): ProgressArgs[];
+  /** Moves the card's lasting effect allows now in the main phase (the actor's own turn). */
+  turnChoices?(s: GameState, p: PlayerId): ProgressArgs[];
+  turnAct?(s: GameState, p: PlayerId, args: ProgressArgs): string | null;
 }
 
 const EFFECTS: Partial<Record<ProgressCardName, ProgressEffect>> = {};
@@ -112,4 +121,9 @@ export function registerProgressEffect(card: ProgressCardName, effect: ProgressE
 
 export function progressEffect(card: ProgressCardName): ProgressEffect | undefined {
   return EFFECTS[card];
+}
+
+/** Cards with an effect (every card but the VP cards once src/ck/effects.ts is loaded). */
+export function effectCards(): ProgressCardName[] {
+  return Object.keys(EFFECTS) as ProgressCardName[];
 }

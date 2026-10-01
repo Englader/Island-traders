@@ -34,6 +34,7 @@ import {
   MAX_CITY_WALLS,
   MAX_IMPROVEMENT,
   METROPOLIS_LEVEL,
+  PROGRESS_CARD_NAMES,
   PROGRESS_CARDS,
   TERRAIN_COMMODITY,
   TRACK_COMMODITY,
@@ -144,16 +145,17 @@ export function barbarianStrength(s: GameState): number {
 export function improvementPrice(s: GameState, p: PlayerId, track: ImprovementTrack): CardCounts {
   const next = s.ck!.players[p].improvements[track] + 1;
   let n = improvementCost(next);
-  // Crane (phase 2): one improvement this turn costs one commodity less.
+  // Crane: one improvement this turn costs one commodity less (Almanac p. 14).
   if (s.ck!.turnEffects.some((e) => e.player === p && e.effect === 'crane')) n = Math.max(0, n - 1);
   return { [TRACK_COMMODITY[track]]: n };
 }
 
 /**
  * Why the player cannot buy the next level of `track` now (null: they can).
- * Whether it wins the metropolis is `winsMetropolis`.
+ * Whether it wins the metropolis is `winsMetropolis`. `ignoreCost`: whether
+ * they could, given the commodities (the Crane).
  */
-export function improvementError(s: GameState, p: PlayerId, track: ImprovementTrack): string | null {
+export function improvementError(s: GameState, p: PlayerId, track: ImprovementTrack, ignoreCost = false): string | null {
   const ck = s.ck!;
   if (!TRACKS.includes(track)) return 'no such city improvement';
   const level = ck.players[p].improvements[track];
@@ -166,7 +168,7 @@ export function improvementError(s: GameState, p: PlayerId, track: ImprovementTr
   if (next >= METROPOLIS_LEVEL && !holds && cities.every((v) => isMetropolis(s, v))) {
     return 'you need a city without a metropolis to build beyond level 3';
   }
-  if (!hasCards(s, p, improvementPrice(s, p, track))) return `not enough ${TRACK_COMMODITY[track]}`;
+  if (!ignoreCost && !hasCards(s, p, improvementPrice(s, p, track))) return `not enough ${TRACK_COMMODITY[track]}`;
   return null;
 }
 
@@ -195,7 +197,7 @@ export function merchantHexError(s: GameState, p: PlayerId, hex: HexId): string 
   return null;
 }
 
-/** Phase 2 (Merchant card): puts the merchant on a hex under `p`'s control. */
+/** The Merchant card: puts the merchant on a hex under `p`'s control (Almanac pp. 17-18). */
 export function placeMerchant(s: GameState, p: PlayerId, hex: HexId): string | null {
   const err = merchantHexError(s, p, hex);
   if (err) return err;
@@ -215,8 +217,8 @@ export function ckRollDice(s: GameState, p: PlayerId, fixed?: [number, number]):
   const event = EVENT_DIE[nextInt(s.rng, EVENT_DIE.length)];
   s.turn.dice = dice;
   ck.event = event;
-  (s.rolls ??= []).push({ by: p, dice: [dice[0], dice[1]], turn: s.turn.number, event });
-  log(s, `${nameOf(s, p)} rolls ${dice[0] + dice[1]} (${dice[0]}+${dice[1]})`);
+  (s.rolls ??= []).push({ by: p, dice: [dice[0], dice[1]], turn: s.turn.number, event, ...(fixed ? { chosen: true as const } : {}) });
+  log(s, `${nameOf(s, p)} ${fixed ? 'sets the dice to' : 'rolls'} ${dice[0] + dice[1]} (${dice[0]}+${dice[1]})`);
   log(s, `The event die shows ${EVENT_LABEL[event]}; the red die is ${dice[1]}`);
   s.phase = { kind: 'ck', step: 'production', resume: { kind: 'main' } };
   if (event === 'ship') advanceBarbarians(s);
@@ -482,6 +484,13 @@ export function ckSettle(s: GameState): boolean {
     case 'retreat':
       if (retreatSpots(s, ph.player, ph.from).length === 0) {
         log(s, `${nameOf(s, ph.player)}'s knight has nowhere to go and leaves the board`);
+        s.phase = ph.resume;
+        return true;
+      }
+      return false;
+    case 'card':
+      // every player the card waited on has answered
+      if (ph.pending && Object.keys(ph.pending).length === 0) {
         s.phase = ph.resume;
         return true;
       }
@@ -786,36 +795,67 @@ function aqueduct(s: GameState, a: A<'aqueduct'>): string | null {
   return null;
 }
 
-/** When a card may be played: after the roll on your own turn; the Alchemist only before it (p. 5, 9). */
+/**
+ * When a card may be played: after the roll on your own turn, any number per
+ * turn, also the turn it was drawn (p. 6, 9); the Alchemist only before the
+ * roll (Almanac p. 14). Never on another player's turn or during another
+ * decision (FAQ 95: not before the roll is resolved).
+ */
 export function progressTimingError(s: GameState, p: PlayerId, card: ProgressCardName): string | null {
   const info = PROGRESS_CARDS[card];
   if (!info) return 'unknown progress card';
   if (info.vp) return 'victory point cards are played when drawn';
   if (info.beforeRoll) {
-    if (s.turn.actor !== p || s.phase.kind !== 'preRoll' || s.turn.role !== 'active') return `${info.title} is played before rolling the dice`;
+    if (s.turn.actor !== p || s.turn.role !== 'active') return 'it is not your turn';
+    if (s.phase.kind !== 'preRoll') return `${info.title} is played before rolling the dice`;
     return null;
   }
   return turnError(s, p);
 }
 
+/**
+ * Plays a progress card: it leaves the hand face up for everyone to see
+ * (`ck.played`, the log), goes face down under its deck (p. 6) and its
+ * effect resolves (src/ck/effects.ts).
+ */
 function playProgress(s: GameState, a: A<'playProgress'>): string | null {
   const err = progressTimingError(s, a.player, a.card);
   if (err) return err;
   if (!s.ck!.players[a.player].progress.includes(a.card)) return 'you do not have that card';
   const effect = progressEffect(a.card);
   if (!effect) return `${PROGRESS_CARDS[a.card].title} cannot be played yet`;
+  if (a.args !== undefined && (typeof a.args !== 'object' || a.args === null || Array.isArray(a.args))) return 'invalid card choices';
   takeFromHand(s, a.player, a.card);
   returnToDeck(s, a.card);
+  (s.ck!.played ??= []).push({ player: a.player, card: a.card, turn: s.turn.number });
   log(s, `${nameOf(s, a.player)} plays ${PROGRESS_CARDS[a.card].title}`);
   return effect.play(s, a.player, a.args);
 }
 
+/**
+ * Answers a progress card: in its 'card' step, from a player it waits on;
+ * in the main phase, a move of a card with a lasting effect (`args.card`
+ * names it: Commercial Harbor).
+ */
 function progressChoice(s: GameState, a: A<'progressChoice'>): string | null {
   const ph = s.phase;
-  if (ph.kind !== 'ck' || ph.step !== 'card') return 'no progress card is waiting on a choice';
-  const effect = progressEffect(ph.card);
-  if (!effect?.respond) return 'this card takes no choices';
-  return effect.respond(s, a.player, a.args);
+  if (a.args !== undefined && (typeof a.args !== 'object' || a.args === null || Array.isArray(a.args))) return 'invalid choice';
+  if (ph.kind === 'ck' && ph.step === 'card') {
+    const waiting = ph.pending ? !!ph.pending[a.player] : ph.player === a.player;
+    if (!waiting) return 'this choice is not yours to make';
+    const effect = progressEffect(ph.card);
+    if (!effect?.respond) return 'this card takes no choices';
+    return effect.respond(s, a.player, a.args);
+  }
+  const card = a.args?.card as ProgressCardName | undefined;
+  if (ph.kind === 'main' && card !== undefined && PROGRESS_CARD_NAMES.includes(card)) {
+    const e = turnError(s, a.player);
+    if (e) return e;
+    const effect = progressEffect(card);
+    if (!effect?.turnAct) return 'that card offers no moves now';
+    return effect.turnAct(s, a.player, a.args);
+  }
+  return 'no progress card is waiting on a choice';
 }
 
 /** The player whose turn it is must be within the progress hand limit before ending it (2025 rulebook). */
