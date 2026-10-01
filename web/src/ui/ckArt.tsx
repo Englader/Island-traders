@@ -1,8 +1,10 @@
-import type { EventFace, ImprovementTrack, KnightLevel, ProgressCardName } from 'engine';
+import { PROGRESS_CARDS, type EventFace, type ImprovementTrack, type KnightLevel, type ProgressCardName } from 'engine';
 import type { JSX } from 'preact';
 import { TRACK_INFO, PROGRESS_TEXT, progressDeck } from '../game/ck';
 import { progressTitle } from '../game/names';
 import { shade } from '../board/Board';
+import { ResGlyph } from './icons';
+import { ProgressScene } from './progressArt';
 
 /*
  * Cities & Knights art, drawn for Island Traders in the style of its pieces
@@ -290,8 +292,9 @@ function Emblem({ track }: { track: ImprovementTrack }): JSX.Element {
 
 /**
  * A progress card. Face down: the deck's colour with its emblem. Face up
- * (your own cards): the deck's colour framing the card's name, its emblem
- * and, on the full card, its rule. Phase 4b paints a scene for every card.
+ * (your own cards, and every card once played): a band in the deck's colour
+ * with the card's name and the deck's commodity, its picture
+ * (ui/progressArt.tsx) and, on the full card, its rule.
  */
 export function ProgressCardView({
   card,
@@ -336,18 +339,36 @@ export function ProgressCardView({
     );
   }
   const title = progressTitle(card);
+  const vp = !!PROGRESS_CARDS[card]?.vp;
+  // the name shrinks to keep its longest word on one line ("Constitution")
+  const longest = Math.max(...title.split(' ').map((w) => w.length));
+  const style = {
+    '--deck': t.fill,
+    '--deck-dark': t.dark,
+    '--deck-light': t.light,
+    '--fit': `${Math.min(11, 100 / longest).toFixed(1)}cqw`,
+    '--fit-mini': `${Math.min(13, 120 / longest).toFixed(1)}cqw`,
+  } as Record<string, string>;
+  if (look === 'tile') {
+    return (
+      <span class={`gcard prog face tile deck-${track}`} title={title} style={style} data-card={card}>
+        <span class="pg-art">
+          <ProgressScene card={card} />
+        </span>
+      </span>
+    );
+  }
   return (
-    <span class={`gcard prog face ${look} deck-${track}`} title={title}>
-      <svg viewBox="0 0 60 84" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <rect width="60" height="84" fill="#fbf3dc" />
-        <rect x="0" y="0" width="60" height="84" fill="none" stroke={t.fill} stroke-width="6" />
-        <rect x="3" y="3" width="54" height="21" fill={t.fill} />
-        <g transform={`translate(30 ${look === 'card' ? 40 : 46}) scale(${look === 'card' ? 22 : 30})`}>
-          <Emblem track={track} />
-        </g>
-      </svg>
-      <span class="prog-title" style={{ color: track === 'trade' ? '#2b1d00' : '#fff' }}>
-        {title}
+    <span class={`gcard prog face ${look} deck-${track}`} title={title} style={style} data-card={card}>
+      <span class="pg-band">
+        <span class="pg-mark" title={`${t.label} deck · ${t.commodity}`}>
+          <ResGlyph r={t.commodity} />
+        </span>
+        <span class="prog-title">{title}</span>
+      </span>
+      <span class="pg-art">
+        <ProgressScene card={card} />
+        {vp && <span class="pg-vp">1 VP</span>}
       </span>
       {look === 'card' && text && <span class="prog-text">{PROGRESS_TEXT[card]}</span>}
     </span>

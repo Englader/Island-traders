@@ -1,5 +1,6 @@
 import { PROGRESS_CARDS, type Action, type CardCounts, type DevCardType, type GameView, type ImprovementTrack, type PlayerId, type ProgressCardName } from 'engine';
 import { barbarianState, namesList } from './ck';
+import { playedFx } from './progress';
 import { DEV_INFO, RESOURCE_INFO } from './names';
 
 /*
@@ -35,8 +36,8 @@ export type FxEvent =
       detail: string;
     }
   | { kind: 'draw'; draws: ProgressDraw[] }
-  /** A progress card played (played cards are public). */
-  | { kind: 'progPlay'; by: PlayerId; card: ProgressCardName }
+  /** A progress card played (played cards are public): on whom, and what it does. */
+  | { kind: 'progPlay'; by: PlayerId; card: ProgressCardName; target?: PlayerId; detail?: string }
   | { kind: 'improve'; by: PlayerId; track: ImprovementTrack; level: number; metropolis: boolean };
 
 const PLAYS: Partial<Record<Action['type'], DevCardType>> = {
@@ -101,7 +102,8 @@ function drawsFx(action: Action, before: GameView, after: GameView): FxEvent | n
   const cb = before.ck;
   const ca = after.ck;
   if (!cb || !ca) return null;
-  const gate = action.type === 'rollDice' && ca.event && ca.event !== 'ship' ? ca.event : null;
+  const rolled = action.type === 'rollDice' || (action.type === 'playProgress' && action.card === 'alchemist');
+  const gate = rolled && ca.event && ca.event !== 'ship' ? ca.event : null;
   const deckOf = action.type === 'drawProgress' ? action.deck : gate;
   if (!deckOf) return null;
   const draws: ProgressDraw[] = [];
@@ -132,11 +134,14 @@ function drawsFx(action: Action, before: GameView, after: GameView): FxEvent | n
 export function fxFor(action: Action, before: GameView, after: GameView, seat: PlayerId | null): FxEvent | null {
   if (after.ck && before.ck) {
     if (after.ck.attacks > before.ck.attacks) return attackFx(before, after, seat);
-    if (action.type === 'rollDice' || action.type === 'drawProgress') {
+    if (action.type === 'rollDice' || action.type === 'drawProgress' || (action.type === 'playProgress' && action.card === 'alchemist')) {
       const d = drawsFx(action, before, after);
       if (d) return d;
     }
-    if (action.type === 'playProgress') return { kind: 'progPlay', by: action.player, card: action.card };
+    if (action.type === 'playProgress') {
+      const { target, detail } = playedFx(action, before, seat);
+      return { kind: 'progPlay', by: action.player, card: action.card, ...(target !== undefined ? { target } : {}), detail };
+    }
     if (action.type === 'improveCity') {
       const level = after.ck.players[action.player]?.improvements[action.track] ?? 0;
       return { kind: 'improve', by: action.player, track: action.track, level, metropolis: action.vertex !== undefined };

@@ -158,10 +158,12 @@ export function FxOverlay({ fx, view, colors, seat, ms, onDone }: { fx: FxEvent 
       </>
     );
   } else if (fx.kind === 'progPlay') {
+    const on = fx.target === undefined ? '' : ` on ${fx.target === seat ? 'you' : name(fx.target)}`;
     body = (
       <>
         <div class="fx-title">
           {name(fx.by)} {fx.by === seat ? 'play' : 'plays'} {progressTitle(fx.card)}
+          {on}
         </div>
         <div class="fx-devplay reveal">
           <div class="fx-flip prog">
@@ -173,6 +175,7 @@ export function FxOverlay({ fx, view, colors, seat, ms, onDone }: { fx: FxEvent 
             </div>
           </div>
         </div>
+        {fx.detail && <div class="fx-sub">{fx.detail}</div>}
       </>
     );
   } else if (fx.kind === 'improve') {

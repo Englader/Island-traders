@@ -202,7 +202,9 @@ export function placeMerchant(s: GameState, p: PlayerId, hex: HexId): string | n
   const err = merchantHexError(s, p, hex);
   if (err) return err;
   s.ck!.merchant = { hex, owner: p };
-  log(s, `${nameOf(s, p)} places the merchant`);
+  const terrain = s.board.hexes[hex].terrain;
+  const r = TERRAIN_RESOURCE[terrain];
+  log(s, `${nameOf(s, p)} places the merchant on a ${terrain} hex${r ? ` (${r} 2:1)` : ''}`);
   return null;
 }
 

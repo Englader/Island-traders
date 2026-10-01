@@ -523,7 +523,7 @@ them only when `state.ck` exists.
   knights. The README's "Computer players" section describes the levels and
   the league results (`npm run bots:league -- 60 ck`);
   `test/ckBot.test.ts` covers the key decisions.
-- **Phase 4, UI.** `viewFor(...).ck` (`CkView`) has everything public plus the
+- **Phase 4, UI (done).** `viewFor(...).ck` (`CkView`) has everything public plus the
   viewer's own commodities and progress cards, and `played`, the progress
   cards played so far. A card step's `data` (what a Spy or Master Merchant
   sees) is in `viewFor(...).phase` for its player only. `PlayerStats.producedCommodities`
@@ -534,7 +534,15 @@ them only when `state.ck` exists.
   improvements, the barbarians, drawing, holding and discarding progress
   cards, and the answers to cards other players play (Wedding, Saboteur,
   Commercial Harbor, Deserter; any other card step gets a plain list of its
-  `choices`). Playing your own cards is part 4b.
+  `choices`). Part 4b plays your own cards (`web/src/game/progress.ts`,
+  `web/src/ui/ProgressPlay.tsx`, the faces in `web/src/ui/progressArt.tsx`):
+  only the cards and `args` `legalActions` lists can be picked; a card's
+  choices are made before it is played (a player or a card kind in a sheet,
+  a spot on the board, the Alchemist's dice with a preview of the roll),
+  then confirmed with its face; the choices that follow (the Spy's and
+  Master Merchant's `data`, the Smith's second knight, the Deserter's
+  knight, the Diplomat's rebuild, the Commercial Harbor's offers) come after,
+  and `ck.turnEffects` show as chips.
 - **Phase 5, 5–6 players and Seafarers.** `createGame` refuses C&K with
   Seafarers scenarios or more than 4 players for now. Hooks for them:
   `COMMODITY_BANK`/`DEFENDER_CARDS` (5–6: +6 each commodity, +2 Defender

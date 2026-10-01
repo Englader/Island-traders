@@ -1,6 +1,6 @@
 // Development page showing every card and board tile (npm run web:dev, then /gallery.html).
 import { render } from 'preact';
-import { PROGRESS_CARD_NAMES, createGame, hexCenter, parseHexId, viewFor, type DevCardType, type GameView, type KnightLevel, type Terrain } from 'engine';
+import { PROGRESS_CARDS, PROGRESS_CARD_NAMES, createGame, hexCenter, parseHexId, viewFor, type DevCardType, type GameView, type KnightLevel, type Terrain } from 'engine';
 import { Board, NO_TARGETS } from './board/Board';
 import { COMMODITY_LIST, DEV_INFO, RESOURCE_LIST } from './game/names';
 import { TRACK_LIST } from './game/ck';
@@ -97,9 +97,21 @@ function Gallery() {
             <ProgressCardView deck={t} back />
           </span>
         ))}
+      </div>
+      {TRACK_LIST.map((t) => (
+        <div key={t} class="gallery-deck" data-deck={t} style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+          {PROGRESS_CARD_NAMES.filter((c) => PROGRESS_CARDS[c].deck === t).map((c) => (
+            <span key={c} style={{ width: '132px', display: 'flex' }}>
+              <ProgressCardView card={c} text />
+            </span>
+          ))}
+        </div>
+      ))}
+      <h3>Small (the hand, the dialogs) and on a dark table</h3>
+      <div class="gallery-minis" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px', borderRadius: '12px', background: '#1d2330' }}>
         {PROGRESS_CARD_NAMES.map((c) => (
-          <span key={c} style={{ width: '120px', display: 'flex' }}>
-            <ProgressCardView card={c} text />
+          <span key={c} style={{ width: '52px', height: '73px', display: 'flex' }}>
+            <ProgressCardView card={c} look="mini" />
           </span>
         ))}
       </div>

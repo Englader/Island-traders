@@ -360,7 +360,7 @@
   border: 1.5px solid #5b5141;
   background: #fbf3dc;
 }
-.gcard.prog svg {
+.gcard.prog > svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -368,42 +368,128 @@
 .gcard.prog.back {
   border: 2px solid #fff6e0;
 }
-.gcard.prog.face svg {
-  position: absolute;
-  inset: 0;
+/* face up: a band in the deck's colour, the picture, the rule */
+.gcard.prog.face {
+  padding: 5%;
+  gap: 3.5%;
+  border: 1.5px solid var(--deck-dark);
+  background: linear-gradient(160deg, #fdf6e2, #ead7a8);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 2px var(--deck),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.45);
+}
+.pg-band {
+  flex: none;
+  min-height: 17%;
+  display: flex;
+  align-items: center;
+  gap: 4%;
+  padding: 1.5% 5% 1.5% 3%;
+  border-radius: 7% / 22%;
+  background: linear-gradient(180deg, var(--deck-light) -60%, var(--deck) 50%, var(--deck-dark) 160%);
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+.deck-trade .pg-band {
+  color: #2b1d00;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.pg-mark {
+  flex: none;
+  width: 19%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fbf3dc;
+  border: 1px solid var(--deck-dark);
+  font-size: clamp(6px, 10.5cqw, 26px);
+}
+.pg-mark .glyph {
+  display: block;
 }
 .prog-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(5px, var(--fit, 11cqw), 15px);
+  line-height: 1.02;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+.pg-art {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: block;
+  border-radius: 7% / 6%;
+  overflow: hidden;
+  border: 1px solid #7a5a2e;
+  background: #e9dcb8;
+}
+.pg-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.pg-vp {
   position: absolute;
-  top: 4%;
-  left: 7%;
-  right: 7%;
-  height: 24%;
+  right: 4%;
+  top: 5%;
+  padding: 0 6%;
+  border-radius: 999px;
+  background: #f1c140;
+  border: 1px solid #8a6410;
+  color: #3b2a14;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(6px, 9cqw, 12px);
+  line-height: 1.35;
+}
+.prog-text {
+  flex: none;
+  min-height: 3.6em;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--display);
-  font-weight: 800;
-  font-size: clamp(7px, 11.5cqw, 15px);
-  line-height: 1;
-  text-align: center;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.gcard.prog.mini .prog-title {
-  font-size: clamp(6px, 13cqw, 12px);
-}
-.prog-text {
-  position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: 7%;
-  font-size: clamp(7px, 8.4cqw, 12px);
+  font-size: clamp(6.5px, 8cqw, 12px);
   line-height: 1.2;
   text-align: center;
   color: #3b2a14;
 }
+/* small cards: the name on the band, the mark left out */
+.gcard.prog.face.mini {
+  padding: 6%;
+  gap: 4%;
+  border-width: 1px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1.5px var(--deck);
+}
+.gcard.prog.mini .pg-mark {
+  display: none;
+}
+.gcard.prog.mini .pg-band {
+  min-height: 19%;
+  padding: 2% 4%;
+}
+.gcard.prog.mini .prog-title {
+  font-size: clamp(4px, var(--fit-mini, 13cqw), 12px);
+}
+.gcard.prog.mini .pg-vp {
+  font-size: clamp(5px, 12cqw, 10px);
+}
 .gcard.prog.tile {
   border: none;
+  padding: 0;
+  box-shadow: none;
+}
+.gcard.prog.tile .pg-art {
+  border: none;
+  border-radius: 0;
 }
 .prog-list {
   display: flex;
@@ -1536,4 +1622,485 @@
 .card-ask-art .gcard {
   width: 100%;
   height: 100%;
+}
+
+/* --- playing your own progress cards (ui/ProgressPlay.tsx) ---------------------------------------- */
+/* the hand: why a card can't be played now */
+.prog-why {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.prog-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 72px;
+}
+.prog-play .key {
+  font-size: 0.7rem;
+}
+/* the confirmation, with the card's face */
+.ask-head.with-card {
+  align-items: flex-start;
+}
+.ask-card {
+  flex: none;
+  width: 104px;
+  display: flex;
+  transform: rotate(-3deg);
+  margin: 2px 0 4px 2px;
+}
+.ask-card .gcard {
+  width: 100%;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+}
+.ask-head.with-card h2 {
+  margin-top: 6px;
+}
+/* a card's choices: its face and rule on top */
+.play-lead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.play-lead-card {
+  flex: none;
+  width: 52px;
+  height: 73px;
+  display: flex;
+}
+.play-lead-card .gcard {
+  width: 100%;
+  height: 100%;
+}
+.play-lead-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.86rem;
+}
+.play-lead-text strong {
+  font-family: var(--display);
+  font-size: 1.05rem;
+}
+.play-lead-hint {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+}
+/* picking a player */
+.pick-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pp-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 8px 12px 8px 8px;
+  border-left: 5px solid var(--pc);
+}
+.pp-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--pc, #888);
+  border: 2px solid var(--pcs, rgba(0, 0, 0, 0.3));
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+.pp-avatar.small {
+  width: 24px;
+  height: 24px;
+  font-size: 0.8rem;
+  border-width: 1.5px;
+}
+.pp-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pp-text b {
+  font-family: var(--display);
+  font-size: 1.02rem;
+}
+.pp-text small {
+  color: var(--ink-2);
+}
+.pp-go {
+  font-size: 1.5rem;
+  color: var(--ink-2);
+}
+/* picking a kind of card */
+.kind-pick {
+  margin-bottom: 4px;
+}
+.kind-pick.eight {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.kind-pick.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (min-width: 700px) {
+  .kind-pick.eight {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+.kind-rate {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--ok);
+}
+.res-btn:disabled .kind-rate {
+  color: var(--ink-2);
+}
+/* the Alchemist */
+.alc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.alc-l {
+  flex: none;
+  width: 64px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.alc-dice {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.alc-die {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 4px;
+  border-radius: 12px;
+}
+.alc-die .die {
+  width: 30px;
+  height: 30px;
+}
+.alc-die.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.alc-pays {
+  margin: 2px 0 10px;
+}
+.alc-preview {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.alc-total {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.alc-total b {
+  font-family: var(--display);
+  font-size: 2rem;
+  line-height: 1;
+}
+.alc-total.seven b {
+  color: var(--danger);
+}
+.alc-total-dice {
+  display: inline-flex;
+  gap: 4px;
+}
+.alc-total-dice .die {
+  width: 22px;
+  height: 22px;
+}
+.alc-lines,
+.alc-draws {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+}
+.alc-draws {
+  list-style: none;
+  padding-left: 0;
+}
+.alc-draws li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.alc-draws .gate-glyph {
+  width: 1.1em;
+  height: 1.1em;
+}
+.alc-sub {
+  margin: 8px 0 2px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.alc-empty {
+  margin: 0 0 10px;
+}
+.sheet .alc-preview + .primary.wide,
+.sheet .alc-empty + .primary.wide {
+  margin-bottom: 8px;
+}
+/* the Spy: the cards seen */
+.spy-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.spy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.spy-face {
+  display: flex;
+}
+.spy-face .gcard {
+  width: 100%;
+}
+/* the Master Merchant: the hand seen */
+.mm-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.mm-card {
+  position: relative;
+  width: 40px;
+  display: flex;
+}
+.mm-card .gcard {
+  width: 100%;
+}
+.mm-card b {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  min-width: 20px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  font-family: var(--display);
+  text-align: center;
+  font-size: 0.85rem;
+}
+/* the Commercial Harbor's offers */
+.harbor-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.harbor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--panel-2);
+  border-left: 5px solid var(--pc);
+}
+.hr-who {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hr-who .pp-avatar {
+  background: var(--pc);
+}
+.hr-who b {
+  font-family: var(--display);
+}
+.hr-who small {
+  color: var(--ink-2);
+}
+.hr-status {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.hr-status.ok {
+  color: var(--ok);
+}
+.hr-res {
+  flex: 1 1 220px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+.hr-res .res-btn {
+  min-height: 40px;
+  padding: 4px 2px;
+}
+.hr-send {
+  flex: 1 1 140px;
+}
+/* the bar over the board while a card's spot is picked */
+.card-bar {
+  align-items: center;
+}
+.cb-head {
+  flex: 1 1 170px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cb-card {
+  flex: none;
+  width: 30px;
+  height: 42px;
+  display: flex;
+}
+.cb-card .gcard {
+  width: 100%;
+  height: 100%;
+}
+.cb-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.cb-text b {
+  font-family: var(--display);
+}
+.cb-text small {
+  color: var(--ink-2);
+}
+/* the cards in play this turn */
+.turn-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.turn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 10px 3px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-bottom-width: 1px;
+  background: var(--panel-2);
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+button.turn-chip {
+  border-bottom-width: 2px;
+  background: var(--chip);
+}
+.tc-card {
+  flex: none;
+  width: 17px;
+  height: 24px;
+  display: flex;
+}
+.tc-card .gcard {
+  width: 100%;
+  height: 100%;
+}
+.tc-text b {
+  font-family: var(--display);
+}
+.tc-text span {
+  color: var(--ink-2);
+}
+/* the Alchemist by the Roll button */
+.action .ai-card {
+  display: flex;
+  width: 1.15rem;
+  height: 1.6rem;
+}
+.action .ai-card .gcard {
+  width: 100%;
+  height: 100%;
+}
+.dmain .db-icon .gcard.prog {
+  width: 21px;
+}
+.fb-crane {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #3f9a4a;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.fb-free {
+  font-weight: 800;
+}
+/* the game log: a progress card's name in its deck's colour */
+.lg-card {
+  padding: 0 5px;
+  border-radius: 6px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.lg-card.deck-trade {
+  background: rgba(233, 183, 38, 0.28);
+}
+.lg-card.deck-politics {
+  background: rgba(59, 120, 201, 0.24);
+}
+.lg-card.deck-science {
+  background: rgba(63, 154, 74, 0.24);
+}
+/* the Roll button and the Alchemist side by side: the key hints sit in line */
+.deck-main.split .dmain {
+  gap: 8px;
+  padding: 8px 10px;
+}
+.deck-main.split .dmain .key {
+  position: static;
+  transform: none;
+}
+.deck-main.split .dmain.plain {
+  font-size: 1.02rem;
+}
+/* phones: the chips stay on one line, scrolling sideways when there are many */
+.panel:not(.desk) .turn-chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.panel:not(.desk) .turn-chips::-webkit-scrollbar {
+  display: none;
+}
+.panel:not(.desk) .turn-chip {
+  flex: none;
 }
