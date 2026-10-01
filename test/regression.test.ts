@@ -9,6 +9,7 @@ import {
   simulateHeuristic,
   viewFor,
   type Action,
+  type BotLevel,
   type GameConfig,
 } from '../src/index.js';
 
@@ -19,7 +20,7 @@ import {
  * Cities & Knights was added (commit fb6e3f7); a change here means base or
  * Seafarers games behave differently.
  */
-function fingerprint(config: GameConfig, mode: 'random' | 'heuristic', steps: number): string {
+function fingerprint(config: GameConfig, mode: 'random' | 'heuristic', steps: number, levels?: BotLevel[]): string {
   const h = createHash('sha256');
   const start = createGame(config);
   h.update(JSON.stringify(start));
@@ -27,7 +28,7 @@ function fingerprint(config: GameConfig, mode: 'random' | 'heuristic', steps: nu
   const final =
     mode === 'random'
       ? simulate(start, seedRng(`regression-${String(config.seed)}`), steps, (_s, a) => actions.push(a)).state
-      : simulateHeuristic(start, steps).state;
+      : simulateHeuristic(start, steps, levels).state;
   h.update(JSON.stringify(actions));
   h.update(JSON.stringify(final));
   h.update(JSON.stringify(viewFor(final, 0)));
@@ -54,6 +55,27 @@ describe('base and Seafarers games are unchanged by Cities & Knights', () => {
   for (const c of CASES) {
     it(c.name, () => {
       expect(fingerprint(c.config, c.mode, c.steps)).toBe(c.hash);
+    });
+  }
+});
+
+/**
+ * Cities & Knights with 3–4 players must play exactly as it did before the
+ * 5–6 player extension was added: these fingerprints were recorded on the
+ * engine of commit 23cef5d.
+ */
+const CK = { citiesAndKnights: true } as const;
+const CK_CASES: Array<{ name: string; config: GameConfig; mode: 'random' | 'heuristic'; steps: number; levels?: BotLevel[]; hash: string }> = [
+  { name: 'C&K, 3 players, official map, random bots', config: { scenario: 'base', players: 3, seed: 'reg-ck-1', options: CK }, mode: 'random', steps: 1500, hash: 'c38b3d3667da4026' },
+  { name: 'C&K, 4 players, random map, random bots', config: { scenario: 'base', players: 4, seed: 'reg-ck-2', options: { ...CK, layout: 'random' } }, mode: 'random', steps: 1500, hash: '0610a0d81a632d89' },
+  { name: 'C&K, 4 players, heuristic bots, whole game', config: { scenario: 'base', players: 4, seed: 'reg-ck-3', options: CK }, mode: 'heuristic', steps: 12000, hash: '7c6dd11f9b9ba109' },
+  { name: 'C&K, 3 players, easy/medium/hard bots, whole game', config: { scenario: 'base', players: 3, seed: 'reg-ck-4', options: { ...CK, layout: 'random' } }, mode: 'heuristic', steps: 12000, levels: ['easy', 'medium', 'hard'], hash: 'd32ae8e035eb0d05' },
+];
+
+describe('Cities & Knights with 3–4 players is unchanged by the 5–6 extension', () => {
+  for (const c of CK_CASES) {
+    it(c.name, () => {
+      expect(fingerprint(c.config, c.mode, c.steps, c.levels)).toBe(c.hash);
     });
   }
 });
