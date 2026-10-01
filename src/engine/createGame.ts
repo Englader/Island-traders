@@ -48,8 +48,8 @@ export function createGame(config: GameConfig): GameState {
   }
   const options: GameOptions = { ...DEFAULT_OPTIONS, ...(config.options ?? {}) };
   const ck = options.citiesAndKnights === true;
+  // 3-6 players: 5-6 with the C&K 5-6 Player Extension (src/ck/constants.ts, docs/cities-and-knights.md section 15)
   if (ck && scenario.expansion !== 'base') throw new Error('Cities & Knights is played on the base game for now');
-  if (ck && n > 4) throw new Error('Cities & Knights supports 3-4 players for now');
   const seed = String(config.seed);
   const rng = seedRng(seed);
 

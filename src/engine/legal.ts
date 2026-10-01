@@ -1,4 +1,5 @@
 import { handOf, hasCards } from '../ck/cards.js';
+import { ckActionPart } from '../ck/engine.js';
 import {
   cardCombinations,
   ckBankTradeActions,
@@ -159,6 +160,8 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
     case 'specialBuild': {
       if (!isActor) return [];
       out.push(...buildActions(s, player));
+      // Cities & Knights 5-6 (2020 p. 3): knights, walls and improvements too; activating and promoting knights
+      if (s.ck) out.push(...ckBuildActions(s, player));
       out.push({ type: 'endTurn', player });
       return out;
     }
@@ -178,7 +181,8 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
       out.push(...devCardActions(s, player));
       if (s.ck) {
         out.push(...ckBuildActions(s, player));
-        if (s.turn.role === 'active') {
+        // the player who rolled, and paired player 2 (5-6 players)
+        if (ckActionPart(s)) {
           out.push(...knightActions(s, player));
           out.push(...progressPlays(s, player));
           out.push(...progressTurnChoices(s, player));
@@ -213,7 +217,7 @@ export function legalActions(s: GameState, player: PlayerId): Action[] {
       }
       out.push(...(sc.hooks.legalActions?.(s, player) ?? []));
       // Cities & Knights: over the progress card limit, discard before ending the turn.
-      if (!(s.ck && s.turn.role === 'active' && ownTurnProgressDiscards(s, player).length > 0)) out.push({ type: 'endTurn', player });
+      if (!(s.ck && ckActionPart(s) && ownTurnProgressDiscards(s, player).length > 0)) out.push({ type: 'endTurn', player });
       return out;
     }
   }

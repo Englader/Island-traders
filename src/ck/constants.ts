@@ -72,11 +72,30 @@ export function improvementCost(level: number): number {
 export const CK_VICTORY_POINTS = 13;
 /** Spaces the barbarian ship sails from its start to the shore of Catan (the barbarian tile, p. 4). */
 export const BARBARIAN_TRACK = 7;
-/** 12 of each commodity (p. 2); the 5-6 extension adds 6 of each. */
+/** 12 of each commodity (p. 2). */
 export const COMMODITY_BANK = 12;
-/** "Defender of Catan" VP cards (p. 2); the 5-6 extension adds 2. */
+/** "Defender of Catan" VP cards (p. 2). */
 export const DEFENDER_CARDS = 6;
-/** Each player has 2 basic, 2 strong and 2 mighty knights (p. 4). */
+/**
+ * The 5-6 Player Extension (2020 rules p. 1; 2023 p. 1; 2025 p. 2) adds 6
+ * coin, 6 paper and 6 cloth, and 2 Defender of Catan cards (2025: VP
+ * tokens). Its knights and city walls are the two new colours' own pieces;
+ * the progress decks and the metropolises stay as they are.
+ */
+export const COMMODITY_BANK_5_6 = 18;
+export const DEFENDER_CARDS_5_6 = 8;
+
+/** Commodities of each kind in the bank for this many players. */
+export function commodityBank(players: number): number {
+  return players >= 5 ? COMMODITY_BANK_5_6 : COMMODITY_BANK;
+}
+
+/** Defender of Catan cards for this many players. */
+export function defenderCards(players: number): number {
+  return players >= 5 ? DEFENDER_CARDS_5_6 : DEFENDER_CARDS;
+}
+
+/** Each player has 2 basic, 2 strong and 2 mighty knights (p. 4; the 5-6 extension's two colours the same). */
 export const KNIGHTS_PER_LEVEL = 2;
 export const MAX_CITY_WALLS = 3;
 /** Each city wall raises the hand limit on a 7 by 2 (p. 6). */

@@ -23,16 +23,22 @@ section 10).
   catan.de `sites/default/files/2022-08/CATAN_SuR34_Manual.pdf`, pp.
   10–11), whose Intrigue and Diplomat texts settle two unclear English
   passages.
-- **For phase 5:** the *Cities & Knights 5-6 Player Extension* rules (2020;
-  catan.com `sites/default/files/2021-08/catan_c_k_5-6_2020_rules.pdf`, 4
-  pages).
+- **For 5–6 players (section 15):** the three printings of the *Cities &
+  Knights 5-6 Player Extension* rules, 4 pages each: 2020 (catan.com
+  `sites/default/files/2021-08/catan_c_k_5-6_2020_rules.pdf`, the special
+  build phase), 2023 (`sites/default/files/2024-03/Catan C&K 5-6 2023
+  Rules 240313.pdf`, paired players) and 2025 (`sites/default/files/2025-03/CN3088
+  CATAN–Cities & Knights 5-6_ Rulebook.pdf`, paired players). They are
+  cited as "5-6 2020 p. n" and so on.
 
 The engine enables the expansion with `GameOptions.citiesAndKnights: true`.
 It is a rules module, not a scenario: its state lives in `GameState.ck`, and
 every rule is keyed on that, so games without it are unchanged (a regression
 test, `test/regression.test.ts`, replays base and Seafarers games recorded
-before the expansion existed). For now it combines with the base game for 3–4
-players; Seafarers scenarios and 5–6 players come later (see "Seams").
+before the expansion existed, and 3–4 player C&K games recorded before the
+5–6 extension). For now it combines with the base game for 3–4
+players, and for 5–6 players with the 5-6 Player Extension (section 15);
+Seafarers scenarios come later (see "Seams").
 
 ## 1. Components (p. 2, p. 4)
 
@@ -48,6 +54,9 @@ players; Seafarers scenarios and 5–6 players come later (see "Seams").
 | Barbarian ship and track | 1 | `ck.barbarians`, `BARBARIAN_TRACK` |
 | Event die: 3 ship faces, a blue, a green and a yellow city gate | 1 | `EVENT_DIE` |
 | Production dice: 1 yellow, 1 red | 2 | `turn.dice = [yellow, red]` |
+
+With 5–6 players the extension adds commodities and Defender cards
+(section 15).
 
 From the base game: the board, robber, harbors, 5 settlements, 4 cities and
 15 roads per player, the resource cards and the Longest Road card. **Set
@@ -543,14 +552,175 @@ them only when `state.ck` exists.
   Master Merchant's `data`, the Smith's second knight, the Deserter's
   knight, the Diplomat's rebuild, the Commercial Harbor's offers) come after,
   and `ck.turnEffects` show as chips.
-- **Phase 5, 5–6 players and Seafarers.** `createGame` refuses C&K with
-  Seafarers scenarios or more than 4 players for now. Hooks for them:
-  `COMMODITY_BANK`/`DEFENDER_CARDS` (5–6: +6 each commodity, +2 Defender
-  cards), builds already allowed in the special build phase
-  (`buildError`), knights already reach along ships (`knightReach`) and can
-  chase the pirate (`chaseRobber` with `piece: 'pirate'`), `robberActive`
-  gates the pirate too, and the setup city is the round that collects
-  (`setupPlacesCity`). Still to do there: the pirate start on the track,
-  knights at sea and closed routes, +2 VP for Seafarers scenarios (2025),
-  gold fields never giving commodities (already so) and no merchant on gold
-  (already in `merchantHexError`).
+- **Phase 5, 5–6 players (done).** Section 15: `commodityBank` and
+  `defenderCards` (`src/ck/constants.ts`) size the supply, `ckActionPart`
+  (`src/ck/engine.ts`) opens knight actions and progress cards to paired
+  player 2, and the special build phase offers the C&K builds
+  (`ckBuildActions` in `engine/legal.ts`). `test/ck56.test.ts` covers it.
+- **Later, Seafarers.** `createGame` refuses C&K with Seafarers scenarios
+  for now. Hooks for them: knights already reach along ships
+  (`knightReach`) and can chase the pirate (`chaseRobber` with `piece:
+  'pirate'`), `robberActive` gates the pirate too, and the setup city is
+  the round that collects (`setupPlacesCity`). Still to do there: the
+  pirate start on the track, knights at sea and closed routes, +2 VP for
+  Seafarers scenarios (2025), gold fields never giving commodities
+  (already so) and no merchant on gold (already in `merchantHexError`).
+
+## 15. Five and six players: the 5-6 Player Extension
+
+The extension uses every Cities & Knights rule except where it says
+otherwise (5-6 2020 p. 2; 2023 p. 2; 2025 p. 2). It changes the supply, the
+board and the turn; nothing else. The 2020 printing plays the 5–6 turn with
+the **special build phase**; the 2023 revision replaced it with **paired
+players** (2023 p. 1: "These rules replace the 'special building phase'
+found in previous rules versions"), and the 2025 edition keeps paired
+players (p. 3). The engine plays both, following the base game's 5–6 option
+`GameOptions.fiveSixMode`: `'paired'` (the default) plays the 2023/2025
+rules, `'specialBuild'` the 2020 rules.
+
+### Components (5-6 2020 p. 1; 2023 p. 1; 2025 p. 2)
+
+| Component | 3–4 players | 5–6 players | Engine |
+|---|---|---|---|
+| Commodity cards | 12 of each | 18 of each: 6 coin, 6 paper, 6 cloth added | `commodityBank(n)` |
+| "Defender of Catan" VP cards (2025: VP tokens) | 6 | 8: 2 added | `defenderCards(n)` |
+| Knights per player | 2 basic, 2 strong, 2 mighty | the same for the two new colours (2020/2023: "12 knights, 6 of each color"; 2025: "4 basic, 4 strong, 4 mighty knights (2x each color)") | `KNIGHTS_PER_LEVEL` |
+| City walls per player | 3 | the same ("6 city walls, 3 of each color") | `MAX_CITY_WALLS` |
+| Flip-charts (2025: city improvement boards) | 1 per player | 1 per player: 2 added | – |
+| Progress cards | 54 (18 per deck) | 54: the extension adds none | `newDecks` |
+| Metropolises | 3 | 3: none added | `ck.metropolises` |
+| Resource cards | 19 of each | 24 of each, from *CATAN 5-6* (2023 p. 2: "add the 25 resource cards from CATAN 5-6") | the base game's `BANK_5_6` |
+
+No development cards, as in every C&K game (2020 p. 3: "the development
+cards are not used when playing C&K").
+
+### The board (5-6 2020 p. 2; 2023 p. 2; 2025 p. 3)
+
+- "Set up the frame ... exactly as outlined in Catan 5-6 rules", put the
+  barbarian tile next to it, and "construct the island following all of
+  the rules in Catan 5-6" (2020 p. 2; 2023 p. 2 alike). 2025 p. 3:
+  "Create the board as described in CATAN 5–6, being sure to use the sea
+  frame from Cities & Knights that shows the barbarian track."
+- **No map is printed.** None of the three printings shows a starting map,
+  a beginners' set-up or starting positions for 5–6 players. The engine's
+  official layout is therefore **the base game's 5–6 official map**, the
+  "Starting Set-up for 5-6 New Players" of the *CATAN 5-6* rules (2022,
+  page 5; `BEGINNERS_5_6` in `src/scenarios/base.ts`: 30 hexes, 2 deserts,
+  28 numbers, 11 harbors). `ckMapSpec` returns no C&K map for 5–6 players
+  and `mapSpecFor` gives the base game's. The random layout is the *CATAN
+  5-6* variable set-up, generated as for the base game (`layout: 'random'`).
+- **The robber:** "Place the robber in either desert" (2020 p. 2; 2023 p.
+  2). The engine places it on the first desert (by hex id; on the official
+  map the desert at the west end of the fourth row). It sleeps there until
+  the first barbarian attack (section 5).
+- The barbarian ship starts on its first space; the start is placed as in a
+  3–4 player game (the second round places a city).
+
+### The turn with paired players (5-6 2023 p. 3; 2025 pp. 3–4)
+
+- **Player 1**, the player whose turn it is, plays a whole C&K turn: rolls
+  all three dice, the event die and production, then the action phase.
+- **Player 2** is "the third player to the left of the first player"
+  (2025 p. 4; the base game's `(current + 3) % n`). After player 1's turn
+  they take an **action phase** (2025 p. 3: "with one restriction: Player
+  2 may not trade with other players"). The 2023 chart (p. 3) and the 2025
+  turn summary (p. 4) list what player 2 may do:
+  - trade with the supply only (the bank, harbors, the merchant's 2:1, the
+    Merchant Guild, a Merchant Fleet played in this part);
+  - build roads, settlements, cities, knights and city walls;
+  - improve cities with commodities (and win a metropolis);
+  - activate, promote and act with knights: move, displace, chase the
+    robber;
+  - play any number of progress cards.
+  Player 2 does not roll, so never plays the Alchemist (played only before
+  rolling), and neither proposes nor answers trades with players.
+- **Knights activated in player 2's part** cannot act in it, but can on
+  their owner's next turn (2023 p. 3: "A knight may be activated during
+  the player 2 paired player turn. It is then able to perform actions
+  during the controlling player's next turn"). The engine's per-part
+  counter (`activatedPart`, `promotedPart`) does this for every part of a
+  turn, so a knight may also be promoted once in each part its owner plays.
+- **Winning:** player 1 wins on reaching 13 VP during their turn, "even
+  before player 2 takes their Action phase"; player 2 wins on reaching 13
+  during their part (2025 p. 3). A player who reaches 13 on someone else's
+  part (a Defender card, a VP card drawn on another player's roll) wins at
+  the start of their next part, as in 3–4 player games.
+
+### The turn with the special build phase (5-6 2020 pp. 2–3)
+
+- The turn is a normal C&K turn (roll, events, progress draws, production,
+  then trade, build, knights and progress cards in any order). Then the
+  special build phase begins: "in clockwise order (starting with the player
+  who received the dice from you), the other players may build".
+- In the special build phase a player **may**: "build roads, settlements,
+  cities, knights, city walls, and/or city improvements" and "activate
+  and/or promote knights", with the resources and commodities in their
+  hand.
+- They **may not**: "perform any actions with their knights; play any
+  progress cards; or make any trades with other players and/or the bank".
+  (No development cards either.)
+- **Knights activated in the special build phase** act on their owner's
+  next turn: "Since the special build phase is the last part of a turn,
+  the knight could then perform an action during its controlling player's
+  next turn" (2020 p. 3, with the example of Leif).
+- **Winning:** as in C&K, only on your own turn: a player who reaches 13 VP
+  in the special build phase wins when their own turn begins (the base
+  game's 5–6 rule, which the engine already applies).
+
+### Unchanged
+
+- **Barbarian strength:** still every city on the board, metropolises
+  included (section 6); none of the printings changes it. With more players
+  there are simply more cities, and more knights against them.
+- **Victory points:** 13 (2025 p. 3 says so for both paired players).
+- **Hand limits:** the 7 with walls, and 4 progress cards (section 10).
+- Everything else: production, the event die, improvements, metropolises,
+  the merchant, the progress cards.
+
+### Ambiguities and engine choices (5–6)
+
+26. **The map.** No C&K 5–6 map is printed; the base game's 5–6 official
+    map is used (above). Its harbors and numbers are the *CATAN 5-6*
+    beginners' set-up's.
+27. **Which desert.** "Either desert": the engine takes the first by hex id.
+    It makes no difference before the first attack, when the robber first
+    moves.
+28. **Progress cards drawn on player 1's roll.** A player over 4 cards
+    discards at once when it is not their turn (p. 9). Player 2 draws on
+    player 1's roll, before their own action phase starts; the engine
+    counts that as not yet their turn and has them discard at once. Within
+    their own part (a Spy taking a card) they may hold more until they end
+    it, like the player whose turn it is (section 10).
+29. **Commercial Harbor for player 2.** Player 2 "may not trade with other
+    players", but may "play any number of progress cards". The engine
+    treats Commercial Harbor's forced exchange as the card's effect, not a
+    trade, and lets player 2 play it; the Merchant Fleet and the merchant's
+    2:1 are trades with the supply, which player 2 may make.
+30. **Promotions per turn.** "Once per knight per turn" counts each part of
+    a turn on its own (paired part, special build), so a knight promoted in
+    another player's turn may be promoted again on its owner's own turn.
+    Neither printing says otherwise.
+31. **Effects that last a turn** (the Crane's discount, a Merchant Fleet,
+    Commercial Harbor's offers) end with the part of the turn they were
+    played in; they never carry over to player 2 or the special build phase.
+
+The computer players (`src/bots/ckBot.ts`) play both structures: in the
+special build phase and player 2's part they make the same build, knight
+and card decisions as on their own turn, with what that part allows. Two
+choices were measured (`npm run bots:league`, and the cities each level
+lost to the barbarians over 36 games per setting):
+
+- They plan their defence one roll per player ahead, as with 3–4 players.
+  Planning only up to their next part (one roll ahead with the special
+  build phase, two or three with paired players) woke their knights too
+  late, often without the grain for it (the special build phase allows no
+  trades): with six players a hard player lost 1.36 cities a game instead
+  of 0.15 with the special build phase, and 0.67 instead of 0.40 with
+  paired players.
+- With 5–6 players the hard level races for Defender of Catan only when one
+  knight level wins it (with 3–4 players up to three or four levels ahead).
+  Against four or five rivals the race mostly defended Catan for everyone:
+  hard and medium then won about as often (50% and 48% over 960 games).
+  With the limit hard wins 61% (section "Computer players" of the README),
+  and each level loses about as many cities as with 3–4 players (hard
+  0.26–0.75 a game, medium 0.68–1.05, easy 1.08–1.42).

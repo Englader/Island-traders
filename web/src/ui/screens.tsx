@@ -170,12 +170,11 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
   const [speed, setSpeed] = useState<BotSpeed>('normal');
   const [level, setLevel] = useState<BotLevel>(() => loadJson<BotLevel>('botLevel') ?? 'medium');
   const [showOptions, setShowOptions] = useState(false);
-  // Cities & Knights: on the base game, 3-4 players for now
+  // Cities & Knights: on the base game, 3-6 players (5-6 with the C&K 5-6 extension)
   const [ckOn, setCkOn] = useState(() => loadJson<boolean>('citiesAndKnights') === true);
   const ck = ckOn && scenarioId === 'base';
-  const maxPlayers = ck ? Math.min(4, sc.maxPlayers) : sc.maxPlayers;
 
-  const n = Math.min(Math.max(count, sc.minPlayers), maxPlayers);
+  const n = Math.min(Math.max(count, sc.minPlayers), sc.maxPlayers);
   const activeSeats = defaultSeats(n, online, seats).slice(0, n);
   const target = vp ?? (ck ? CK_VICTORY_POINTS : sc.victoryPoints(n));
   // The preview is built with exactly these options and seed, so it shows the board the game will use.
@@ -259,7 +258,6 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
                           const on = (e.target as HTMLInputElement).checked;
                           setCkOn(on);
                           setVp(null);
-                          if (on && count > 4) setCount(4);
                         }}
                       />
                     </label>
@@ -293,9 +291,8 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
         <h2>Players</h2>
         <div class="row">
           <span>Number of players</span>
-          <Stepper value={n} min={sc.minPlayers} max={maxPlayers} onChange={setCount} label="players" />
+          <Stepper value={n} min={sc.minPlayers} max={sc.maxPlayers} onChange={setCount} label="players" />
         </div>
-        {ck && sc.maxPlayers > 4 && <p class="hint">Cities &amp; Knights is for 3–4 players for now.</p>}
         <div class="seat-list">
           {activeSeats.map((s, i) => (
             <div class="seat" key={i}>
@@ -535,6 +532,11 @@ export function RulesSheet({ close }: { close(): void }) {
           </li>
           <li>
             <b>City walls</b> <Cost cost={CK_COSTS.cityWall} /> raise your hand limit on a 7 by 2 each.
+          </li>
+          <li>
+            <b>5–6 players</b> add commodities (18 of each) and Defender of Catan cards (8). After each turn the player three seats on takes a paired
+            turn: build, improve cities, use knights, play progress cards and trade with the bank, but not with players. With the special build phase
+            (an option) the others may instead build, hire, activate and promote knights and improve cities: no knight moves, cards or trades.
           </li>
         </ul>
         <p class="hint">Every scenario's special rules are shown in its description and under ⭐ Special during the game.</p>

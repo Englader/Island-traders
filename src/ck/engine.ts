@@ -27,8 +27,6 @@ import {
   ABILITY_LEVEL,
   BARBARIAN_TRACK,
   CK_COSTS,
-  COMMODITY_BANK,
-  DEFENDER_CARDS,
   EVENT_DIE,
   IMPROVEMENT_NAMES,
   MAX_CITY_WALLS,
@@ -40,6 +38,8 @@ import {
   TRACK_COMMODITY,
   TRACKS,
   WALL_HAND_BONUS,
+  commodityBank,
+  defenderCards,
   drawsOn,
   improvementCost,
 } from './constants.js';
@@ -74,12 +74,14 @@ import {
 type A<T extends Action['type']> = Extract<Action, { type: T }>;
 
 export function initCk(s: GameState): CkState {
+  // the 5-6 Player Extension adds commodities and Defender cards (constants.ts)
+  const bank = commodityBank(s.players.length);
   return {
-    bank: { paper: COMMODITY_BANK, cloth: COMMODITY_BANK, coin: COMMODITY_BANK },
+    bank: { paper: bank, cloth: bank, coin: bank },
     barbarians: 0,
     attacks: 0,
     decks: newDecks(s.rng),
-    defenderCards: DEFENDER_CARDS,
+    defenderCards: defenderCards(s.players.length),
     knights: {},
     metropolises: { trade: null, politics: null, science: null },
     merchant: null,
@@ -514,11 +516,24 @@ function buildError(s: GameState, p: PlayerId): string | null {
   return 'you cannot build right now';
 }
 
-/** Knight actions and progress cards: your own turn, after rolling. */
+/**
+ * The parts of a turn with knight actions and progress cards: the player who
+ * rolled, and with 5-6 players and paired players, player 2's action phase
+ * (C&K 5-6 rules, 2023 p. 3, 2025 pp. 3-4). Never the special build phase
+ * (2020 p. 3), which only builds, activates and promotes.
+ */
+export function ckActionPart(s: GameState): boolean {
+  return s.turn.role === 'active' || s.turn.role === 'paired';
+}
+
+/** Knight actions and progress cards: your own turn (or paired part), after rolling. */
 function turnError(s: GameState, p: PlayerId): string | null {
   if (s.turn.actor !== p) return 'it is not your turn';
-  if (s.phase.kind !== 'main') return s.phase.kind === 'preRoll' ? 'roll the dice first' : 'not allowed right now';
-  if (s.turn.role !== 'active') return 'not allowed in this part of the turn';
+  if (s.phase.kind !== 'main') {
+    if (s.phase.kind === 'specialBuild') return 'not allowed in the special build phase';
+    return s.phase.kind === 'preRoll' ? 'roll the dice first' : 'not allowed right now';
+  }
+  if (!ckActionPart(s)) return 'not allowed in this part of the turn';
   return null;
 }
 
@@ -860,9 +875,13 @@ function progressChoice(s: GameState, a: A<'progressChoice'>): string | null {
   return 'no progress card is waiting on a choice';
 }
 
-/** The player whose turn it is must be within the progress hand limit before ending it (2025 rulebook). */
+/**
+ * The player whose turn it is must be within the progress hand limit before
+ * ending it (2025 rulebook); with paired players, player 2 too before ending
+ * their action phase.
+ */
 export function ckEndTurnError(s: GameState, p: PlayerId): string | null {
-  if (!s.ck || s.turn.role !== 'active') return null;
+  if (!s.ck || !ckActionPart(s)) return null;
   return progressExcess(s, p) > 0 ? 'discard progress cards down to 4 first' : null;
 }
 

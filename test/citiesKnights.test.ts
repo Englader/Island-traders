@@ -90,9 +90,10 @@ describe('Cities & Knights: set-up', () => {
     expect(legalActions(g, 0).some((a) => a.type === 'buyDevCard')).toBe(false);
   });
 
-  it('is for the base game with 3-4 players for now', () => {
-    expect(() => createGame({ scenario: 'base', players: 5, seed: 1, options: CK })).toThrow(/3-4 players/);
+  it('is for the base game with 3-6 players (5-6: test/ck56.test.ts); not with Seafarers yet', () => {
+    expect(createGame({ scenario: 'base', players: 6, seed: 1, options: CK }).ck).toBeDefined();
     expect(() => createGame({ scenario: 'seafarers-1-new-shores', players: 4, seed: 1, options: CK })).toThrow(/base game/);
+    expect(() => createGame({ scenario: 'seafarers-1-new-shores', players: 5, seed: 1, options: CK })).toThrow(/base game/);
   });
 });
 

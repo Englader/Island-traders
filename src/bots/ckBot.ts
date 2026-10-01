@@ -241,7 +241,13 @@ function cityGain(s: GameState, p: PlayerId, v: VertexId, weight: number, prod: 
 export interface Outlook {
   /** Ship moves left before it lands. */
   steps: number;
-  /** Chance the ship lands before the active player's next turn (the others' rolls and its own next roll). */
+  /**
+   * Chance the ship lands before the active player's next turn (the others'
+   * rolls and its own next roll). With 5-6 players too: they act again
+   * sooner (a paired part, a special build phase), but a horizon of one roll
+   * per player keeps their knights ready in time (the special build phase
+   * has no trades to find the grain).
+   */
   soon: number;
   /** Chance it lands within two of the active player's turns. */
   later: number;
@@ -487,7 +493,8 @@ function defence(c: Ctx): Defence {
     if (level >= 1 && s.ck!.defenderCards > 0) {
       const top = Math.max(0, ...opp.map(est)) + 1;
       const held = othersTotal + Math.max(top, want) >= o.cities;
-      const reach = level === 2 ? (c.gap <= 3 ? 4 : 3) : 1;
+      // hard races a few levels ahead for the card; with 5-6 players (four or five rivals for it) only one, like medium
+      const reach = level === 2 && s.players.length <= 4 ? (c.gap <= 3 ? 4 : 3) : 1;
       if (held && top > want && top - mine <= reach) {
         worth += odds * (c.gap <= 2 ? 9 : 5);
         want = top;
@@ -1660,11 +1667,9 @@ export function ckHeuristicAction(s: GameState, p: PlayerId, acts: Action[], pr:
     case 'main':
       if (s.turn.actor !== p) return respond(c, acts);
       return mainTurn(c, acts);
-    case 'specialBuild': {
-      const city = byType(acts, 'buildCity')[0];
-      if (city) return city;
-      return acts.find((a) => a.type === 'endTurn') ?? acts[0];
-    }
+    case 'specialBuild':
+      // C&K 5-6 (2020): build, hire, wall, improve, activate and promote as on its own turn; no trades, knight moves or cards
+      return mainTurn(c, acts) ?? acts.find((a) => a.type === 'endTurn') ?? acts[0];
     default:
       return acts[0];
   }
