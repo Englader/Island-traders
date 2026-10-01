@@ -131,6 +131,21 @@ describe('harbors and robber start positions (rulebook component lists)', () => 
     expect(Object.values(four.board.hexes).some((h) => h.terrain === 'gold')).toBe(false);
   });
 
+  it('5-6 players: the Seafarers 5-6 harbors, the 5-6 bank and development deck, paired players', () => {
+    // 11 harbors (6 special with 2 wool, 5 generic), the Fog Island 9; Through the Desert lists 11 for its 10 spots
+    const harbors = { 'seafarers-1-new-shores': 11, 'seafarers-2-four-islands': 11, 'seafarers-3-fog-islands': 9, 'seafarers-4-through-the-desert': 10 };
+    for (const n of [5, 6]) {
+      for (const [id, count] of Object.entries(harbors)) {
+        const g = createGame({ scenario: id, players: n, seed: 1 });
+        expect(g.board.harbors, `${id} ${n}`).toHaveLength(count);
+        expect(g.bank.brick).toBe(24);
+        expect(g.devDeck).toHaveLength(34);
+        expect(g.options.fiveSixMode).toBe('paired');
+        expect(g.victoryTarget).toBe(createGame({ scenario: id, players: 4, seed: 1 }).victoryTarget);
+      }
+    }
+  });
+
   it('The Pirate Islands use 8 harbors: 5 special and 3 generic', () => {
     const h = createGame({ scenario: 'seafarers-7-pirate-islands', players: 4, seed: 1 }).board.harbors;
     expect(h).toHaveLength(8);
@@ -206,6 +221,19 @@ describe('4 Through the Desert', () => {
     expect(s.players[0].bonusVP).toBe(2);
     s = settleWithShip(s, 0, coastalVertexIn(s, 'home'));
     expect(s.players[0].bonusVP).toBe(2);
+  });
+
+  it('with 5-6 players five deserts cut off two strips, each a foreign area worth 2 VP', () => {
+    for (const n of [5, 6]) {
+      let s = blank('seafarers-4-through-the-desert', n);
+      expect(Object.values(s.board.hexes).filter((h) => h.terrain === 'desert')).toHaveLength(5);
+      s = settleWithShip(s, 0, coastalVertexIn(s, 'strip'));
+      expect(s.players[0].bonusVP).toBe(2);
+      s = settleWithShip(s, 0, coastalVertexIn(s, 'strip2'));
+      expect(s.players[0].bonusVP).toBe(4);
+      s = settleWithShip(s, 0, coastalVertexIn(s, 'home', Object.keys(s.board.buildings)));
+      expect(s.players[0].bonusVP).toBe(4);
+    }
   });
 
   it('starting settlements must be in the home area', () => {

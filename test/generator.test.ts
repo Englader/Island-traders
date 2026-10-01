@@ -42,13 +42,17 @@ const LAND = (h: HexState) => h.terrain !== 'sea' && h.terrain !== 'fog';
 const PRODUCING = new Set(['hills', 'forest', 'pasture', 'fields', 'mountains', 'gold']);
 
 const seafarers = BUILT_IN_SCENARIOS.filter((s) => s.expansion === 'seafarers');
-/** Least number of different land layouts over the seeds, where the frame leaves little room. */
+/** Least number of different land layouts over the seeds, where the frame leaves little room (by scenario, or scenario/players). */
 const VARIETY: Record<string, number> = {
   'seafarers-4-through-the-desert': SEEDS / 10,
   'seafarers-5-forgotten-tribe': SEEDS / 10,
   'seafarers-7-pirate-islands': 2,
   'seafarers-8-wonders': 4,
+  // New Shores with 5-6 players: the 30-hex main island, its sea and the small islands fill the frame; new maps mirror it
+  'seafarers-1-new-shores/5': 2,
+  'seafarers-1-new-shores/6': 2,
 };
+const variety = (id: string, n: number) => VARIETY[`${id}/${n}`] ?? VARIETY[id] ?? SEEDS / 3;
 const counts = (sc: ScenarioDef) => Array.from({ length: sc.maxPlayers - sc.minPlayers + 1 }, (_, i) => sc.minPlayers + i);
 
 /** The concrete map the random layout builds from `seed` (as `createGame` does), with how it came about. */
@@ -153,6 +157,9 @@ for (const sc of seafarers) {
         const frame = Object.keys(official.board.hexes).sort();
         const t = buildTopology(frame);
         const printedHarbors = official.board.harbors.map((h) => h.type).sort();
+        // the harbor tokens they are drawn from: more than the spots leaves some in the box (Through the Desert 5-6)
+        const harborSpec = sc.officialMap?.(n, RANDOM)?.harbors;
+        const harborPool = harborSpec && Array.isArray(harborSpec.spots) && harborSpec.spots.some((x) => !x.type) ? [...harborSpec.pool, ...harborSpec.spots.flatMap((x) => (x.type ? [x.type] : []))] : printedHarbors;
         const harborAreas = new Set(
           official.board.harbors.map((h) => area(official.board.hexes[t.edgeHexes[h.edge].find((x) => LAND(official.board.hexes[x]))!])),
         );
@@ -185,7 +192,9 @@ for (const sc of seafarers) {
             if (isRed(h.token)) for (const x of t.hexNeighbors[id]) check(!isRed(hexes[x].token), `6/8 side by side at ${id}`);
           }
           // harbors: the printed ones, on coasts of the areas they serve, never two on one intersection
-          check(map.harbors.map((h) => h.type).sort().join() === printedHarbors.join(), 'harbor types differ');
+          check(map.harbors.length === printedHarbors.length, 'harbor count differs');
+          const left = [...harborPool];
+          for (const h of map.harbors) check(left.includes(h.type) && !!left.splice(left.indexOf(h.type), 1), 'harbor types differ');
           const used = new Set<string>();
           for (const h of map.harbors) {
             const [a, b] = t.edgeHexes[h.edge];
@@ -224,7 +233,7 @@ for (const sc of seafarers) {
         }
         // different seeds give different maps; the tighter the frame, the fewer (the Pirate Islands and
         // the Wonders keep their printed main island and vary by mirrors and the small islands)
-        expect(layouts.size, sc.id).toBeGreaterThanOrEqual(VARIETY[sc.id] ?? SEEDS / 3);
+        expect(layouts.size, sc.id).toBeGreaterThanOrEqual(variety(sc.id, n));
       });
     }
   });
@@ -241,15 +250,24 @@ function checkSpots(s: GameState, official: GameState, tag: string): void {
       break;
     }
     case 'seafarers-4-through-the-desert': {
-      // the strip is cut off by the deserts: none of its hexes touches the rest of the home area
-      const strip = Object.keys(hexes).filter((h) => hexes[h].zone === 'strip');
-      expect(strip.length, tag).toBe(3);
-      for (const h of strip) {
-        for (const x of t.hexNeighbors[h]) {
-          if (hexes[x].zone === 'home') expect(hexes[x].terrain, tag).toBe('desert');
+      // each strip is cut off by the deserts: none of its hexes touches the rest of the home area or the other strip
+      const zones = s.players.length >= 5 ? { strip: 5, strip2: 4 } : { strip: 3 };
+      for (const [zone, size] of Object.entries(zones)) {
+        const strip = Object.keys(hexes).filter((h) => hexes[h].zone === zone);
+        expect(strip.length, tag).toBe(size);
+        for (const h of strip) {
+          for (const x of t.hexNeighbors[h]) {
+            if (hexes[x].zone === 'home') expect(hexes[x].terrain, tag).toBe('desert');
+            if (hexes[x].zone?.startsWith('strip')) expect(hexes[x].zone, tag).toBe(zone);
+          }
         }
+        expect(strip.some((h) => t.hexNeighbors[h].some((x) => hexes[x].terrain === 'desert')), tag).toBe(true);
       }
-      expect(strip.some((h) => t.hexNeighbors[h].some((x) => hexes[x].terrain === 'desert')), tag).toBe(true);
+      // the deserts are one straight line
+      const deserts = Object.keys(hexes).filter((h) => hexes[h].terrain === 'desert');
+      expect(deserts.length, tag).toBe(s.players.length >= 5 ? 5 : 3);
+      const line = (a: HexState, b: HexState) => a.r === b.r || a.q === b.q || a.q + a.r === b.q + b.r;
+      for (const d of deserts) expect(line(hexes[d], hexes[deserts[0]]), tag).toBe(true);
       break;
     }
     case 'seafarers-5-forgotten-tribe': {

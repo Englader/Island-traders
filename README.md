@@ -2,8 +2,9 @@
 
 An unofficial, data-driven rules engine for Catan-style island trading games.
 It covers the base game (3–4 and 5–6 players) and the nine scenarios of the
-Seafarers expansion. It is written in TypeScript and has no runtime
-dependencies. It is not affiliated with or endorsed by Catan GmbH (see
+Seafarers expansion, the first four and New World also for 5–6 players. It
+is written in TypeScript and has no runtime dependencies. It is not
+affiliated with or endorsed by Catan GmbH (see
 [Intellectual property](#intellectual-property)).
 
 The engine is a pure function:
@@ -21,7 +22,9 @@ self-play without extra work. Each player gets a redacted view of the state.
 **https://englader.github.io/Island-traders/** (deployed from `main` by
 GitHub Actions)
 
-- Base game (3–6 players) and the nine Seafarers scenarios
+- Base game (3–6 players) and the nine Seafarers scenarios; Heading for New
+  Shores, The Four Islands (The Six Islands), The Fog Islands, Through the
+  Desert and New World also take 5–6 players, on the Seafarers 5-6 maps
 - Pass-and-play on one device: a hand-over screen keeps hands hidden
 - Computer players at three levels (easy, medium, hard) and an adjustable
   pace, with a feed of their moves
@@ -98,10 +101,13 @@ be changed from the menu:
 | Its own offers | none | one per turn, one card for the one it needs | up to two, the second one two cards for one |
 | Answering open offers | generous, card for card | card for card when it gains | asks for up to one card more |
 
-`npm run bots:league -- [games] [scenarios]` seats one player of
-each level at a table, rotates the seats and counts wins. Over 60 base games,
-hard won 68%, medium 28% and easy 3%. Over the nine Seafarers scenarios
-(30–60 games each), hard won 55%, medium 44% and easy 1%.
+`npm run bots:league -- [games] [scenarios] [official|random] [players]`
+seats one player of each level at a table (with more players the levels
+repeat round the table), rotates the seats and counts wins. Over 60 base
+games, hard won 68%, medium 28% and easy 3%. Over the nine Seafarers
+scenarios (30–60 games each), hard won 55%, medium 44% and easy 1%. On the
+5–6 maps of scenarios 1–4 (30 games per scenario, player count and layout,
+480 in all, every one finished), hard won 56%, medium 42% and easy 2%.
 
 ### Dice
 
@@ -156,7 +162,7 @@ change the networking code, every week, and on demand.
 
 ```bash
 npm install
-npm test                                  # 360 tests: golden positions, official and generated maps, scenarios, bots, fuzzing
+npm test                                  # 445 tests: golden positions, official and generated maps, scenarios, bots, fuzzing
 npm run demo -- list                      # list scenarios
 npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board (add "random" for a generated map)
 npm run build                             # emit dist/ (ESM + .d.ts)
@@ -266,21 +272,22 @@ In summary:
 
 ### Scenarios
 
-| id | Name | VP | Special rules implemented |
-|---|---|---|---|
-| `base` | Base game | 10 | The beginners' set-up, or the variable set-up (A–R spiral or random tokens). The 5–6 board has 30 hexes and 11 harbors |
-| `seafarers-1-new-shores` | Heading for New Shores | 14 | Start on the main island; +2 VP for the first settlement on each small island |
-| `seafarers-2-four-islands` | The Four Islands | 13 | Home islands are chosen at setup; +2 VP per foreign island; no desert, the robber starts on a 12 |
-| `seafarers-3-fog-islands` | The Fog Islands | 12 | Hidden fog stack. Roads and ships reveal hexes; the discoverer is paid |
-| `seafarers-4-through-the-desert` | Through the Desert | 14 | Three deserts wall off a strip; +2 VP per foreign area |
-| `seafarers-5-forgotten-tribe` | The Forgotten Tribe | 13 | 18 gift paths (8 VP chits, 4 dev cards, 6 harbors, which are the scenario's only harbors). Gifted harbors must be placed at once if possible. The robber only visits numbered hexes |
-| `seafarers-6-cloth-trade` | Cloth Trade (rulebook: "Cloth for Catan") | 14 | 3 starting settlements. 8 villages on intersections with 5 cloth each plus a supply of 10. The pirate steals cloth. Ends when 3 or fewer villages have cloth |
-| `seafarers-7-pirate-islands` | The Pirate Islands | 10 + fortress | Pre-placed pieces. The fleet moves and attacks every adjacent player by the lower die. A 7 lets the roller rob anyone. A single shortest route via a marked intersection. Warships from knights; fortress battles |
-| `seafarers-8-wonders` | The Wonders (rulebook: "The Wonders of Catan") | 4 levels, or 10 + most levels | Theater, Great Bridge, Monument, Great Wall and Cathedral with their card requirements and costs; a ship marks the claim; +1 VP per small island |
-| `seafarers-9-new-world` | New World | 12 | The map is dealt at random; players place the harbors first; +1 VP per foreign island; robber and pirate start off the board; 3–6 players |
+| id | Name | Players | VP | Special rules implemented |
+|---|---|---|---|---|
+| `base` | Base game | 3–6 | 10 | The beginners' set-up, or the variable set-up (A–R spiral or random tokens). The 5–6 board has 30 hexes and 11 harbors |
+| `seafarers-1-new-shores` | Heading for New Shores | 3–6 | 14 | Start on the main island; +2 VP for the first settlement on each small island. With 5–6 players the main island is the CATAN 5-6 island, dealt at random as the rulebook says, with six small islands around it |
+| `seafarers-2-four-islands` | The Four Islands (5–6 players: The Six Islands) | 3–6 | 13 | Home islands are chosen at setup; +2 VP per foreign island; no desert, the robber starts on a 12 (on the 5–6 map, on the pasture 2 as drawn) |
+| `seafarers-3-fog-islands` | The Fog Islands (5–6 players: The Fog Island) | 3–6 | 12 | Hidden fog stack. Roads and ships reveal hexes; the discoverer is paid. The 5–6 map hides 25 hexes, with two gold islets among them |
+| `seafarers-4-through-the-desert` | Through the Desert | 3–6 | 14 | Three deserts wall off a strip (with 5–6 players five deserts and two strips); +2 VP per foreign area |
+| `seafarers-5-forgotten-tribe` | The Forgotten Tribe | 3–4 | 13 | 18 gift paths (8 VP chits, 4 dev cards, 6 harbors, which are the scenario's only harbors). Gifted harbors must be placed at once if possible. The robber only visits numbered hexes |
+| `seafarers-6-cloth-trade` | Cloth Trade (rulebook: "Cloth for Catan") | 3–4 | 14 | 3 starting settlements. 8 villages on intersections with 5 cloth each plus a supply of 10. The pirate steals cloth. Ends when 3 or fewer villages have cloth |
+| `seafarers-7-pirate-islands` | The Pirate Islands | 3–4 | 10 + fortress | Pre-placed pieces. The fleet moves and attacks every adjacent player by the lower die. A 7 lets the roller rob anyone. A single shortest route via a marked intersection. Warships from knights; fortress battles |
+| `seafarers-8-wonders` | The Wonders (rulebook: "The Wonders of Catan") | 3–4 | 4 levels, or 10 + most levels | Theater, Great Bridge, Monument, Great Wall and Cathedral with their card requirements and costs; a ship marks the claim; +1 VP per small island |
+| `seafarers-9-new-world` | New World | 3–6 | 12 | The map is dealt at random; players place the harbors first; +1 VP per foreign island; robber and pirate start off the board |
 
 All scenario rules were checked against the official 5th-edition Seafarers
-rulebook, the base rules and the FAQs on catan.com.
+rulebook, the Seafarers 5-6 rules (2023), the base rules and the FAQs on
+catan.com.
 [`docs/rules.md`](docs/rules.md) lists the sources and every remaining engine
 choice.
 
@@ -290,12 +297,14 @@ choice.
 
 - **`'official'`** (the default): the set-up map printed in the rulebook for
   the scenario and player count. That is the base game's beginners' set-up
-  (3–4 players, and the 5–6 extension's), and every Seafarers scenario's
-  3- and 4-player map (`src/scenarios/seafarers/officialMaps.ts`, with the
-  page each map comes from). Only what the rulebook itself shuffles varies:
-  the unexplored fog hexes, harbors printed blank, the Forgotten Tribe's
-  harbor gifts and cards, and New World, which the rulebook deals at random
-  into its frame.
+  (3–4 players, and the 5–6 extension's), every Seafarers scenario's 3- and
+  4-player map, and the Seafarers 5-6 maps of scenarios 1–4
+  (`src/scenarios/seafarers/officialMaps.ts`, with the page each map comes
+  from). Only what the rulebook itself shuffles varies: the unexplored fog
+  hexes, harbors printed blank (every harbor of the 5–6 maps), the
+  Forgotten Tribe's harbor gifts and cards, New Shores' main island with
+  5–6 players (the CATAN 5-6 variable set-up), and New World, which the
+  rulebook deals at random into its frame.
 - **`'random'`**: for the base game, the rulebook's variable set-up (the
   19- or 30-hex island with shuffled tiles, the A–R spiral or random numbers).
   For Seafarers, a new map generated in the style of the printed one
@@ -336,10 +345,10 @@ game and every online guest get the same board.
 
 | Scenario | Generated | Kept as printed |
 |---|---|---|
-| Heading for New Shores | the main island and three small islands (shapes, sizes ±1, places), tiles (gold on the small islands), numbers, harbor spots | the frame; tile, number and harbor counts per area |
-| The Four Islands | four islands, their shapes and sizes, tiles, numbers, harbor spots | as above |
-| The Fog Islands | the two home islands and the unexplored area (12 hexes) | the face-down stack |
-| Through the Desert | the line of three deserts, the strip beyond it, the home area before it, the islets | the strip's own tiles and numbers |
+| Heading for New Shores | the main island and three small islands (shapes, sizes ±1, places), tiles (gold on the small islands), numbers, harbor spots; with 5–6 players the tiles, numbers and harbor spots | the frame; tile, number and harbor counts per area; with 5–6 players the shapes, mirrored (the main island and its six small islands fill the frame) |
+| The Four Islands | four (5–6 players: six) islands, their shapes and sizes, tiles, numbers, harbor spots | as above |
+| The Fog Islands | the home island(s) and the unexplored area (12 hexes; 25 with 5–6 players, the gold islets mostly among them) | the face-down stack |
+| Through the Desert | the line of three deserts (five with 5–6 players), the strip beyond it (two strips), the home area before it, the islets | each strip's own tiles and numbers |
 | The Forgotten Tribe | the main island, the tribe islets and their tiles, the 18 gift spots | (the frame leaves the islands little room to move) |
 | Cloth Trade | the two big islands, the four village isles, which isle gets which pair of village numbers | each isle's two villages face the big islands |
 | The Pirate Islands | mirrors; the main island's tiles and numbers, the numbered pirate-island hexes, harbor spots | the fortress route, marked intersections, starting pieces and fleet circuit (the rules depend on them) |
@@ -402,7 +411,9 @@ and the differences between printings.
   against the computer that is reloaded and continued, a Seafarers board,
   the pass-and-play hand-over, a random map whose preview (after a 🎲
   reroll) is the board the game starts with, a generated Seafarers map whose
-  rerolls change the islands but not how many there are, and online games between two
+  rerolls change the islands but not how many there are, the 5–6 maps (the
+  preview, its full view and the game agree; a 6-player Through the Desert
+  game on the rulebook's map played up to a paired turn), and online games between two
   browsers through a local PeerJS broker and a local relay broker
   (`scripts/mqtt-broker.mjs`): a direct link on the host's random map, a
   relay-only link, and a friend who joins while the host is away. The end

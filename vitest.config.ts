@@ -6,6 +6,7 @@ export default defineConfig({
   resolve: { alias: { engine: fileURLToPath(new URL('./src/index.ts', import.meta.url)) } },
   test: {
     include: ['test/**/*.test.ts'],
+    setupFiles: ['test/setup.ts'],
     testTimeout: 120_000,
   },
 });

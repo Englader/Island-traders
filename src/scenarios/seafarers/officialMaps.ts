@@ -1,5 +1,5 @@
 import { harborAt, type MapSpec, type PoolSpec } from '../../board/mapSpec.js';
-import { HARBORS_BASE } from '../../core/constants.js';
+import { HARBORS_5_6, HARBORS_BASE, TERRAIN_5_6, TOKENS_28 } from '../../core/constants.js';
 import type { HarborType } from '../../core/types.js';
 
 /*
@@ -323,6 +323,186 @@ export const THROUGH_THE_DESERT_4: MapSpec = {
   },
   robber: '3,2',
   pirate: '8,4',
+};
+
+/*
+ * The 5-6 player maps: the scenario diagrams of the Seafarers 5-6 rules
+ * (2023 rules, catan.com; pages 6-13), read from the PDF's tiles and number
+ * tokens like the maps above and checked against each scenario's component
+ * list. The 2020 printing of the 5-6 rules has the same maps; the 2023 one
+ * adds the robber and pirate figures. One map serves 5 and 6 players. The
+ * book draws them upright, seven columns of flat-topped hexes in the
+ * extension's larger frame; turned like the others, they become nine rows.
+ *
+ * "Randomly place the harbor tokens": every harbor on these maps is blank,
+ * its type drawn from the scenario's harbor tokens.
+ */
+
+/**
+ * Scenario 1's main island with 5-6 players: built "according to the rules
+ * for CATAN 5-6", i.e. its variable set-up: the 30 hexes and 28 numbers of
+ * CATAN and CATAN 5-6 (the diagram leaves it blank). The numbers are dealt
+ * at random, as on the base game's 5-6 random board.
+ */
+const MAIN_5_6: PoolSpec = { terrains: TERRAIN_5_6, tokens: TOKENS_28 };
+
+/** Scenario 3 with 5-6 players: the face-down stack for the 25 unexplored hexes (page 10). */
+const FOG_STACK_5_6: PoolSpec = {
+  terrains: { sea: 12, gold: 1, fields: 2, hills: 2, mountains: 2, pasture: 3, forest: 3 },
+  tokens: [2, 2, 3, 4, 5, 5, 6, 8, 9, 9, 10, 11, 12],
+};
+
+/**
+ * Scenario 1, 5-6 players (page 7): the blank main island (`?m`) is dealt
+ * from MAIN_5_6; six small islands around it. The robber starts on the hills
+ * 12, the pirate on the frame. 11 harbors.
+ */
+export const NEW_SHORES_5_6: MapSpec = {
+  rows: [
+    '.       .       ~       ~       ~       ~       ~       ~       ~       ~',
+    '.       ~       $9      ~       ?m@main ?m@main ?m@main ~       m6      ~',
+    '.       ~       m11     ~       ?m@main ?m@main ?m@main ?m@main ~       ~       ~',
+    '~       p8      ~       ?m@main ?m@main ?m@main ?m@main ?m@main ~       h12     ~',
+    '.       ~       ~       ?m@main ?m@main ?m@main ?m@main ?m@main ?m@main ~       ~',
+    '~       h4      ~       ?m@main ?m@main ?m@main ?m@main ?m@main ~       g3      ~',
+    '.       ~       f2      ~       ?m@main ?m@main ?m@main ?m@main ~       ~       ~',
+    '.       ~       $5      ~       ?m@main ?m@main ?m@main ~       $10     ~',
+    '.       .       ~       ~       ~       ~       ~       ~       ~       ~',
+  ],
+  pools: { m: MAIN_5_6 },
+  harbors: {
+    spots: [
+      harborAt('5,1', 'NE'),
+      harborAt('7,3', 'E'),
+      harborAt('3,3', 'W'),
+      harborAt('5,7', 'SW'),
+      harborAt('6,7', 'SE'),
+      harborAt('8,4', 'SE'),
+      harborAt('7,6', 'E'),
+      harborAt('4,2', 'NW'),
+      harborAt('7,2', 'NE'),
+      harborAt('4,6', 'SW'),
+      harborAt('3,4', 'SW'),
+    ],
+    pool: HARBORS_5_6,
+  },
+  robber: '9,3',
+  pirate: '1,4',
+};
+
+/**
+ * Scenario 2 with 5-6 players is "The Six Islands" (page 9). The diagram
+ * stands the robber on the pasture 2 (the 3-4 player text says "the 12";
+ * this map has two). 11 harbors.
+ */
+export const SIX_ISLANDS_5_6: MapSpec = {
+  rows: [
+    '.   .   ~   ~   ~   ~   ~   ~   ~   ~',
+    '.   ~   p12 m4  ~   f6  ~   m9  p6  ~',
+    '.   ~   f8  m10 ~   m11 h10 ~   g3  h10 ~',
+    '~   h11 g9  ~   p3  f4  ~   ~   f4  ~   ~',
+    '.   ~   ~   ~   ~   ~   ~   ~   ~   ~   ~',
+    '~   ~   h4  ~   ~   p8  f10 ~   f5  g6  ~',
+    '.   ~   f9  g12 ~   g5  m3  ~   h8  p9  ~',
+    '.   ~   p5  m6  ~   p2  ~   h5  g2  ~',
+    '.   .   ~   ~   ~   ~   ~   ~   ~   ~',
+  ],
+  pools: {},
+  harbors: {
+    spots: [
+      harborAt('5,1', 'NE'),
+      harborAt('8,2', 'SW'),
+      harborAt('2,6', 'W'),
+      harborAt('7,7', 'SW'),
+      harborAt('3,2', 'SE'),
+      harborAt('8,1', 'NE'),
+      harborAt('9,6', 'E'),
+      harborAt('3,1', 'NW'),
+      harborAt('3,7', 'NE'),
+      harborAt('5,6', 'SW'),
+      harborAt('2,3', 'SW'),
+    ],
+    pool: HARBORS_5_6,
+  },
+  robber: '5,7',
+  pirate: '1,4',
+};
+
+/**
+ * Scenario 3, 5-6 players: "The Fog Island" (page 11). 25 unexplored hexes
+ * and two gold islets among them; the face-up island has a desert, where the
+ * robber starts. 9 harbors.
+ */
+export const FOG_ISLANDS_5_6: MapSpec = {
+  rows: [
+    '.        .        ~        ~        ~        ~        ~        ~        ~        ~        ~',
+    '.        ~        h5@home  p6@home  m3@home  d@home   h11@home h8@home  m11@home g6@home  ~',
+    '.        ~        ~        g2@home  p4@home  m6@home  m10@home p9@home  h12@home f4@home  ~        ~',
+    '~        x        ~        f8@home  g9@home  h3@home  m12@home g10@home f3@home  ~        x        ~',
+    '.        ~        x        ~        ~        f5@home  g11@home p8@home  ~        ~        x        ~',
+    '~        x        x        x        ~        ~        ~        ~        x        x        x        ~',
+    '.        ~        x        x        x        x        x        x        x        x        x        ~',
+    '.        ~        $4       x        x        x        x        x        x        $10      ~',
+    '.        .        ~        ~        ~        ~        ~        ~        ~        ~        ~',
+  ],
+  pools: {},
+  harbors: {
+    spots: [
+      harborAt('3,2', 'W'),
+      harborAt('9,1', 'NW'),
+      harborAt('9,2', 'E'),
+      harborAt('4,1', 'NW'),
+      harborAt('6,4', 'SE'),
+      harborAt('4,3', 'SW'),
+      harborAt('6,1', 'NE'),
+      harborAt('7,3', 'SE'),
+      harborAt('2,1', 'NE'),
+    ],
+    pool: HARBORS_BASE,
+  },
+  robber: '5,1',
+  pirate: '9,4',
+  fog: FOG_STACK_5_6,
+};
+
+/**
+ * Scenario 4, 5-6 players (page 13). Five deserts in a line cut off two
+ * strips, a sea hex apart: fields 5, pasture 2, gold 4, mountains 6, hills
+ * 11 ("strip") and forest 12, fields 5, mountains 3, hills 6 ("strip2");
+ * each is a foreign area of its own. The robber starts on the middle desert.
+ * The component list asks for 11 harbor tokens, the diagram shows 10 spots:
+ * one token stays in the box.
+ */
+export const THROUGH_THE_DESERT_5_6: MapSpec = {
+  rows: [
+    '.          .          ~          ~          ~          ~          ~          ~          ~          ~          ~',
+    '.          ~          $4@strip   m6@strip   h11@strip  ~          f12@strip2 g5@strip2  m3@strip2  h6@strip2  ~',
+    '.          ~          f5@strip   p2@strip   d@home     d@home     d@home     d@home     d@home     ~          ~          ~',
+    '~          ~          ~          ~          g2@home    f8@home    p9@home    f10@home   ~          ~          $10        ~',
+    '.          ~          m4@home    f5@home    g10@home   h5@home    p10@home   f4@home    h8@home    ~          ~          ~',
+    '~          p12@home   g3@home    h12@home   m6@home    h11@home   m3@home    g9@home    ~          ~          m8         ~',
+    '.          ~          h9@home    m11@home   ~          ~          ~          ~          ~          p11        f3         ~',
+    '.          ~          p6@home    ~          p8         g2         ~          $4         ~          g9         ~',
+    '.          .          ~          ~          ~          ~          ~          ~          ~          ~          ~',
+  ],
+  pools: {},
+  harbors: {
+    spots: [
+      harborAt('2,6', 'W'),
+      harborAt('4,4', 'NW'),
+      harborAt('7,3', 'E'),
+      harborAt('2,4', 'NW'),
+      harborAt('3,5', 'SE'),
+      harborAt('5,5', 'SW'),
+      harborAt('3,6', 'SE'),
+      harborAt('2,7', 'SW'),
+      harborAt('7,5', 'SW'),
+      harborAt('8,4', 'SE'),
+    ],
+    pool: HARBORS_5_6,
+  },
+  robber: '6,2',
+  pirate: '8,7',
 };
 
 /**

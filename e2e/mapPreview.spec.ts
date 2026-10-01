@@ -55,10 +55,18 @@ function expectSameMap(a: Seen, b: Seen, what: string) {
  * Picks a scenario and map, deals another with 🎲 if asked, then checks the
  * picture against its full view and against the game started from it.
  */
-async function checkPreview(page: Page, scenario: RegExp | null, layout: 'Official' | 'Random', reroll: boolean, turned: boolean) {
+async function checkPreview(page: Page, scenario: RegExp | null, layout: 'Official' | 'Random', reroll: boolean, turned: boolean, players?: number) {
   await page.goto('/');
   await page.getByRole('button', { name: /New game/ }).click();
   if (scenario) await page.getByRole('button', { name: scenario }).click();
+  if (players) {
+    const stepper = page.locator('.stepper[aria-label="players"]');
+    for (let i = 0; i < 6 && Number(await stepper.locator('.stepper-value').textContent()) !== players; i++) {
+      const now = Number(await stepper.locator('.stepper-value').textContent());
+      await stepper.getByRole('button', { name: now < players ? 'more' : 'less' }).click();
+    }
+    await expect(stepper.locator('.stepper-value')).toHaveText(String(players));
+  }
   await page.locator('.map-row').getByRole('button', { name: layout }).click();
   const thumb = page.locator('.map-thumb svg.board');
   if (reroll) {
@@ -89,18 +97,21 @@ async function checkPreview(page: Page, scenario: RegExp | null, layout: 'Offici
   expect(game.turned).toBe(String(turned));
 }
 
-const CASES: Array<{ name: string; scenario: RegExp | null; layout: 'Official' | 'Random'; reroll: boolean }> = [
+const CASES: Array<{ name: string; scenario: RegExp | null; layout: 'Official' | 'Random'; reroll: boolean; players?: number }> = [
   { name: 'the official base map', scenario: null, layout: 'Official', reroll: false },
   { name: 'an official map, harbors shuffled again with 🎲', scenario: /Heading for New Shores/, layout: 'Official', reroll: true },
   { name: 'a random map, after 🎲', scenario: null, layout: 'Random', reroll: true },
   { name: 'a random Seafarers map, after 🎲', scenario: /Heading for New Shores/, layout: 'Random', reroll: true },
+  // the Seafarers 5-6 maps: New Shores' main island is dealt by the rulebook itself
+  { name: 'an official 5-6 player map, its main island dealt again with 🎲', scenario: /Heading for New Shores/, layout: 'Official', reroll: true, players: 6 },
+  { name: 'a random 5-6 player Seafarers map, after 🎲', scenario: /Fog Islands/, layout: 'Random', reroll: true, players: 5 },
 ];
 
 test.describe('phone held upright', () => {
   test.use({ viewport: { width: 412, height: 839 } });
   for (const c of CASES) {
     test(`map preview, full view and game match: ${c.name}`, async ({ page }) => {
-      await checkPreview(page, c.scenario, c.layout, c.reroll, true);
+      await checkPreview(page, c.scenario, c.layout, c.reroll, true, c.players);
     });
   }
 });
@@ -109,7 +120,7 @@ test.describe('computer screen', () => {
   test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
   for (const c of CASES) {
     test(`map preview, full view and game match: ${c.name}`, async ({ page }) => {
-      await checkPreview(page, c.scenario, c.layout, c.reroll, false);
+      await checkPreview(page, c.scenario, c.layout, c.reroll, false, c.players);
     });
   }
 });

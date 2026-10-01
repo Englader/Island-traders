@@ -17,7 +17,7 @@ changed without touching the state machine.
 | Variable setup: A–R spiral from a random corner, counter-clockwise, skipping the desert | `placeSpiral` | spiral red-number check over all 19 desert spots × 6 corners |
 | Random tokens with no adjacent 6/8 (toggle), plus optional 2/12 and same-number rules | `placeRandomTokens`, options | `board.test.ts` |
 | 5–6 board: 30 hexes, 28 tokens, 11 harbors, 24 of each resource, 34 dev cards | `scenarios/base.ts` | `board.test.ts` |
-| Official maps (default, `layout: 'official'`): the beginners' set-ups and the Seafarers set-up diagrams | `scenarios/base.ts`, `scenarios/seafarers/officialMaps.ts` | `officialMaps.test.ts` |
+| Official maps (default, `layout: 'official'`): the beginners' set-ups and the Seafarers set-up diagrams (3, 4 and, for scenarios 1–4 and 9, 5–6 players) | `scenarios/base.ts`, `scenarios/seafarers/officialMaps.ts` | `officialMaps.test.ts` |
 | Random maps (`layout: 'random'`): the base game's variable set-up, and Seafarers maps generated in the style of the printed ones | `ScenarioDef.map`, `board/generator.ts` | `generator.test.ts`, `generatedGames.test.ts`, `board.test.ts`, simulations |
 
 **Verified caveats from the spec.** The standard graph has exactly 54 land
@@ -194,6 +194,11 @@ changes hands only for strictly more.
   in hand. There is no trading, no card play and no ship moves, and nobody can
   win during it.
 
+Both modes apply in every scenario that takes 5–6 players: the base game,
+Seafarers scenarios 1–4 on the Seafarers 5-6 maps, and New World. With 5–6
+players Seafarers uses the 5–6 bank (24 of each resource) and the 34-card
+development deck, as in the base game.
+
 ## Scenario rules and their sources
 
 Scenarios 1–9 were checked against the official rulebooks on catan.com:
@@ -203,7 +208,14 @@ Scenarios 1–9 were checked against the official rulebooks on catan.com:
   scenario 8
 - the 2025 *CATAN – Seafarers* rulebook, used only where the 5th edition is
   ambiguous (it is marked where this happens)
-- the *Seafarers 5-6* 2023 rules (paired players, New World for 5–6)
+- the *Seafarers 5-6* 2023 rules (catan.com, `Catan Seafarers 5-6 2023 Rules 220313.pdf`,
+  uploaded March 2024): paired players, the 5–6 maps of scenarios 1–4
+  (pages 6–13) and New World (pages 22–23). The June 2023 upload
+  (`CATAN_ Seafarers 5-6 Player Extension_0.pdf`) has the same diagrams; the
+  2020 printing (`catan_seafarers_5-6_2020_rules.pdf`) has the same maps
+  without the robber and pirate figures. The 2025 *CATAN – Seafarers 5–6
+  Player* rulebook has new maps and is not used, except that it says outright
+  that New Shores' main island uses the CATAN 5–6 variable set-up
 - the 5th-edition base rules and Almanac (2020), the 2022 *CATAN 5-6* rules and
   the Seafarers FAQ on catan.com
 
@@ -214,7 +226,9 @@ leave open is marked *engine choice*.
 ### Maps
 
 **Official maps** (the default) are the set-up diagrams of the 5th-edition
-rulebook (pages 9–29), for 3 and for 4 players where the book has two. They
+rulebook (pages 9–29), for 3 and for 4 players where the book has two, and
+for 5–6 players the diagrams of the Seafarers 5-6 rules (scenarios 1–4 and
+New World; see below). They
 were read from the PDF's tile images and number tokens, compared with the
 2007 (4th-edition) rulebook, and checked against each scenario's component
 list. The book draws flat-topped hexes; the engine turns the map a quarter
@@ -249,6 +263,63 @@ turns it back on a phone held upright.
   text put them. The beginners' base maps also show starting settlements;
   those are not pre-placed, the snake draft is played as usual.
 
+**The 5–6 player maps** of scenarios 1–4 (Seafarers 5-6 rules, diagrams on
+pages 7, 9, 11 and 13, component lists on pages 6, 8, 10 and 12) were read
+the same way: tiles, number tokens, harbors and the robber and pirate
+figures from the PDF, each checked against its component list. The book
+draws them upright, seven columns of flat-topped hexes in the larger 5–6
+frame; turned like the others, they show as printed on an upright phone.
+One map serves 5 and 6 players. The rules text refers back to the 3–4
+player scenarios, so the scenario rules and VP targets do not change.
+
+- **Harbors:** "after you build the board, randomly place the harbor
+  tokens" (pages 2–3): every 5–6 harbor is blank, its type drawn from the
+  scenario's list. 11 tokens (6 special with 2 wool, 5 generic) for
+  scenarios 1, 2 and 4; 9 (one of each special, 4 generic) for scenario 3.
+  **Through the Desert lists 11 tokens but its diagram has 10 harbor
+  spots:** the engine places 10, drawn from the 11 (one stays in the box).
+- **1 Heading for New Shores:** the main island is drawn blank and built
+  "according to the rules for CATAN 5-6" (the 2025 rulebook: "using the
+  CATAN 5–6 Variable Setup rules"): its 30 hexes and 28 numbers are dealt
+  at random in the official map too. *Engine choice:* the numbers are dealt
+  as in the base game's 5–6 random set-up (at random, with the game's number
+  rules: by default no 6 next to an 8) rather than by the alphabetical
+  spiral. Six small islands (two of three hexes, four single hexes, 3
+  gold), fixed. The robber starts on the hills 12, as drawn.
+- **2 The Six Islands** (the 5–6 name of The Four Islands): six islands of
+  5–6 hexes, no desert or gold. The 3–4 text puts the robber on "the hex
+  with a 12"; this map has two 12s and the diagram stands the robber on the
+  pasture 2, which the engine follows (a 2 is as unproductive as a 12).
+- **3 The Fog Island:** 25 unexplored hexes with two face-up gold islets
+  among them; the face-down stack holds 12 sea, 1 gold, 2 fields, 2 hills,
+  2 mountains, 3 pasture and 3 forest with 13 numbers (2 2 3 4 5 5 6 8 9 9
+  10 11 12). Unlike the 3–4 maps, the face-up island has a desert; the
+  diagram puts the robber there.
+- **4 Through the Desert:** five deserts in a line cut off two strips, a
+  sea hex apart (fields 5, pasture 2, gold 4, mountains 6, hills 11; forest
+  12, fields 5, mountains 3, hills 6). *Engine choice:* each strip is a
+  foreign area of its own (2 VP each), as each is a separate land area
+  outlined on its own on the diagram. The robber starts on the middle
+  desert.
+
+seafarers-generator.com was used as a cross-check: its "recommended"
+layouts (the rulebook's example set-up, its site says), rendered several
+times from its own page in a browser. It links the June 2023 rules. Where it
+differs, the rulebook is followed:
+
+| Map | seafarers-generator.com | Rulebook (followed) |
+|---|---|---|
+| New Shores 5–6 | the southern islets dealt at random (4–6 hexes over six spots, the robber anywhere); 3–4 deserts on its main island | four single-hex islets, fixed (gold 10, fields 3, hills 12 with the robber, mountains 6); the main island's 30 hexes of CATAN 5-6 with its 2 deserts |
+| The Six Islands | the two southern islands dealt at random (the robber not on the pasture 2); on the eastern and western middle islands the hills 10 and forest 10 dealt at random and a 10 drawn on the sea hex between them | all 32 hexes fixed; the robber on the pasture 2 |
+| The Fog Island | hills 2 where the book has fields 2; numbers 20 and 13 where it has 10 and 12; the harbor of the fields 6 on its south-east side, not north-east | as printed |
+| Through the Desert 5–6 | the recommended layout does not load (a script error); the random one moves the islets between spots and has an 11th harbor, on the north-east side of the pasture 12 at the top | everything fixed; 10 harbor spots as drawn |
+| all four | some harbor types fixed | all harbors blank, types drawn (pages 2–3) |
+
+Everything else agrees: the frame, New Shores' northern islands and harbor
+spots, the four northern islands of The Six Islands, the rest of the Fog
+Island (fog hexes, gold islets, its other harbors), and the 10 harbor spots and the
+desert line of Through the Desert.
+
 **Random maps** (`layout: 'random'`) are the base game's variable set-up and,
 for Seafarers, new maps generated in the style of the rulebook's
 (`board/generator.ts`; the README describes the steps). The printed map is the
@@ -260,8 +331,16 @@ red-number rule and a balance check; every map is checked before use (the
 starting placement fits, islands a sea hex apart, the scenario's spots where
 its rules look for them). *Engine choices* per scenario:
 
-- **Through the Desert:** the three deserts stay a straight line that cuts
-  the strip off from the home area; the strip keeps its printed tiles.
+- **Through the Desert:** the deserts (three, or five with 5–6 players) stay
+  a straight line that cuts the strip off from the home area (with 5–6
+  players, both strips, each touching the line and neither the other); each
+  strip keeps its printed tiles.
+- **Heading for New Shores, 5–6 players:** the 30-hex main island, the sea
+  around it and the small islands fill the 5–6 frame, so new maps keep the
+  printed shapes (mirrored) and deal the tiles, numbers and harbors anew.
+- **The Fog Island, 5–6 players:** the two gold islets may touch the
+  unexplored hexes, as printed (on nine maps in ten they lie among them);
+  every other island keeps a sea hex from the fog.
 - **The Forgotten Tribe:** the 18 gift spots are spread over the new tribe
   islets' coasts and the gifts dealt onto them.
 - **Cloth Trade:** each isle keeps two villages on the corners facing the big
@@ -280,10 +359,10 @@ its rules look for them). *Engine choices* per scenario:
 
 | Scenario | VP | Rules implemented |
 |---|---|---|
-| 1 Heading for New Shores | 14 | Start on the main island. +2 VP for your first settlement on each small island. 8 harbors with 3 players, 9 with 4. The 3-player text says the *pirate* starts on the hills 12; this is read as the robber, which the 3-player map draws there (the 4-player map puts it on the desert) |
-| 2 The Four Islands | 13 | Start on one or two islands; +2 VP for your first settlement on each other island. **No desert and no gold; the robber starts on a 12.** 9 harbors |
-| 3 The Fog Islands | 12 | A **road or ship** reaching an intersection of a fog hex reveals it (settlements do not). New land gets a number from the hidden stack and pays the discoverer 1 card of its type (gold: *engine choice*, a free pick). **No desert on the face-up island; the robber starts on its 12.** 8/9 harbors |
-| 4 Through the Desert | 14 | Three deserts cut off a strip. +2 VP for your first settlement in each foreign area (the strip or an islet). Robber on a desert. 8/9 harbors |
+| 1 Heading for New Shores | 14 | Start on the main island. +2 VP for your first settlement on each small island. 8 harbors with 3 players, 9 with 4, 11 with 5–6. The 3-player text says the *pirate* starts on the hills 12; this is read as the robber, which the 3-player map draws there (the 4-player map puts it on the desert, the 5–6 map on a small island's hills 12). 3–6 players |
+| 2 The Four Islands | 13 | Start on one or two islands; +2 VP for your first settlement on each other island. **No desert and no gold; the robber starts on a 12** (5–6 players: The Six Islands, the robber on the pasture 2 as drawn). 9 harbors, 11 with 5–6. 3–6 players |
+| 3 The Fog Islands | 12 | A **road or ship** reaching an intersection of a fog hex reveals it (settlements do not). New land gets a number from the hidden stack and pays the discoverer 1 card of its type (gold: *engine choice*, a free pick). **No desert on the face-up island; the robber starts on its 12** (5–6 players: The Fog Island, 25 unexplored hexes, a desert with the robber). 8/9/9 harbors. 3–6 players |
+| 4 Through the Desert | 14 | Three deserts cut off a strip (5–6 players: five deserts, two strips). +2 VP for your first settlement in each foreign area (a strip or an islet). Robber on a desert. 8/9/10 harbors. 3–6 players |
 | 5 The Forgotten Tribe | 13 | 18 gift spots: 8 VP chits (1 VP each), 4 development cards taken from the top of the deck (face down), 6 harbors (face up). **The 6 harbors are the scenario's only harbors: one 2:1 per resource and one 3:1.** A ship built **or moved** onto a spot takes the gift. A card works like one bought this turn. A harbor must be placed at once next to your coastal settlement if possible, never on or next to another harbor; otherwise it is set aside and placed later on your turn. The tribe islands can't be settled. **The robber may only move to hexes with a number**, so never to the tribe islands or back to the desert |
 | 6 Cloth Trade | 14 | See below |
 | 7 The Pirate Islands | 10 + fortress | See below |
