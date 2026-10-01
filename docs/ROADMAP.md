@@ -32,6 +32,13 @@ is now a new map generated in the style of its printed one (the same frame,
 the same kind of islands in new shapes, tiles, numbers and harbors dealt
 anew), instead of a fixed original layout with shuffled tiles.
 
+5–6 player maps (later again): Heading for New Shores, The Four Islands (The
+Six Islands), The Fog Islands (The Fog Island) and Through the Desert take
+3–6 players, on the maps of the Seafarers 5-6 rules (2023), with paired
+players, the 5–6 bank and deck, and generated maps in their style.
+seafarers-generator.com served as a cross-check; [`rules.md`](rules.md)
+lists where it differs from the rulebook.
+
 ## 2. Browser game on one device (done)
 
 `web/` is a Vite + Preact app with an SVG board drawn from
@@ -107,7 +114,8 @@ The site is `https://englader.github.io/Island-traders/`.
 
 ## 5. Next steps
 
-- 5–6 player maps for the Seafarers scenarios (only the base game and New
-  World support 5–6 players today).
+- 5–6 player maps for Seafarers scenarios 5–8 (The Forgotten Tribe, Cloth
+  for Catan, The Pirate Islands, The Wonders of Catan): the base game, New
+  World and scenarios 1–4 take 5–6 players today.
 - Let bots make domestic trade offers (they only answer them now).
 - Online option B (a server that keeps games alive without the host).

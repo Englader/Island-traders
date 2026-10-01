@@ -1,4 +1,4 @@
-import { DEFAULT_OPTIONS, createGame, getScenario, hasOfficialMap, viewFor, type GameOptions, type GameView } from 'engine';
+import { DEFAULT_OPTIONS, createGame, getScenario, hasOfficialMap, parseRows, viewFor, type GameOptions, type GameView } from 'engine';
 import { useMemo, useState } from 'preact/hooks';
 import { Board, NO_TARGETS, useTurned } from '../board/Board';
 import { PLAYER_COLORS } from '../game/seats';
@@ -26,6 +26,13 @@ function variation(a: GameView, b: GameView): 'map' | 'harbors' | 'nothing' {
 }
 
 const noPick = () => {};
+
+/** Whether the rulebook deals only part of its map at random (New Shores' main island with 5-6 players). */
+function dealtInPart(scenario: string, players: number, options: GameOptions): boolean {
+  const spec = getScenario(scenario).officialMap?.(players, options);
+  const cells = spec ? (spec.cells ?? parseRows(spec.rows ?? [])) : [];
+  return cells.some((c) => c.terrain === 'random') && cells.some((c) => c.terrain !== 'random' && c.terrain !== 'sea');
+}
 
 /** The random layout: the base game's variable set-up, or a new map in the scenario's style. */
 function generatedNote(scenario: string, name: string): string {
@@ -65,10 +72,12 @@ export function MapPreview({
   // One orientation for the picture and its full view: the one the game uses on this screen.
   const turned = useTurned(view?.board.layoutKey ?? null);
   if (!view) return null;
-  const printed = options.layout !== 'random' && hasOfficialMap(getScenario(scenario), players, { ...DEFAULT_OPTIONS, ...options });
+  const full = { ...DEFAULT_OPTIONS, ...options };
+  const printed = options.layout !== 'random' && hasOfficialMap(getScenario(scenario), players, full);
   const hidden = Object.values(view.board.hexes).some((h) => h.terrain === 'fog');
   let note: string;
   if (!printed) note = varies === 'nothing' ? 'This map is the same in every game.' : generatedNote(scenario, name);
+  else if (varies === 'map' && dealtInPart(scenario, players, full)) note = 'Official map from the rulebook, which deals part of it at random — tap 🎲 for another.';
   else if (varies === 'map') note = 'The rulebook deals this map at random — tap 🎲 for another.';
   else if (varies === 'harbors') note = 'Official map from the rulebook. Its harbors are shuffled — tap 🎲 for another.';
   else note = 'Official map from the rulebook.';

@@ -18,3 +18,23 @@ describe('games on generated maps', () => {
     });
   }
 });
+
+/*
+ * The Seafarers 5-6 maps of scenarios 1-4: bots finish 5- and 6-player games
+ * (paired players) on the rulebook's map and on maps generated in its style.
+ */
+describe('5-6 players on the Seafarers 5-6 maps', () => {
+  const ids = ['seafarers-1-new-shores', 'seafarers-2-four-islands', 'seafarers-3-fog-islands', 'seafarers-4-through-the-desert'];
+  for (const id of ids) {
+    for (const n of [5, 6]) {
+      it(`${id}: bots finish a ${n}-player game on the official map and on two generated maps`, () => {
+        for (const [layout, seed] of [['official', `five-six-${n}`], ['random', `five-six-${n}-a`], ['random', `five-six-${n}-b`]] as const) {
+          const start = createGame({ scenario: id, players: n, seed, options: { layout } });
+          const { state } = simulateHeuristic(start, 8000, Array.from({ length: n }, (_, i) => BOT_LEVELS[i % 3]));
+          expect(state.phase.kind, `${id} ${n} ${layout}`).toBe('gameOver');
+          if (state.phase.kind === 'gameOver') expect(state.phase.winner, `${id} ${n} ${layout}`).not.toBeNull();
+        }
+      });
+    }
+  }
+});

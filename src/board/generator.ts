@@ -3,6 +3,7 @@ import { nextFloat, nextInt, seedRng, shuffle } from '../core/rng.js';
 import type { HarborType, HexId, RngState, Terrain } from '../core/types.js';
 import { DIR_NAMES, axialToOffset, cornerVertex, edgeKey, edgeMidpoint, hexId, neighbor, offsetToAxial, parseHexId, sideEdge } from './hex.js';
 import {
+  generateMap,
   isLandTerrain,
   isProducing,
   parseRows,
@@ -67,8 +68,12 @@ export interface MapStyle {
    * them; deserts and unnumbered tiles stay put.
    */
   fixedZones?: readonly string[];
-  /** The deserts of `zone` form a line that cuts the `beyond` zone off from the rest of `zone` (Through the Desert). */
-  barrier?: { zone: string; beyond: string };
+  /**
+   * The deserts of `zone` form a straight line that cuts the `beyond` zones
+   * (strips, each a body of land touching the line) off from the rest of
+   * `zone` (Through the Desert).
+   */
+  barrier?: { zone: string; beyond: readonly string[] };
   /** Places the scenario's spots on a new map (null: they do not fit, draw another map). */
   marks?: (map: DraftMap, rng: RngState) => Record<string, MapMark[]> | null;
   /** New World: no printed islands to follow, an archipelago of this many islands anywhere in the frame. */
@@ -93,6 +98,8 @@ interface Body {
   /** Printed hexes. */
   cells: HexId[];
   fixed: boolean;
+  /** An islet printed inside the fog area (it may touch the fog). */
+  inFog?: boolean;
   /** Smallest and largest size when the islands of an area trade hexes. */
   min: number;
   max: number;
@@ -181,10 +188,17 @@ function deriveTemplate(official: MapSpec, style: MapStyle): Template {
 
   if (style.archipelago) return archipelagoTemplate(official, frame, interior, seats, transforms);
 
+  // Hexes the rulebook itself deals at random (New Shores' main island with
+  // 5-6 players) are dealt once, from a fixed seed: the template only needs
+  // which tiles and numbers their area holds.
+  const dealt = cells.some((c) => c.terrain === 'random')
+    ? generateMap({ ...official, procedural: undefined }, seedRng('template'), TEMPLATE_RULES, false).hexes
+    : null;
   const printed: Record<HexId, Printed> = {};
   for (const c of cells) {
-    if (c.terrain === 'random') throw new Error('a styled map needs a printed map');
-    printed[hexId(c.q, c.r)] = { terrain: c.terrain, token: typeof c.token === 'number' ? c.token : null, zone: c.zone };
+    const id = hexId(c.q, c.r);
+    if (c.terrain === 'random') printed[id] = { terrain: dealt![id].terrain, token: dealt![id].token, zone: c.zone };
+    else printed[id] = { terrain: c.terrain, token: typeof c.token === 'number' ? c.token : null, zone: c.zone };
   }
   const fixedZones = new Set(style.fixedZones ?? []);
   const kindOf = (p: Printed): BodyKind | null => {
@@ -217,7 +231,8 @@ function deriveTemplate(official: MapSpec, style: MapStyle): Template {
     comp.sort();
     const fixed = kind !== 'fog' && zone !== null && fixedZones.has(zone);
     const region = kind === 'fog' ? 'fog' : kind === 'barrier' ? 'barrier' : fixed ? `fixed:${zone}` : (zone ?? 'isles');
-    bodies.push({ kind, zone: kind === 'fog' ? null : zone, region, cells: comp, fixed, min: comp.length, max: comp.length, compact: compactness(comp) });
+    const inFog = kind === 'land' && comp.some((x) => neighbours(x).some((n) => printed[n]?.terrain === 'fog'));
+    bodies.push({ kind, zone: kind === 'fog' ? null : zone, region, cells: comp, fixed, inFog, min: comp.length, max: comp.length, compact: compactness(comp) });
   }
   // Islands of an area with two or more may trade a hex.
   for (const b of bodies) {
@@ -251,7 +266,8 @@ function deriveTemplate(official: MapSpec, style: MapStyle): Template {
     const types = spots.every((s) => s.type) ? spots.map((s) => s.type!) : [...official.harbors.pool];
     const regionOf = new Map(bodies.flatMap((b) => b.cells.map((c) => [c, b.region] as const)));
     const regions = [...new Set(spots.map((s) => regionOf.get(s.land)!))].sort();
-    harbors = { printed: spots, types: types.slice(0, spots.length), regions };
+    // (a pool larger than the spots leaves some tokens in the box)
+    harbors = { printed: spots, types, regions };
   }
   let robber = official.robber;
   if (robber !== 'desert' && robber !== 'offboard' && !robber.startsWith('token:')) {
@@ -261,6 +277,9 @@ function deriveTemplate(official: MapSpec, style: MapStyle): Template {
   const pirate = official.pirate === null || official.pirate === 'offboard' ? official.pirate : offsetHex(official.pirate);
   return { frame, interior, printed, bodies, pools, harbors, robber, pirate, marks: official.marks, fog: official.fog, transforms, grid: gridOf(frame, interior), guides: new Map(), seats };
 }
+
+/** Number rules for dealing a template's random hexes once (only their tiles and numbers matter). */
+const TEMPLATE_RULES: TokenRules = { noAdjacentRed: true, noAdjacent2and12: false, noAdjacentSameNumber: false };
 
 /** Deserts and unnumbered producing tiles of a fixed zone stay where they are printed. */
 function keptInPlace(p: Printed): boolean {
@@ -490,7 +509,7 @@ function attempt(t: Template, style: MapStyle, rng: RngState, rules: TokenRules,
   // 5. harbors, never on a scenario spot
   let spots: HarborSpot[] | null = null;
   if (t.harbors) {
-    const types = shuffle(rng, [...t.harbors.types]);
+    const types = shuffle(rng, [...t.harbors.types]).slice(0, t.harbors.printed.length);
     if (fallback) {
       spots = t.harbors.printed.map((s, i) => ({ sea: s.sea, land: s.land, type: s.type ?? types[i] }));
     } else {
@@ -530,6 +549,19 @@ function attempt(t: Template, style: MapStyle, rng: RngState, rules: TokenRules,
   if (marks) spec.marks = marks;
   if (t.fog) spec.fog = t.fog;
   return spec;
+}
+
+/**
+ * Islands of a new map keep a sea hex apart, except the desert line and the
+ * land it joins, and the fog area and the islets printed inside it.
+ */
+function mayTouch(a: Body, b: Body, style: MapStyle): boolean {
+  if (a.kind === 'barrier' || b.kind === 'barrier') {
+    const [x, y] = a.kind === 'barrier' ? [a, b] : [b, a];
+    const zone = y.zone ?? '';
+    return x.kind === 'barrier' && y.kind === 'land' && (zone === style.barrier?.zone || !!style.barrier?.beyond.includes(zone));
+  }
+  return (a.kind === 'fog' && !!b.inFog) || (b.kind === 'fog' && !!a.inFog);
 }
 
 function neighbours(id: HexId): HexId[] {
@@ -607,14 +639,11 @@ function grow(
   const n = ids.length;
   const nb = bodies.length;
   const owner = new Int32Array(n).fill(-1);
-  // which islands may touch: only the desert line and the land on both sides of it
+  // which islands may touch: the desert line and the land on both sides of
+  // it, and the fog area and the islets printed inside it
   const touch = new Uint8Array(nb * nb);
   for (let a = 0; a < nb; a++) {
-    for (let b = 0; b < nb; b++) {
-      const [x, y] = bodies[a].kind === 'barrier' ? [bodies[a], bodies[b]] : [bodies[b], bodies[a]];
-      const beside = y.zone === style.barrier?.zone || y.zone === style.barrier?.beyond;
-      touch[a * nb + b] = x.kind === 'barrier' && y.kind === 'land' && beside ? 1 : 0;
-    }
+    for (let b = 0; b < nb; b++) touch[a * nb + b] = mayTouch(bodies[a], bodies[b], style) ? 1 : 0;
   }
   const open = (i: number, b: number): boolean => {
     if (!interior[i] || owner[i] >= 0) return false;
@@ -701,33 +730,41 @@ function grow(
 
   const free = bodies.map((_, i) => i).filter((i) => !bodies[i].fixed);
   const placed = new Set<number>();
-  // the desert line, then the strip beyond it and the land before it
+  // the desert line, then the strips beyond it and the land before it
   const barrier = free.find((i) => bodies[i].kind === 'barrier');
   if (barrier !== undefined) {
-    const strip = free.find((i) => bodies[i].kind === 'land' && bodies[i].zone === style.barrier!.beyond);
+    const strips = free.filter((i) => bodies[i].kind === 'land' && style.barrier!.beyond.includes(bodies[i].zone ?? ''));
     const home = free.find((i) => bodies[i].kind === 'land' && bodies[i].zone === style.barrier!.zone);
-    if (strip === undefined || home === undefined) throw new Error('a barrier needs land on both sides');
+    if (strips.length === 0 || home === undefined) throw new Error('a barrier needs land on both sides');
+    // a straight line as long as the printed one (centred on hex a)
+    const length = bodies[barrier].cells.length;
+    const from = -Math.floor((length - 1) / 2);
     const lines: number[][] = [];
     for (const i of all) {
       if (aff(barrier, i) > 1) continue;
       const a = parseHexId(ids[i]);
       for (let d = 0; d < 3; d++) {
-        const line = [neighbor(a, d + 3), a, neighbor(a, d)].map((x) => index.get(hexId(x.q, x.r)) ?? -1);
+        const step = neighbor({ q: 0, r: 0 }, d);
+        const line = Array.from({ length }, (_, k) => index.get(hexId(a.q + (from + k) * step.q, a.r + (from + k) * step.r)) ?? -1);
         if (line.every((c) => c >= 0 && aff(barrier, c) <= 1 && open(c, barrier))) lines.push(line);
       }
     }
     if (lines.length === 0) return null;
     const line = lines[nextInt(rng, lines.length)];
     for (const c of line) owner[c] = barrier;
-    // the strip starts next to the line, on the side where it is printed
+    // each strip starts next to the line, on the side where it is printed
     const shore = [...new Set(line.flatMap((c) => nbrs[c]))].sort((a, b) => a - b);
-    const cands = shore.filter((c) => open(c, strip));
-    const best = Math.min(...cands.map((c) => aff(strip, c)));
-    if (!place(strip, cands.filter((c) => aff(strip, c) <= best + 1))) return null;
+    for (const strip of strips) {
+      const cands = shore.filter((c) => open(c, strip));
+      if (cands.length === 0) return null;
+      const best = Math.min(...cands.map((c) => aff(strip, c)));
+      if (!place(strip, cands.filter((c) => aff(strip, c) <= best + 1))) return null;
+      placed.add(strip);
+    }
     // the rest of the area grows from its heart and must reach the line
     if (!place(home, all)) return null;
     if (!shore.some((c) => owner[c] === home)) return null;
-    placed.add(barrier).add(strip).add(home);
+    placed.add(barrier).add(home);
   }
   // Largest first. When a smaller island finds no room, the smaller ones are
   // taken back and placed again (the frames are tight), keeping the largest.
@@ -1098,6 +1135,7 @@ function valid(
       for (const n of neighbours(c)) {
         const o = hexes[n]?.body ?? -1;
         if (o < 0 || o === b) continue;
+        if (mayTouch(bodies[b], bodies[o], style)) continue;
         const pair = [bodies[b].kind, bodies[o].kind];
         if (!pair.includes('barrier')) {
           // printed fixed islands may touch as printed
@@ -1108,9 +1146,9 @@ function valid(
     }
   }
   if (style.barrier) {
-    // the strip meets the rest of its zone only across the deserts
+    // a strip meets the rest of its zone only across the deserts
     for (const [id, h] of Object.entries(hexes)) {
-      if (h.zone !== style.barrier.beyond) continue;
+      if (!style.barrier.beyond.includes(h.zone ?? '')) continue;
       for (const n of neighbours(id)) if (hexes[n]?.zone === style.barrier.zone && hexes[n].terrain !== 'desert') return false;
     }
   }
