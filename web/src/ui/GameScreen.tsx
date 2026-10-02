@@ -376,7 +376,10 @@ function choiceLabel(a: Action, view: GameView): string {
     case 'moveRobber':
       if (view.phase.kind === 'robber' && view.phase.reason === 'bishop') return 'Move here';
       if (a.victim === undefined) return 'Nobody to rob';
-      return a.take === 'cloth' ? `Take cloth from ${name(a.victim)}` : `Rob ${name(a.victim)} (${view.players[a.victim].resourceCount})`;
+      // (Cities & Knights: the village cloth of Cloth for Catan is not the commodity)
+      return a.take === 'cloth'
+        ? `Take ${view.ck ? 'village cloth' : 'cloth'} from ${name(a.victim)}`
+        : `Rob ${name(a.victim)} (${view.players[a.victim].resourceCount})`;
     case 'moveKnight':
       return 'Move here';
     case 'displaceKnight':
@@ -477,6 +480,7 @@ export function statusText(view: GameView, seat: PlayerId | null, legal: Action[
     case 'gold':
       return seat !== null && ph.pending[seat] !== undefined ? 'Choose your free resources' : 'Players are choosing resources';
     case 'robber':
+      if (ph.reason === 'chase' && ph.piece === 'pirate') return mine ? 'Chase the pirate to another sea hex' : `${name(view.turn.actor)} chases the pirate`;
       if (ph.reason === 'chase') return mine ? 'Chase the robber to a numbered hex' : `${name(view.turn.actor)} chases the robber`;
       if (ph.reason === 'bishop') return mine ? 'Bishop: move the robber; everyone next to it pays a card' : `${name(view.turn.actor)} moves the robber (Bishop)`;
       return mine ? 'Move the robber' + (legal.some((a) => a.type === 'moveRobber' && a.piece === 'pirate') ? ' or the pirate' : '') : `${name(view.turn.actor)} moves the robber`;
@@ -1250,7 +1254,7 @@ export function GameScreen(props: GameScreenProps) {
           </div>
           <div class="sub">
             <span class="sub-main">
-              {ck ? 'Cities & Knights' : sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP
+              {ck ? (sc.expansion === 'base' ? 'Cities & Knights' : `${sc.name} + C&K`) : sc.name} · Turn {view.turn.number} · {view.victoryTarget} VP
             </span>
             {live && (
               <span class="hud-clock" title={gameOver ? 'Game time' : 'Game time so far (active play)'}>
@@ -1850,7 +1854,7 @@ function ScoresSheet({
               {!view.ck && <span>🃏 {p.devCardCount} development</span>}
               {sc.rules.largestArmy && !view.ck && <span>⚔️ {p.playedKnights} knights</span>}
               {sc.rules.longestRoute && <span>🛣️ route {view.longestRoute.lengths[p.id] ?? 0}</span>}
-              {cloth && <span>🧵 {cloth[p.id]} cloth</span>}
+              {cloth && <span>🧵 {cloth[p.id]} {view.ck ? 'village cloth' : 'cloth'}</span>}
               {levels && <span>🏛️ wonder level {levels[p.id]}</span>}
               {forts && <span>{forts[p.id].captured ? '🏰 fortress conquered' : `🏴 fortress ${forts[p.id].chits}/3`}</span>}
               {view.longestRoute.holder === p.id && <span class="badge">{sc.rules.ships ? 'Longest Trade Route' : 'Longest Road'}</span>}

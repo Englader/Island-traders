@@ -1,4 +1,4 @@
-import { CK_COSTS, CK_VICTORY_POINTS, COSTS, listScenarios, type GameOptions, type MapLayout, type ScenarioDef } from 'engine';
+import { CK_COSTS, COSTS, ckScenarioError, ckVictoryPoints, listScenarios, type GameOptions, type MapLayout, type ScenarioDef } from 'engine';
 import { Fragment } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, LEVEL_HINT, LEVEL_LABEL, PLAYER_COLORS, type BotLevel, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
@@ -170,13 +170,20 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
   const [speed, setSpeed] = useState<BotSpeed>('normal');
   const [level, setLevel] = useState<BotLevel>(() => loadJson<BotLevel>('botLevel') ?? 'medium');
   const [showOptions, setShowOptions] = useState(false);
-  // Cities & Knights: on the base game, 3-6 players (5-6 with the C&K 5-6 extension)
+  // Cities & Knights: on the base game, 3-6 players (5-6 with the C&K 5-6 extension), and on the Seafarers
+  // scenarios the rulebook combines it with (the others say why not)
   const [ckOn, setCkOn] = useState(() => loadJson<boolean>('citiesAndKnights') === true);
-  const ck = ckOn && scenarioId === 'base';
+  const ckBlocked = ckScenarioError(sc);
+  const ck = ckOn && !ckBlocked;
 
   const n = Math.min(Math.max(count, sc.minPlayers), sc.maxPlayers);
   const activeSeats = defaultSeats(n, online, seats).slice(0, n);
-  const target = vp ?? (ck ? CK_VICTORY_POINTS : sc.victoryPoints(n));
+  const target = vp ?? (ck ? ckVictoryPoints(sc, n) : sc.victoryPoints(n));
+  // the toggle's line: 13 VP on the base game, the scenario's target + 2 with Seafarers
+  const ckLine =
+    sc.expansion === 'base'
+      ? `Knights, barbarians, city improvements · ${ckVictoryPoints(sc, n)} VP`
+      : `Knights, barbarians, city improvements · ${ckVictoryPoints(sc, n)} VP (the scenario’s ${sc.victoryPoints(n)} + 2)`;
   // The preview is built with exactly these options and seed, so it shows the board the game will use.
   const options: Partial<GameOptions> = {
     ...(vp !== null ? { victoryPoints: vp } : {}),
@@ -239,14 +246,25 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
               </button>
               {s.id === scenarioId && (
                 <div class="map-block">
-                  {s.id === 'base' && (
+                  {ckBlocked ? (
+                    <div class="ck-toggle blocked" role="note">
+                      <span class="ck-toggle-art" aria-hidden="true">
+                        <KnightGlyph level={2} active={false} fill="#9a9a9a" stroke="#5a5a5a" />
+                      </span>
+                      <span class="ck-toggle-text">
+                        <b>Cities &amp; Knights</b>
+                        <span class="ck-why">{ckBlocked}</span>
+                      </span>
+                      <input type="checkbox" role="switch" class="switch" checked={false} disabled aria-label="Play with Cities & Knights" />
+                    </div>
+                  ) : (
                     <label class={ck ? 'ck-toggle on' : 'ck-toggle'}>
                       <span class="ck-toggle-art" aria-hidden="true">
                         <KnightGlyph level={2} active fill="#d8433b" stroke="#7c1d18" />
                       </span>
                       <span class="ck-toggle-text">
                         <b>Cities &amp; Knights</b>
-                        <span>Knights, barbarians, city improvements · 13 VP</span>
+                        <span>{ckLine}</span>
                       </span>
                       <input
                         type="checkbox"
@@ -413,7 +431,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
             if (activeSeats[0]?.kind === 'human' && activeSeats[0].name.trim()) saveJson('playerName', activeSeats[0].name.trim());
             saveJson('botLevel', level);
             saveJson('mapLayout', layout);
-            if (scenarioId === 'base') saveJson('citiesAndKnights', ckOn);
+            if (!ckBlocked) saveJson('citiesAndKnights', ckOn);
             onStart({
               scenario: scenarioId,
               seats: activeSeats.map((s, i) => ({ ...s, name: s.name.trim() || `Player ${i + 1}` })),
@@ -532,6 +550,13 @@ export function RulesSheet({ close }: { close(): void }) {
           </li>
           <li>
             <b>City walls</b> <Cost cost={CK_COSTS.cityWall} /> raise your hand limit on a 7 by 2 each.
+          </li>
+          <li>
+            <b>With Seafarers</b> (Heading for New Shores, Through the Desert, Cloth for Catan, The Wonders): the scenario’s target + 2 VP. What
+            applies to roads applies to ships: knights stand on land by your roads or ships, move along both, may end a move at sea on your
+            ship, and a ship route to a knight is closed. The robber and the pirate wait by the barbarian track until the first attack; a
+            knight next to the pirate can chase it. Gold gives resources only, and the merchant never stands on it. The other scenarios
+            don’t combine (their small islands or hidden hexes make the barbarians too hard).
           </li>
           <li>
             <b>5–6 players</b> add commodities (18 of each) and Defender of Catan cards (8). After each turn the player three seats on takes a paired

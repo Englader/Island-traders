@@ -99,12 +99,13 @@ describe('Cities & Knights for 5-6 players: components and board', () => {
     expect(JSON.stringify(a.board.hexes)).not.toBe(JSON.stringify(b.board.hexes));
   });
 
-  it('the set-up is as with 3-4 players: a settlement, then a city; Seafarers is still refused', () => {
+  it('the set-up is as with 3-4 players: a settlement, then a city; Seafarers scenarios only where the rulebook combines them', () => {
     const s = createGame({ scenario: 'base', players: 5, seed: 'ck56-setup', options: CK });
     expect(s.phase).toMatchObject({ kind: 'setup', round: 0 });
     expect(setupPlacesCity(s, 0)).toBe(false);
     expect(setupPlacesCity(s, 1)).toBe(true);
-    expect(() => createGame({ scenario: 'seafarers-2-four-islands', players: 6, seed: 1, options: CK })).toThrow(/base game/);
+    expect(() => createGame({ scenario: 'seafarers-2-four-islands', players: 6, seed: 1, options: CK })).toThrow(/The rulebook doesn't combine/);
+    expect(createGame({ scenario: 'seafarers-1-new-shores', players: 6, seed: 1, options: CK }).ck).toBeDefined();
   });
 });
 

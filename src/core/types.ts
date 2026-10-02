@@ -461,6 +461,13 @@ export interface CkState {
   turnEffects: Array<{ player: PlayerId; effect: string; data?: unknown }>;
   /** Progress cards played so far, oldest first (public; games saved before part 2 lack it). */
   played?: Array<{ player: PlayerId; card: ProgressCardName; turn: number }>;
+  /**
+   * Seafarers scenarios: the robber and the pirate wait beside the barbarian
+   * track until the first attack, then go to the scenario's starting hexes
+   * held here (2025 rulebook p. 12; section 16 of the spec). Absent once they
+   * are on the board, and in games on the base map.
+   */
+  asleep?: { robber: HexId | null; pirate: HexId | null };
   players: CkPlayerState[];
 }
 

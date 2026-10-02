@@ -83,10 +83,23 @@ function RobberGlyph() {
   );
 }
 
+/** The pirate ship, chased by a knight (Seafarers with Cities & Knights). */
+function PirateGlyph() {
+  return (
+    <svg viewBox="0 0 40 40" aria-hidden="true">
+      <ellipse cx="20" cy="35" rx="13" ry="3" fill="rgba(0,0,0,0.22)" />
+      <path d="M6 25 H34 L29 33 H11 Z" fill="#23211f" stroke="#111" stroke-width="1.2" stroke-linejoin="round" />
+      <path d="M20 25 V6" stroke="#23211f" stroke-width="1.8" />
+      <path d="M20.8 7 Q31 13 30 23 H20.8 Z M19.2 9 Q11.5 14.5 12 23 H19.2 Z" fill="#2e2b28" stroke="#111" stroke-width="1" stroke-linejoin="round" />
+    </svg>
+  );
+}
+
 function Art({ art, color }: { art: AskArt; color: PlayerColor }) {
   if (art === 'dev' || art === 'progress') return <DevCardView type={null} back look="mini" />;
   if (art === 'wonder') return <WonderGlyph />;
   if (art === 'robber') return <RobberGlyph />;
+  if (art === 'pirate') return <PirateGlyph />;
   if (art === 'wall') return <WallGlyph fill={color.fill} stroke={color.stroke} />;
   if (art.startsWith('knight-')) {
     const [, level, on] = art.split('-');

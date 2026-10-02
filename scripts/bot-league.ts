@@ -2,9 +2,11 @@
 //   npx vite-node scripts/bot-league.ts [games-per-scenario] [scenario,...] [official|random] [players] [paired|specialBuild]
 // Every table has one easy, one medium and one hard player (with 4-6 players
 // the levels repeat round the table); seats rotate so nobody always goes first.
-// The scenario "ck" is the base game with Cities & Knights; its line also shows
-// how long the games ran and how long a computer move took. With 5-6 players
-// the last argument picks paired players (the default) or the special build phase.
+// The scenario "ck" is the base game with Cities & Knights, "ck:<scenario>" a
+// Seafarers scenario with it (e.g. ck:seafarers-1-new-shores); their lines also
+// show how long the games ran and how long a computer move took. With 5-6
+// players the last argument picks paired players (the default) or the special
+// build phase.
 import { BOT_LEVELS, createGame, simulateHeuristic, totalVP, type BotLevel, type FiveSixMode, type MapLayout } from '../src/index.js';
 
 const games = Number(process.argv[2] ?? 30);
@@ -22,7 +24,8 @@ const orders: BotLevel[][] = [
 ];
 
 for (const scenario of scenarios) {
-  const ck = scenario === 'ck';
+  const ck = scenario === 'ck' || scenario.startsWith('ck:');
+  const id = scenario.startsWith('ck:') ? scenario.slice(3) : ck ? 'base' : scenario;
   const wins: Record<BotLevel, number> = { easy: 0, medium: 0, hard: 0 };
   const vp: Record<BotLevel, number> = { easy: 0, medium: 0, hard: 0 };
   const seats: Record<BotLevel, number> = { easy: 0, medium: 0, hard: 0 };
@@ -35,7 +38,7 @@ for (const scenario of scenarios) {
     const levels = Array.from({ length: players }, (_, i) => orders[g % orders.length][i % 3]);
     const seed = players === 3 ? `league-${scenario}-${g}` : `league-${scenario}-${players}p-${g}`;
     const start = createGame({
-      scenario: ck ? 'base' : scenario,
+      scenario: id,
       players,
       seed: ck && layout === 'random' ? `${seed}-random` : seed,
       options: { firstPlayer: 0, layout, ...(players >= 5 ? { fiveSixMode } : {}), ...(ck ? { citiesAndKnights: true } : {}) },
@@ -63,7 +66,7 @@ for (const scenario of scenarios) {
   const ms = Date.now() - t0;
   const done = games - unfinished;
   const line = BOT_LEVELS.map((l) => `${l} ${wins[l]} wins (${Math.round((100 * wins[l]) / Math.max(1, done))}%), avg ${(vp[l] / Math.max(1, seats[l])).toFixed(1)} VP`).join(' | ');
-  const name = ck ? `Cities & Knights, ${layout}` : scenario;
+  const name = scenario === 'ck' ? `Cities & Knights, ${layout}` : ck ? `C&K + ${id.replace(/^seafarers-\d-/, '')}, ${layout}` : scenario;
   const label = players === 3 ? name : `${name} (${players}p${players >= 5 && fiveSixMode === 'specialBuild' ? ', SBP' : ''})`;
   const extra = ck
     ? ` | ${done}/${games} finished, ${(turns / Math.max(1, done)).toFixed(0)} turns a game, ${(ms / Math.max(1, moves)).toFixed(2)} ms a move (slowest ${slowest.toFixed(0)} ms)`

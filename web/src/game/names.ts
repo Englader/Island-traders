@@ -103,7 +103,8 @@ export function describeAction(a: Action, view: GameView): string {
       return 'Place the harbor here?';
     case 'moveRobber': {
       if (view.phase.kind === 'robber' && view.phase.reason === 'bishop') return 'Move the robber here and take a card from everyone next to it?';
-      const who = a.victim === undefined ? '' : a.take === 'cloth' ? ` and take cloth from ${name(a.victim)}` : ` and rob ${name(a.victim)}`;
+      const cloth = view.ck ? 'village cloth' : 'cloth';
+      const who = a.victim === undefined ? '' : a.take === 'cloth' ? ` and take ${cloth} from ${name(a.victim)}` : ` and rob ${name(a.victim)}`;
       return `Move the ${a.piece} here${who}?`;
     }
     case 'pillageCity':

@@ -66,6 +66,33 @@ function ShoreGlyph() {
   );
 }
 
+/**
+ * Seafarers: the robber and the pirate waiting at the end of the track,
+ * asleep, until the barbarians first attack (2025 rulebook p. 12).
+ */
+function Waiting({ w }: { w: NonNullable<BarbarianState['waiting']> }) {
+  const said = `${w.robber && w.pirate ? 'The robber and the pirate wait' : w.pirate ? 'The pirate waits' : 'The robber waits'} here until the barbarians first attack`;
+  return (
+    <span class="bt-wait" title={said} data-waiting={[w.robber ? 'robber' : '', w.pirate ? 'pirate' : ''].filter(Boolean).join(' ')}>
+      <svg viewBox={w.robber && w.pirate ? '0 0 28 20' : '0 0 16 20'} aria-hidden="true">
+        {w.robber && (
+          <g class="bt-wait-robber">
+            <path d="M2.5 18.5 Q6.5 6.5 10.5 18.5 Z" />
+            <circle cx="6.5" cy="7.4" r="3.2" />
+          </g>
+        )}
+        {w.pirate && (
+          <g class="bt-wait-pirate" transform={w.robber ? 'translate(11.5 0.5)' : 'translate(0 0.5)'}>
+            <path d="M0.8 13 H15.2 L12.6 17.8 H3.4 Z" />
+            <path d="M8.3 3.2 Q13.8 7 13.4 11.8 H8.3 Z M7.7 4.4 Q3.8 7.6 4 11.8 H7.7 Z" />
+            <path d="M8 13 V2.6" class="mast" />
+          </g>
+        )}
+      </svg>
+    </span>
+  );
+}
+
 /** The track itself: the ship's start, seven spaces and the shore; the ship sails along it. */
 function Lane({ b, big }: { b: BarbarianState; big?: boolean }) {
   const nodes = Array.from({ length: b.track }, (_, i) => i);
@@ -74,7 +101,10 @@ function Lane({ b, big }: { b: BarbarianState; big?: boolean }) {
       <span class="bt-water" aria-hidden="true" />
       <span class="bt-wake" aria-hidden="true" />
       {nodes.map((i) => (
-        <span key={i} class={`bt-node${i < b.pos ? ' past' : ''}${i === b.pos ? ' here' : ''}`} style={{ '--i': i } as Record<string, number>} aria-hidden="true" />
+        <span key={i} class={`bt-node${i < b.pos ? ' past' : ''}${i === b.pos ? ' here' : ''}`} style={{ '--i': i } as Record<string, number>} aria-hidden="true">
+          {/* Seafarers: on the track's final space until the first attack */}
+          {i === b.track - 1 && b.waiting && <Waiting w={b.waiting} />}
+        </span>
       ))}
       <span class="bt-shore" aria-hidden="true">
         <ShoreGlyph />
@@ -114,7 +144,8 @@ export function BarbarianTrack({ view, onOpen }: { view: GameView; onOpen(): voi
   const b = barbarianState(view);
   if (!b) return null;
   const left = b.track - b.pos;
-  const said = `Barbarians: ${b.pos} of ${b.track} spaces sailed, ${left} to go. Barbarian strength ${b.barbarians}, knights ${b.knights}. Show details`;
+  const wait = b.waiting ? ` ${b.waiting.pirate && b.waiting.robber ? 'The robber and the pirate wait' : 'The robber waits'} at the end of the track.` : '';
+  const said = `Barbarians: ${b.pos} of ${b.track} spaces sailed, ${left} to go. Barbarian strength ${b.barbarians}, knights ${b.knights}.${wait} Show details`;
   return (
     <button type="button" class="ck-track" onClick={onOpen} aria-label={said} title="The barbarians: tap for details" data-pos={b.pos}>
       <Lane b={b} />
@@ -216,7 +247,11 @@ export function BarbariansSheet({ view, colors, seat, close }: { view: GameView;
           <li>Then the ship sails home and every knight goes inactive.</li>
         </ul>
         <p class="hint">
-          {b.attacks === 0 ? 'No attack yet: the robber sleeps on the desert until the first one.' : `Attacks so far: ${b.attacks}. The robber is awake.`}{' '}
+          {b.waiting
+            ? `No attack yet: ${b.waiting.pirate && b.waiting.robber ? 'the robber and the pirate wait' : 'the robber waits'} at the end of the track. At the first attack ${b.waiting.pirate && b.waiting.robber ? 'they take their' : 'it takes its'} starting place${b.waiting.pirate && b.waiting.robber ? 's' : ''} on the board and can be moved from then on.`
+            : b.attacks === 0
+              ? 'No attack yet: the robber sleeps on the desert until the first one.'
+              : `Attacks so far: ${b.attacks}. The robber${view.board.pirate ? ' and the pirate are' : ' is'} awake.`}{' '}
           Defender of Catan cards left: {ck.defenderCards}.
         </p>
       </div>
@@ -805,7 +840,7 @@ export function CardChoiceSheet({ view, legal, seat, send, covered }: { view: Ga
 
 /**
  * The moves of one of your knights, in a bar over the board: activate,
- * promote, move (or displace), chase the robber.
+ * promote, move (or displace), chase the robber (or, at sea, the pirate).
  */
 export function KnightBar({
   view,
@@ -833,8 +868,10 @@ export function KnightBar({
   const moves = legal.filter((a) => (a.type === 'moveKnight' || a.type === 'displaceKnight') && a.from === at);
   const displace = moves.some((a) => a.type === 'displaceKnight');
   const chase = legal.find((a) => a.type === 'chaseRobber' && a.vertex === at && a.piece === 'robber');
+  // Seafarers: a knight next to the pirate's sea hex chases the pirate
+  const chasePirate = legal.find((a) => a.type === 'chaseRobber' && a.vertex === at && a.piece === 'pirate');
   const fresh = k.active && k.activatedPart === view.turn.part;
-  const none = !activate && !promote && moves.length === 0 && !chase;
+  const none = !activate && !promote && moves.length === 0 && !chase && !chasePirate;
   return (
     <div class="confirm-bar knight-bar" role="group" aria-label={`${KNIGHT_LABEL[k.level]}, ${k.active ? 'active' : 'inactive'}`}>
       <span class="kb-head">
@@ -867,6 +904,11 @@ export function KnightBar({
         {chase && (
           <button type="button" class="primary" onClick={() => onAct(chase)}>
             Chase robber
+          </button>
+        )}
+        {chasePirate && (
+          <button type="button" class="primary" onClick={() => onAct(chasePirate)}>
+            Chase pirate
           </button>
         )}
         <button type="button" onClick={onClose} aria-label="Close">
