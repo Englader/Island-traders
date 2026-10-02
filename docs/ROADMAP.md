@@ -119,7 +119,10 @@ The site is `https://englader.github.io/Island-traders/`.
   effects (done), (3) computer players for it (done), (4) the browser UI and
   art, progress cards included (done), (5) the 5–6 player extension (done:
   section 15 of the spec, with paired players or the special build phase),
-  (6) Seafarers combinations.
+  (6) Seafarers combinations (done: section 16 of the spec; Heading for New
+  Shores and Through the Desert with 3–6 players, Cloth for Catan and The
+  Wonders with 3–4; the other five scenarios stay refused, as the rulebook
+  advises against small islands and hidden hexes).
 - 5–6 player maps for Seafarers scenarios 5–8 (The Forgotten Tribe, Cloth
   for Catan, The Pirate Islands, The Wonders of Catan): the base game, New
   World and scenarios 1–4 take 5–6 players today.

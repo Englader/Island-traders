@@ -42,6 +42,8 @@ export type AskArt =
   | `gate-${ImprovementTrack}`
   | `metro-${ImprovementTrack}`
   | 'robber'
+  /** Seafarers with Cities & Knights: the pirate, chased by a knight. */
+  | 'pirate'
   /** A progress card being played: the dialog shows its face (`Ask.card`). */
   | 'progress';
 
@@ -207,6 +209,10 @@ function one(a: Action, view: GameView, seat: PlayerId): { title: string; choice
       const k = view.ck?.knights[a.vertex];
       if (!k) return null;
       notes.push('The knight becomes inactive');
+      if (a.piece === 'pirate') {
+        notes.push('Then move the pirate to another sea hex and steal a card from a ship next to it');
+        return { title: 'Chase the pirate away?', choice: { action: a, art: 'pirate', label: 'Yes, chase it' }, cost: null, notes };
+      }
       notes.push('Then move the robber to a numbered hex and steal a card');
       return { title: 'Chase the robber away?', choice: { action: a, art: 'robber', label: 'Yes, chase it' }, cost: null, notes };
     }

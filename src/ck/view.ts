@@ -48,6 +48,8 @@ export interface CkView {
   turnEffects: CkState['turnEffects'];
   /** Progress cards played so far, oldest first (played cards are public). */
   played: NonNullable<CkState['played']>;
+  /** Seafarers: the robber and pirate waiting by the barbarian track, and where they will start (public). */
+  asleep?: NonNullable<CkState['asleep']>;
   players: CkPlayerView[];
 }
 
@@ -77,6 +79,7 @@ export function ckViewFor(s: GameState, viewer: PlayerId | null): CkView | undef
     event: ck.event,
     turnEffects: structuredClone(ck.turnEffects),
     played: structuredClone(ck.played ?? []),
+    ...(ck.asleep ? { asleep: { ...ck.asleep } } : {}),
     players: ck.players.map((pl, id) => {
       const own = open || viewer === id;
       const c = pl.commodities;

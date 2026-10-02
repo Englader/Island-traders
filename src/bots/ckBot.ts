@@ -28,8 +28,9 @@ import {
   winsMetropolis,
 } from '../ck/engine.js';
 import { activeStrength, knightSiteError, knightsInSupply, knightsOf, retreatSpots } from '../ck/knights.js';
+import { ckSeafarers } from '../ck/seafarers.js';
 import { CARDS, COMMODITIES, COSTS, RESOURCES, TERRAIN_RESOURCE, pips } from '../core/constants.js';
-import { cardTotal } from '../core/resources.js';
+import { cardTotal, total } from '../core/resources.js';
 import type {
   Action,
   Card,
@@ -39,6 +40,7 @@ import type {
   HexId,
   ImprovementTrack,
   Knight,
+  PartialCounts,
   PlayerId,
   ProgressCardName,
   Resource,
@@ -46,9 +48,11 @@ import type {
   VertexId,
 } from '../core/types.js';
 import { applyAction } from '../engine/apply.js';
-import { legalCities, legalRoads, legalSettlements } from '../engine/placements.js';
+import { legalCities, legalRoads, legalSettlements, legalShips } from '../engine/placements.js';
 import { longestRouteLength, updateLongestRoute } from '../rules/longestRoute.js';
-import { handSize, publicVP, topo, vertexLandHexes } from '../rules/queries.js';
+import { edgeAllowsRoad, edgeAllowsShip, handSize, publicVP, topo, vertexLandHexes, vertexZones } from '../rules/queries.js';
+import { scenarioOf } from '../scenarios/registry.js';
+import { WONDERS, WONDER_LEVELS } from '../scenarios/seafarers/wonders.js';
 import {
   best,
   edgeScore,
@@ -80,6 +84,10 @@ import {
  *   the leader); every card step answered.
  * - Trading, discards and the hand: every card, commodities included, is
  *   valued by what the player is saving for.
+ * - Seafarers scenarios: ships head for settlement spots and scenario targets
+ *   across the sea (island bonuses, Cloth villages), gold counts as a free
+ *   pick, knights chase the pirate off its ships, and a Wonders player claims
+ *   and builds a wonder (section 16 of the spec).
  *
  * Like the base bot it only uses what its seat may see: public state, its
  * own hand and progress cards, and what a Spy or Master Merchant shows it.
@@ -113,6 +121,12 @@ export interface CkProfile {
   knights: 0 | 1 | 2;
   /** Builds city walls when its hand is large. */
   walls: boolean;
+  /**
+   * Seafarers scenarios: 0 builds ships with spare cards only; 1 also saves
+   * for a ship toward a spot across the sea once its own island is full; 2
+   * also sails for Cloth villages until it trades with two.
+   */
+  sea: 0 | 1 | 2;
 }
 
 type Play = Extract<Action, { type: 'playProgress' }>;
@@ -166,7 +180,11 @@ export function ckProduction(s: GameState, p: PlayerId): Hand {
       const n = pips(hex?.token ?? null);
       if (!hex || n === 0) continue;
       const r = TERRAIN_RESOURCE[hex.terrain];
-      if (!r) continue;
+      if (!r) {
+        // Seafarers gold: a free pick, spread over the five resources (never a commodity)
+        if (hex.terrain === 'gold') for (const x of RESOURCES) out[x] += ((b.type === 'city' ? 2 : 1) * n) / 5;
+        continue;
+      }
       const c = TERRAIN_COMMODITY[hex.terrain];
       if (b.type !== 'city') out[r] += n;
       else if (c) {
@@ -191,7 +209,12 @@ function hexWorth(s: GameState, h: HexId, prod: Hand, weight: number, as: 'settl
   const n = pips(hex?.token ?? null);
   if (!hex || n === 0) return 0;
   const r = TERRAIN_RESOURCE[hex.terrain];
-  if (!r) return 0;
+  if (!r) {
+    if (hex.terrain !== 'gold') return 0;
+    // Seafarers gold: any resource, one per settlement and two per city, never a commodity (2025 rulebook p. 12)
+    const pick = n * 1.25;
+    return as === 'settlement' ? pick : pick + (as === 'city' ? pick : 0.3 * pick);
+  }
   const scarce = prod[r] === 0 ? 1.4 : prod[r] < 4 ? 1.12 : 1;
   const base = n * WORTH[r] * scarce;
   if (as === 'settlement') return base;
@@ -222,6 +245,13 @@ export function ckSpotValue(
     // a 3:1 harbor serves commodities too; the 2:1 harbors only their resource
     if (hb.type === 'generic') value += 1 + (prod.paper + prod.cloth + prod.coin > 0 ? 0.5 : 0);
     else value += prod[hb.type] >= 5 ? 2.5 : 0.8;
+  }
+  // Seafarers: the VP chits for a first settlement in a new area (as the base bot counts them)
+  const bonus = scenarioOf(s).rules.islandBonus;
+  if (bonus && s.phase.kind !== 'setup') {
+    const pl = s.players[p];
+    const home = bonus.home === 'setup' ? pl.homeZones : bonus.home;
+    for (const z of vertexZones(s, v)) if (!home.includes(z) && !pl.bonusZones.includes(z)) value += bonus.vp * 4;
   }
   return value;
 }
@@ -305,6 +335,8 @@ interface Ctx {
   out: Outlook;
   /** The opponent with the most VP. */
   leader: PlayerId;
+  /** A Seafarers scenario: ships, gold, the pirate and scenario goals. */
+  sea: boolean;
   memo: Map<string, unknown>;
 }
 
@@ -324,6 +356,7 @@ function context(s: GameState, p: PlayerId, pr: Profile): Ctx {
     limit: sevenLimit(s, p),
     out: outlook(s),
     leader: best(opp, (q) => publicVP(s, q) + handSize(s, q) * 0.01) ?? opp[0],
+    sea: ckSeafarers(s),
     memo: new Map(),
   };
 }
@@ -334,6 +367,15 @@ function lazy<T>(c: Ctx, key: string, f: () => T): T {
 }
 
 const pot = (c: Ctx) => lazy(c, 'pot', () => potentialField(c.s, c.p));
+/** Seafarers: the field spread by roads only, or by ships only (a coastal road leads nowhere at sea). */
+const roadPot = (c: Ctx) => lazy(c, 'pot:road', () => potentialField(c.s, c.p, (e) => edgeAllowsRoad(c.s, e)));
+const shipPot = (c: Ctx) => lazy(c, 'pot:ship', () => potentialField(c.s, c.p, (e) => edgeAllowsShip(c.s, e)));
+
+/** How much a road or a ship on `e` brings the player closer to something (the base bot's edge score; by kind with Seafarers). */
+function edgeValue(c: Ctx, e: EdgeId, ship: boolean): number {
+  if (!c.sea) return edgeScore(c.s, c.p, e, pot(c));
+  return edgeScore(c.s, c.p, e, ship ? shipPot(c) : roadPot(c));
+}
 const handCount = (c: Ctx) => cardTotal(c.hand);
 /** How much the bot minds hurting `q` (the leader most, at a focused level). */
 const weightOf = (c: Ctx, q: PlayerId) => leaderWeight(c.s, q, Math.max(1, c.pr.robberFocus), c.p);
@@ -427,9 +469,8 @@ function setupAction(c: Ctx, acts: Action[]): Action | null {
     const city = ph.kind === 'setup' && setupPlacesCity(s, ph.round);
     return pickBest(s, p, pr, settle, (a) => ckSpotValue(s, p, a.vertex, c.ck.commodities, city ? 'city' : 'future', c.prod), (a) => a.vertex);
   }
-  const field = pot(c);
   const edges = [...byType(acts, 'placeRoad'), ...byType(acts, 'placeShip')];
-  return best(edges, (a) => edgeScore(s, p, a.edge, field) + (a.type === 'placeRoad' ? 0.1 : 0)) ?? acts[0];
+  return best(edges, (a) => edgeValue(c, a.edge, a.type === 'placeShip') + (a.type === 'placeRoad' ? 0.1 : 0)) ?? acts[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +641,13 @@ function knightPlay(c: Ctx, acts: Action[]): Action | null {
     const chase = best(chases, (a) => -knights[a.vertex].level);
     if (chase) return chase;
   }
+  // Seafarers: the pirate next to its ships (they cannot sail on, and it robs them)
+  const pirate = s.board.pirate;
+  if (c.sea && pirate && robberActive(s) && pirateHurts(c, pirate) > 0) {
+    const chases = byType(acts, 'chaseRobber').filter((a) => a.piece === 'pirate' && canSpare(c, a.vertex));
+    const chase = best(chases, (a) => -knights[a.vertex].level);
+    if (chase) return chase;
+  }
   if (c.ck.knights < 2) return null;
   const field = pot(c);
   const displace = best(
@@ -633,6 +681,14 @@ function knightPlay(c: Ctx, acts: Action[]): Action | null {
     if (top && block(top) >= 4) return top;
   }
   return null;
+}
+
+/** The player's ships next to the pirate (stuck, and robbed on its next move there). */
+function pirateHurts(c: Ctx, hex: HexId): number {
+  return topo(c.s).hexEdges[hex].filter((e) => {
+    const x = c.s.board.pieces[e];
+    return x?.type === 'ship' && x.owner === c.p;
+  }).length;
 }
 
 /** Pips the robber takes from the player where it stands. */
@@ -802,13 +858,25 @@ function resourceGoal(c: Ctx): Goal | null {
     if (spots.length > 0) {
       const v = best(spots, (x) => ckSpotValue(s, p, x, c.ck.commodities, 'future', c.prod))!;
       options.push({ cost: COSTS.settlement, action: { type: 'buildSettlement', player: p, vertex: v }, rank: 0 - endgame, label: 'settlement' });
-    } else if (s.players[p].supply.settlements > 0) {
-      const field = pot(c);
-      const e = best(legalRoads(s, p), (x) => edgeScore(s, p, x, field));
-      if (e && edgeScore(s, p, e, field) > 0.5) {
-        options.push({ cost: COSTS.road, action: { type: 'buildRoad', player: p, edge: e }, rank: 1, label: 'road' });
+    } else if (s.players[p].supply.settlements > 0 || (c.sea && c.ck.sea >= 1)) {
+      // Seafarers: ships toward spots across the sea and the scenario's targets (Cloth villages)
+      const edges = [
+        ...legalRoads(s, p).map((edge) => ({ edge, ship: false })),
+        ...(c.sea && c.ck.sea >= 1 ? legalShips(s, p).map((edge) => ({ edge, ship: true })) : []),
+      ];
+      const e = best(edges, (x) => edgeValue(c, x.edge, x.ship));
+      if (e && edgeValue(c, e.edge, e.ship) > 0.5 && (s.players[p].supply.settlements > 0 || e.ship)) {
+        options.push(
+          e.ship
+            ? { cost: COSTS.ship, action: { type: 'buildShip', player: p, edge: e.edge }, rank: 1, label: 'ship' }
+            : { cost: COSTS.road, action: { type: 'buildRoad', player: p, edge: e.edge }, rank: 1, label: 'road' },
+        );
       }
     }
+    const village = c.ck.sea >= 2 ? villageShip(c) : null;
+    if (village) options.push({ cost: COSTS.ship, action: { type: 'buildShip', player: p, edge: village }, rank: VILLAGE_RANK, label: 'ship' });
+    const wonder = wonderGoal(c);
+    if (wonder) options.push(wonder);
     const lr = routePush(c);
     if (lr) options.push({ cost: COSTS.road, action: { type: 'buildRoad', player: p, edge: lr }, rank: -0.3, label: 'route' });
     const d = defence(c);
@@ -826,6 +894,65 @@ function resourceGoal(c: Ctx): Goal | null {
   });
 }
 
+/** Cloth for Catan (hard): how much a ship toward a village matters, how near (in ships) the village must be, and how many to trade with. */
+const VILLAGE_RANK = 0.3;
+const VILLAGE_REACH = 3;
+const VILLAGES = 2;
+
+/**
+ * Cloth for Catan (hard): the ship toward the best village with cloth a few
+ * ships away, while the player trades with fewer than VILLAGES of them (a
+ * village pays cloth, 2 cloth = 1 VP, on arrival and on its number). Nearer
+ * villages, likelier numbers and fewer traders sharing them come first.
+ */
+function villageShip(c: Ctx): EdgeId | null {
+  const { s, p } = c;
+  const cloth = s.ext.cloth as { villages: Record<VertexId, { token: number; cloth: number; traders: number[] }> } | undefined;
+  if (!cloth) return null;
+  const villages = Object.entries(cloth.villages);
+  if (villages.filter(([, v]) => v.traders.includes(p)).length >= VILLAGES) return null;
+  const targets = villages.filter(([, v]) => v.cloth > 0 && !v.traders.includes(p));
+  if (targets.length === 0) return null;
+  return lazy(c, 'village', () => {
+    const t = topo(s);
+    const ships = legalShips(s, p);
+    let top: EdgeId | null = null;
+    let low = Infinity;
+    for (const [at, village] of targets) {
+      // ship steps from each intersection to this village, over paths a ship of the player could take
+      const dist = new Map<VertexId, number>([[at, 0]]);
+      const queue = [at];
+      for (let i = 0; i < queue.length; i++) {
+        const v = queue[i];
+        for (const e of t.vertexEdges[v]) {
+          const piece = s.board.pieces[e];
+          if (!edgeAllowsShip(s, e) || (piece && piece.owner !== p)) continue;
+          const [a, b] = t.edgeVertices[e];
+          const w = a === v ? b : a;
+          if (!dist.has(w)) {
+            dist.set(w, dist.get(v)! + 1);
+            queue.push(w);
+          }
+        }
+      }
+      const appeal = pips(village.token) * 0.3 - village.traders.length * 0.5;
+      for (const e of ships) {
+        const [a, b] = t.edgeVertices[e];
+        const da = dist.get(a) ?? Infinity;
+        const db = dist.get(b) ?? Infinity;
+        // the step must bring the route closer, and the village be a few ships away
+        const d = Math.min(da, db);
+        if (da === db || d >= VILLAGE_REACH) continue;
+        if (d - appeal < low) {
+          low = d - appeal;
+          top = e;
+        }
+      }
+    }
+    return top;
+  });
+}
+
 /** Hard, near the end: the road that brings Longest Road within reach (2 VP), if a road or two does it. */
 function routePush(c: Ctx): EdgeId | null {
   const { s, p } = c;
@@ -836,6 +963,51 @@ function routePush(c: Ctx): EdgeId | null {
   if (need - now > 2) return null;
   const e = best(legalRoads(s, p), (x) => routeWith(s, p, x, null));
   return e !== null && routeWith(s, p, e, null) > now ? e : null;
+}
+
+/** The Wonders: the player's wonder, its levels and the most any other player has built. */
+function wonderState(c: Ctx): { id: string | null; mine: number; best: number } | null {
+  const w = c.s.ext.wonders as { owned: Array<string | null>; levels: number[] } | undefined;
+  if (!w) return null;
+  return { id: w.owned[c.p], mine: w.levels[c.p], best: Math.max(0, ...w.levels.filter((_, q) => q !== c.p)) };
+}
+
+/** The next level of the player's wonder (all four win; with the VP target, more levels than anyone else). */
+function wonderGoal(c: Ctx): Goal | null {
+  const w = wonderState(c);
+  if (!w?.id || w.mine >= WONDER_LEVELS) return null;
+  const def = WONDERS.find((x) => x.id === w.id);
+  if (!def) return null;
+  return { cost: { ...def.cost } as CardCounts, action: { type: 'scenario', player: c.p, name: 'buildWonder' }, rank: wonderRank(c, w), label: 'wonder' };
+}
+
+/**
+ * How much the next level matters: most when the VP are there but another
+ * player has as many levels (only a level more wins), or the last level is
+ * next (it wins outright); then while level with the others; less when ahead.
+ */
+function wonderRank(c: Ctx, w: { mine: number; best: number }): number {
+  if (c.gap <= 0 && w.mine <= w.best) return -3;
+  if (w.mine >= WONDER_LEVELS - 1) return -2;
+  if (c.gap <= 2 && w.mine <= w.best) return -1.5;
+  return w.mine <= w.best ? -0.6 : 0.4;
+}
+
+/** The Wonders: claim the wonder whose costs suit the player's production best, and build its levels when the cards are there. */
+function wonderPlay(c: Ctx, acts: Action[]): Action | null {
+  const sc = byType(acts, 'scenario');
+  const build = sc.find((a) => a.name === 'buildWonder');
+  if (build) {
+    const goal = resourceGoal(c);
+    const w = wonderState(c)!;
+    if (!goal || goal.label === 'wonder' || goal.rank >= 0 || wonderRank(c, w) <= -1.5) return build;
+  }
+  const claims = sc.filter((a) => a.name === 'claimWonder');
+  if (claims.length === 0) return null;
+  return best(claims, (a) => {
+    const def = WONDERS.find((x) => x.id === a.args?.wonder);
+    return def ? RESOURCES.reduce((n, r) => n + (def.cost[r] ?? 0) * c.prod[r], 0) : -1;
+  });
 }
 
 function wallSites(c: Ctx): VertexId[] {
@@ -1139,9 +1311,10 @@ function playValue(c: Ctx, a: Play): number {
       return 2.5 + (isMetropolis(s, v) ? 1 : 0) + (handCount(c) > c.limit - 2 ? 1 : 0);
     }
     case 'roadBuilding': {
-      const field = pot(c);
-      const top = best(legalRoads(s, p), (e) => edgeScore(s, p, e, field));
-      const v = top ? edgeScore(s, p, top, field) : 0;
+      // with Seafarers, roads or ships (Almanac p. 15)
+      const edges = [...legalRoads(s, p).map((e) => ({ e, ship: false })), ...(c.sea ? legalShips(s, p).map((e) => ({ e, ship: true })) : [])];
+      const top = best(edges, (x) => edgeValue(c, x.e, x.ship));
+      const v = top ? edgeValue(c, top.e, top.ship) : 0;
       return v > c.pr.roadBar ? 2 + v * 0.3 : 0.5;
     }
     case 'smith': {
@@ -1512,6 +1685,11 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
     if (hire) return hire;
   }
 
+  if (c.sea) {
+    const wonder = wonderPlay(c, acts);
+    if (wonder) return wonder;
+  }
+
   const imp = improvement(c, acts);
   if (imp) return imp;
 
@@ -1553,10 +1731,11 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
   const extra = spare(c, acts);
   if (extra) return extra;
   const free = (cost: CardCounts) => !goal || covers(subtract(c.hand, cost), goal.cost) || handCount(c) > c.limit;
-  const field = pot(c);
-  const edges = byType(acts, 'buildRoad');
-  const edge = pickBest(s, p, pr, edges, (a) => edgeScore(s, p, a.edge, field), (a) => a.edge);
-  if (edge && edgeScore(s, p, edge.edge, field) > pr.roadBar && free(COSTS.road)) return edge;
+  const edges: Array<Extract<Action, { type: 'buildRoad' | 'buildShip' }>> = c.sea
+    ? [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')]
+    : byType(acts, 'buildRoad');
+  const edge = pickBest(s, p, pr, edges, (a) => edgeValue(c, a.edge, a.type === 'buildShip'), (a) => a.edge);
+  if (edge && edgeValue(c, edge.edge, edge.type === 'buildShip') > pr.roadBar && free(edge.type === 'buildShip' ? COSTS.ship : COSTS.road)) return edge;
   if (!pr.plans) {
     // easy: a knight when it has none, and more now and then, when it has the cards
     const hire = byType(acts, 'buildKnight');
@@ -1603,6 +1782,30 @@ function robber(c: Ctx, acts: Action[]): Action | null {
     return v;
   };
   return pickBest(s, p, pr, moves, score, (a) => `${a.hex}:${a.victim ?? ''}`) ?? acts[0];
+}
+
+/** Seafarers gold: the resources it wants most (never commodities). */
+function goldPick(c: Ctx): Action | null {
+  const ph = c.s.phase;
+  if (ph.kind !== 'gold') return null;
+  const owed = ph.pending[c.p];
+  if (owed === undefined) return null;
+  const n = Math.min(owed, total(c.s.bank));
+  const w = wants(c);
+  const bank = { ...c.s.bank };
+  const have = { ...c.hand };
+  const pick: PartialCounts = {};
+  for (let i = 0; i < n; i++) {
+    const r = best(
+      RESOURCES.filter((x) => bank[x] > 0),
+      (x) => w[x] - have[x] * 0.3,
+    );
+    if (!r) break;
+    bank[r]--;
+    have[r]++;
+    pick[r] = (pick[r] ?? 0) + 1;
+  }
+  return { type: 'chooseGold', player: c.p, resources: pick };
 }
 
 /** Decisions in the expansion's own phases. */
@@ -1656,10 +1859,11 @@ export function ckHeuristicAction(s: GameState, p: PlayerId, acts: Action[], pr:
       return phaseAction(c, acts);
     case 'robber':
       return robber(c, acts);
+    case 'gold':
+      return goldPick(c) ?? acts[0];
     case 'roadBuilding': {
-      const field = pot(c);
       const edges = [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')];
-      const e = best(edges, (a) => edgeScore(s, p, a.edge, field) + routeWith(s, p, a.edge, null) * 0.05);
+      const e = best(edges, (a) => edgeValue(c, a.edge, a.type === 'buildShip') + routeWith(s, p, a.edge, null) * 0.05);
       return e ?? acts.find((a) => a.type === 'endRoadBuilding') ?? acts[0];
     }
     case 'preRoll':

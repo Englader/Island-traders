@@ -1,5 +1,6 @@
 import type { GameState, Knight, KnightLevel, PlayerId, VertexId } from '../core/types.js';
 import { topo, vertexTouchesLand } from '../rules/queries.js';
+import { scenarioOf } from '../scenarios/registry.js';
 import { ABILITY_LEVEL, KNIGHTS_PER_LEVEL } from './constants.js';
 
 /**
@@ -134,9 +135,12 @@ export function chaseError(s: GameState, p: PlayerId, v: VertexId, piece: 'robbe
   const k = s.ck?.knights[v];
   if (!k || k.owner !== p) return 'you have no knight there';
   if (!knightCanAct(s, k)) return k.active ? 'a knight activated this turn cannot act until your next turn' : 'the knight is not active';
-  if ((s.ck?.attacks ?? 0) === 0) return 'the robber stays put until the barbarians first attack';
+  if ((s.ck?.attacks ?? 0) === 0) return `the ${piece === 'pirate' ? 'pirate' : 'robber'} stays put until the barbarians first attack`;
   const hex = piece === 'robber' ? s.board.robber : s.board.pirate;
   if (!hex || piece !== 'robber' && piece !== 'pirate') return `there is no ${piece} to chase`;
+  // Seafarers: a knight on an intersection of the pirate's sea hex chases it like the robber (p. 13; 2025 p. 12)
   if (!topo(s).vertexHexes[v].includes(hex)) return `the ${piece} is not next to this knight`;
+  // Cloth for Catan: the pirate moves only for a player who reached a village
+  if (piece === 'pirate' && !(scenarioOf(s).hooks.canMovePirate?.(s, p) ?? true)) return 'you cannot move the pirate yet';
   return null;
 }

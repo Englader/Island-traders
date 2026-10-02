@@ -121,6 +121,41 @@
   width: 26px;
   height: 22px;
 }
+/* Seafarers: the robber and pirate asleep on the track's final space until the first attack */
+.bt-wait {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 17px;
+  transform: translate(-50%, -58%);
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+.bt-wait svg {
+  height: 100%;
+  width: auto;
+  display: block;
+  overflow: visible;
+}
+.bt-wait-robber {
+  fill: #8a847c;
+  stroke: #f4f1ea;
+  stroke-width: 1.1;
+}
+.bt-wait-pirate path {
+  fill: #23211f;
+  stroke: #f4f1ea;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.bt-wait-pirate .mast {
+  fill: none;
+  stroke: #23211f;
+  stroke-width: 1.3;
+}
+.bt-lane.big .bt-wait {
+  height: 28px;
+}
 .bt-ship {
   position: absolute;
   top: 50%;
@@ -1455,6 +1490,18 @@
 }
 .ck-toggle-text span {
   font-size: 0.82rem;
+  color: var(--ink-2);
+}
+/* a Seafarers scenario the rulebook doesn't combine with Cities & Knights: why not */
+.ck-toggle.blocked {
+  cursor: default;
+  border-style: dashed;
+  background: transparent;
+}
+.ck-toggle.blocked .ck-toggle-art {
+  opacity: 0.55;
+}
+.ck-toggle.blocked .ck-toggle-text b {
   color: var(--ink-2);
 }
 .rules-ck {

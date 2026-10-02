@@ -98,7 +98,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     offersPerTurn: 0,
     handGuard: false,
     devRank: 2.5,
-    ck: { barbarians: 0, commodities: 0, tracks: 0, cards: 0, knights: 0, walls: false },
+    ck: { barbarians: 0, commodities: 0, tracks: 0, cards: 0, knights: 0, walls: false, sea: 0 },
   },
   medium: {
     noise: 0.4,
@@ -113,7 +113,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     offersPerTurn: 1,
     handGuard: false,
     devRank: 2.5,
-    ck: { barbarians: 1, commodities: 0.8, tracks: 1, cards: 1, knights: 1, walls: true },
+    ck: { barbarians: 1, commodities: 0.8, tracks: 1, cards: 1, knights: 1, walls: true, sea: 1 },
   },
   hard: {
     noise: 0,
@@ -128,7 +128,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     offersPerTurn: 2,
     handGuard: true,
     devRank: 2.5,
-    ck: { barbarians: 2, commodities: 1.2, tracks: 2, cards: 2, knights: 2, walls: true },
+    ck: { barbarians: 2, commodities: 1.2, tracks: 2, cards: 2, knights: 2, walls: true, sea: 2 },
   },
 };
 
@@ -259,8 +259,9 @@ function scenarioTargets(s: GameState, p: PlayerId): Map<VertexId, number> {
 /**
  * How attractive each intersection is as a place to extend toward: settlement
  * spots and scenario targets, decaying with the number of paths to them.
+ * `through` limits the paths it spreads along (the C&K bot: by road or by ship).
  */
-export function potentialField(s: GameState, p: PlayerId): Map<VertexId, number> {
+export function potentialField(s: GameState, p: PlayerId, through?: (e: EdgeId) => boolean): Map<VertexId, number> {
   const t = topo(s);
   const prod = production(s, p);
   const pot = new Map<VertexId, number>();
@@ -269,6 +270,7 @@ export function potentialField(s: GameState, p: PlayerId): Map<VertexId, number>
   }
   for (const [v, val] of scenarioTargets(s, p)) pot.set(v, Math.max(pot.get(v) ?? 0, val));
   const passable = (e: EdgeId) => {
+    if (through && !through(e)) return false;
     const piece = s.board.pieces[e];
     return !piece || piece.owner === p;
   };

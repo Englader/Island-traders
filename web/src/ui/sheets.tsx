@@ -1001,6 +1001,7 @@ export function ScenarioSheet({ view, legal, seat, colors, send, close, placeHar
           <p class="hint">
             Villages with cloth: {Object.values(cloth.villages).filter((v) => v.cloth > 0).length}/8 · general supply {cloth.general}. The game ends when 3
             or fewer villages have cloth.
+            {view.ck && ' The villages’ cloth only counts for victory points: it is not the cloth commodity of Cities & Knights.'}
           </p>
         </div>
       )}

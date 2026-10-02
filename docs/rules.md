@@ -202,14 +202,16 @@ development deck, as in the base game.
 ## 14. Cities & Knights
 
 The *Cities & Knights* expansion is a rules module (`GameOptions.citiesAndKnights`,
-state in `GameState.ck`, code in `src/ck/`) rather than a scenario, so it can
-later combine with the Seafarers scenarios and 5–6 players; for now it plays on
-the base game with 3–4 players. It follows the 5th-edition *Game Rules &
-Almanac* (2020), with the 2025 rulebook for unclear points. The rules as
-implemented, every engine choice, the progress cards and how each is played,
-and the beginners' map are in [`cities-and-knights.md`](cities-and-knights.md).
-Stronger C&K computer players, the browser UI and the 5–6 player extension
-come in later phases.
+state in `GameState.ck`, code in `src/ck/`) rather than a scenario: it plays on
+the base game with 3–6 players (5–6 with its 5-6 Player Extension) and on the
+Seafarers scenarios its rulebooks combine it with (Heading for New Shores and
+Through the Desert, 3–6 players; Cloth for Catan and The Wonders, 3–4), to the
+scenario's VP + 2. It follows the 5th-edition *Game Rules & Almanac* (2020),
+with the 2025 rulebook for unclear points. The rules as implemented, every
+engine choice, the progress cards and how each is played, the beginners' map,
+the 5–6 extension and the Seafarers combination (section 16: which scenarios
+and why, knights at sea, closed routes, the pirate waiting by the barbarian
+track) are in [`cities-and-knights.md`](cities-and-knights.md).
 
 ## Scenario rules and their sources
 

@@ -30,15 +30,19 @@ section 10).
   Rules 240313.pdf`, paired players) and 2025 (`sites/default/files/2025-03/CN3088
   CATAN–Cities & Knights 5-6_ Rulebook.pdf`, paired players). They are
   cited as "5-6 2020 p. n" and so on.
+- **For the Seafarers scenarios (section 16):** the combination rules of
+  both C&K rulebooks (2020 p. 13, 2025 p. 12), catan.com's Cities & Knights
+  page and the German 2025 rulebook (p. 16), with the Seafarers rulebooks
+  and FAQs; section 16 lists them.
 
 The engine enables the expansion with `GameOptions.citiesAndKnights: true`.
 It is a rules module, not a scenario: its state lives in `GameState.ck`, and
 every rule is keyed on that, so games without it are unchanged (a regression
 test, `test/regression.test.ts`, replays base and Seafarers games recorded
 before the expansion existed, and 3–4 player C&K games recorded before the
-5–6 extension). For now it combines with the base game for 3–4
-players, and for 5–6 players with the 5-6 Player Extension (section 15);
-Seafarers scenarios come later (see "Seams").
+5–6 extension). It combines with the base game for 3–4 players, for 5–6
+players with the 5-6 Player Extension (section 15), and with the Seafarers
+scenarios the rulebook allows (section 16).
 
 ## 1. Components (p. 2, p. 4)
 
@@ -557,14 +561,16 @@ them only when `state.ck` exists.
   (`src/ck/engine.ts`) opens knight actions and progress cards to paired
   player 2, and the special build phase offers the C&K builds
   (`ckBuildActions` in `engine/legal.ts`). `test/ck56.test.ts` covers it.
-- **Later, Seafarers.** `createGame` refuses C&K with Seafarers scenarios
-  for now. Hooks for them: knights already reach along ships
-  (`knightReach`) and can chase the pirate (`chaseRobber` with `piece:
-  'pirate'`), `robberActive` gates the pirate too, and the setup city is
-  the round that collects (`setupPlacesCity`). Still to do there: the
-  pirate start on the track, knights at sea and closed routes, +2 VP for
-  Seafarers scenarios (2025), gold fields never giving commodities
-  (already so) and no merchant on gold (already in `merchantHexError`).
+- **Phase 6, Seafarers (done).** Section 16: `src/ck/seafarers.ts` says
+  which scenarios combine (`ckScenarioError`, `CK_BLOCKED_SCENARIOS`) and
+  sets the VP target (`ckVictoryPoints`); `ck.asleep` holds the robber's
+  and pirate's starting hexes until the first attack (`barbarianAttack`);
+  own knights close ship routes (`routeEnd` in `src/rules/ships.ts`); the
+  pirate chase follows the scenario's pirate rule (`chaseError`); the C&K
+  roll runs the scenario's `afterRoll` (Cloth for Catan's villages). The
+  bots (`ckBot.ts`) build ships, value gold and island chits, chase the
+  pirate, claim and build wonders and sail for Cloth villages.
+  `test/ckSeafarers.test.ts` and `test/ckSeafarersBots.test.ts` cover it.
 
 ## 15. Five and six players: the 5-6 Player Extension
 
@@ -724,3 +730,177 @@ lost to the barbarians over 36 games per setting):
   With the limit hard wins 61% (section "Computer players" of the README),
   and each level loses about as many cities as with 3–4 players (hard
   0.26–0.75 a game, medium 0.68–1.05, easy 1.08–1.42).
+
+## 16. Cities & Knights with the Seafarers scenarios
+
+`GameOptions.citiesAndKnights` also applies on top of a Seafarers scenario.
+Every rule of sections 1–15 holds; this section lists what the combination
+adds and where it comes from.
+
+### Sources
+
+- **C&K 2020 p. 13**, "Seafarers of Catan Variant" (*Game Rules & Almanac*,
+  the primary source), and the Almanac: Road Building p. 15, Intrigue
+  p. 16.
+- **C&K 2025 p. 12**, "Combining with CATAN – Seafarers Expansion", with its
+  two illustrated examples; the robber's start p. 6 ("The first time the
+  barbarians attack, move the robber from its space by the barbarian track
+  to the desert") and p. 7.
+- **catan.com**, the *Cities & Knights* page (`catan.com/cities-knights`,
+  tab "Seafarers", "Combination with the Seafarers Expansion"), cited as
+  "catan.com"; its last line is cut off on the page. The **German 2025
+  rulebook** (KOSMOS, catan.de
+  `sites/default/files/2025-03/400205684754_CAT_NE_SuR_Manual_DE_web.pdf`,
+  p. 16, "Städte & Ritter in Kombination mit Seefahrer") has the same text
+  in full; cited as "German 2025 p. 16".
+- **FAQs:** the Cities & Knights FAQ (catan.com, "FAQ n" as in section 10)
+  and the Seafarers FAQ (`catan.com/faq/seafarers`, "Seafarers FAQ n").
+- **Seafarers rulebooks:** the 5th edition (2020; `catan-seafarers_2021_rule_book_201201.pdf`,
+  32 pages) for the scenarios' own rules, and the 2025 rulebook (20 pages).
+  Neither says anything about Cities & Knights.
+- **5–6 players:** none of the C&K 5-6 printings (2020, 2023, 2025) or the
+  Seafarers 5-6 printings (2020, 2023, 2025) mentions the combination.
+
+### Which scenarios (2020 p. 13; 2025 p. 12; catan.com; German 2025 p. 16)
+
+2020: "The best scenarios to use are those that do not involve the
+exploration of hidden portions of the board (such as 'The Fog Islands') or
+many small islands (such as 'The Four Islands'), as these types of
+scenarios may make it too difficult to combat the barbarian army.
+Scenarios such as 'Heading for New Shores,' or 'Through the Desert' both
+work very well". 2025 says the same ("they noticeably increase the impact
+of the barbarian army"). catan.com and the German rulebook call those
+scenarios unsuitable: "The exploratory scenarios and all other scenarios
+with many smaller islands are unsuitable"; "Ungeeignet sind Szenarien, in
+denen es viele kleinere Inseln gibt, und Szenarien mit verdeckten
+Sechseckfeldern".
+
+| Scenario | C&K | Why (`CK_BLOCKED_SCENARIOS`, `src/ck/seafarers.ts`) | VP |
+|---|---|---|---|
+| 1 Heading for New Shores | 3–6 players | named as working well | 14 + 2 = 16 |
+| 2 The Four Islands | refused | named: many small islands | – |
+| 3 The Fog Islands | refused | named: hidden hexes | – |
+| 4 Through the Desert | 3–6 players | named as working well | 14 + 2 = 16 |
+| 5 The Forgotten Tribe | refused | many small islands (the tribe's eight islets, explored for gifts), and four gifts are development cards, which C&K sets aside (p. 2) | – |
+| 6 Cloth for Catan | 3–4 players | everyone settles the two big islands; no hidden hexes (engine reading, below) | 14 + 2 = 16 |
+| 7 The Pirate Islands | refused | small pirate islands, and its warships are armed with Knight cards (Seafarers 2020 p. 24): C&K has no development cards | – |
+| 8 The Wonders of Catan | 3–4 players | one main island everyone starts on, three small islands as in New Shores; no hidden hexes (engine reading) | 10 + 2 = 12 |
+| 9 New World | refused | an unknown map of many small islands, explored | – |
+
+The browser shows each refusal's reason on the new-game screen. The
+player counts are the scenario's own; Cloth for Catan and The Wonders have
+no 5–6 player maps.
+
+### The combination rules
+
+| Rule | Source | Engine |
+|---|---|---|
+| **Ships:** what C&K says of roads also applies to ships | 2020 p. 13; 2025 p. 12; catan.com | knights are hired on an intersection touching their owner's road **or ship** (`onOwnRoute`); opposing knights block ships as roads (`shipConnects`) and break trade routes (`longestRouteLength`, as in section 7) |
+| **VP target:** the scenario's + 2 | 2025 p. 12; catan.com; German 2025 p. 16 | `ckVictoryPoints`: 16, 16, 16 and 12 (The Wonders' "10 VP and more levels than anyone" becomes 12); 13 on the base game as before |
+| **Barbarians attack all islands at once,** counting every city and active knight on the board | 2020 p. 13; 2025 p. 12; catan.com | unchanged (`barbarianAttack` already counts the whole board) |
+| **Moving a knight** along your roads **and ships**, also across the sea | 2020 p. 13; 2025 p. 12 ("along your continuous routes of roads and ships"); catan.com ("via roads and ships or via ships only") | `knightReach` follows the owner's roads and ships; displaced knights retreat the same way |
+| **Knights at sea:** a knight may *move* to an intersection of sea hexes at the end of your line of ships ("the knight is considered to be on the adjacent ship"), **"but not place a new knight there"** | 2020 p. 13; 2025 p. 12; catan.com | `knightSiteError` keeps new knights (hired, or placed by the Deserter) on land; moves and retreats may end at sea |
+| **Closed routes:** a knight must stay connected to its colour; a ship route to your knight is closed and its ships may not move | 2020 p. 13; 2025 p. 12 and its second example; catan.com; Seafarers FAQ 18 ("as soon as a shipping route connects two settlements (or cities or for Cities & Knights also knights), the shipping route is considered as closed") | `routeEnd` (`src/rules/ships.ts`): your knight ends a route like your settlement does, in `isShipOnClosedRoute` and `isShipAtRouteEnd` |
+| **An opponent's knight on your route** interrupts it for the Longest Trade Route, but you may not break a closed route up by moving the ships next to it | catan.com; German 2025 p. 16 | opponents' pieces never open a closed route (as Seafarers FAQ 14 for settlements) |
+| **Chasing the pirate:** an active knight next to the pirate's sea hex chases it like the robber | 2020 p. 13 ("a knight on a sea hex intersection"); 2025 p. 12; catan.com and German 2025 p. 16 ("an active knight adjacent to the sea hex occupied by the pirate") | `chaseRobber` with `piece: 'pirate'` from any intersection of the pirate's hex, on the coast or at sea; the pirate goes to another sea hex and robs a player with a ship next to it of a random resource or commodity |
+| **The pirate waits until the first attack:** "Place the pirate on the final space of the barbarian track. The pirate does not enter play until after the first barbarian attack. At that point, follow the directions in the Seafarers scenario for initial pirate placement." | 2025 p. 12; catan.com and German 2025 p. 16 ("the rule that the robber may not be moved before the barbarians first reach Catan applies to the pirate too") | `ck.asleep` holds the robber's and pirate's scenario starts; both are off the board (`board.robber`, `board.pirate` null) until `barbarianAttack` places them (ambiguity 32) |
+| **Gold fields** give resources only, never commodities: a city takes 2 of its choice | 2025 p. 12; catan.com | `produceCards` (already so) |
+| **The merchant** never goes on a gold field | 2025 p. 12; catan.com | `merchantHexError` (already so) |
+| **Road Building:** 2 roads, a road and a ship, or 2 ships | 2020 Almanac p. 15; Seafarers FAQ 1 | the `roadBuilding` phase (already so) |
+| **Bishop (Taxation)** moves the robber only, never the pirate | 2025 p. 12; FAQ 63 | `bishop` (already so) |
+| **Diplomat (Diplomacy):** a ship is "open" as a road is; your own removed ship is built again only as a ship, your road only as a road; an open ship next to the pirate may be removed | 2025 p. 12; FAQ 64–66, 94 | `openRoadError` and the `rebuild` stage (already so); the rebuilt ship follows the building rules, so not next to the pirate |
+| **Intrigue** reaches a knight on an intersection "connected to at least one of your roads or shipping routes" | 2020 Almanac p. 16 | `onOwnRoute` (already so) |
+| **Harbors and commodities:** a 3:1 harbor takes commodities, a 2:1 harbor only its resource | C&K p. 7; FAQ 36 | `cardRates`, as on the base map |
+
+### The scenarios with C&K
+
+- **Setting up.** The round that collects starting resources places the
+  city (`setupPlacesCity`): the second round, and Cloth for Catan's third
+  (its first two places are settlements). The scenario's start zones and
+  forbidden spots apply to the city as to a settlement (New Shores: the main
+  island; The Wonders: not the small islands, the wasteland, the strait or
+  next to it). A coastal city may start with a ship instead of a road
+  (Seafarers 2020 p. 6). The city takes one card per hex, never a
+  commodity (section 2); a gold hex next to it gives one pick.
+- **New Shores, Through the Desert:** the island chits (2 VP for the first
+  settlement in each new area) are unchanged.
+- **Cloth for Catan:** the villages' cloth (Catan chits worth 1 VP for 2) is
+  not the C&K commodity cloth: they never mix. A village pays its traders
+  after the roll's production (the event die, then production, then the
+  villages: the scenario's `afterRoll`, which the C&K roll now runs). The
+  pirate moves only for a player who has reached a village (Seafarers 2020
+  p. 22), by a 7 or by a knight's chase, and only after the first attack;
+  it robs a card (resource or commodity) or a cloth. No Longest Trade Route
+  in this scenario, so none in C&K either.
+- **The Wonders of Catan:** wonder levels are paid with the resources on
+  the wonder cards; commodities never pay for them. Its "Theater" and
+  "Cathedral" wonders have nothing to do with the C&K improvements of those
+  names. There is no pirate; the robber waits by the track like the pirate
+  elsewhere and then goes to its desert.
+
+### Ambiguities and engine choices (Seafarers)
+
+32. **The robber before the first attack.** 2020 p. 4 puts the robber on
+    the desert, unmoved until the first attack; 2025 p. 6 keeps it beside
+    the barbarian track and places it at the first attack; for the pirate
+    2025 p. 12 says outright that it waits on the track and then takes its
+    scenario start. Seafarers scenarios often start the robber on a numbered
+    hex (the hills 12 of New Shores with 3 or 5–6 players, Cloth's fields
+    12), where a sleeping robber would cost production that the C&K rule
+    never takes. Engine: on a Seafarers map both wait off the board and
+    go to their scenario starts at the first attack (`ck.asleep`), so before
+    it ships may be built next to the pirate's starting hex. On the base
+    map the robber still sleeps on the desert (the same effect).
+33. **Which scenarios.** The rulebooks name two that work well and two
+    kinds that do not. Cloth for Catan and The Wonders of Catan are not
+    named. Both are played from big islands everyone starts on (one, or
+    two for Cloth), with no hidden hexes; their small islands are no more
+    than New Shores' four (Cloth's four tribe islets cannot even be
+    settled). The engine allows them. The Forgotten Tribe and The Pirate
+    Islands are refused: besides their many islets, each needs development
+    cards (gifts; Knight cards for warships), which C&K removes, and no
+    source says what replaces them.
+34. **Knights at a road–ship junction.** 2025 moves knights "along your
+    continuous routes of roads and ships", and Seafarers FAQ 16 says a road
+    and a ship meeting without a settlement do not make one *trade route*.
+    2020 lets a knight go wherever "roads and ships connect" its start and
+    end. Engine: 2020; the knight passes where the owner's road and ship
+    meet.
+35. **The setup city in Cloth for Catan** is the third placement, the one
+    that collects (the rulebooks do not combine the two; this follows C&K's
+    "the second, resource-collecting placement is a city").
+36. **Chasing the pirate from the coast.** 2020 and 2025 say "a knight on a
+    sea hex intersection"; catan.com and the German rulebook say a knight
+    "adjacent to the sea hex occupied by the pirate". Engine: any
+    intersection of the pirate's hex, coastal ones included.
+37. **5–6 players.** No rulebook covers C&K 5–6 with Seafarers 5–6; each
+    5–6 extension says it uses every rule of the game it extends, so the
+    engine composes them: the C&K 5–6 supply and turn (paired players or the
+    special build phase, section 15) on the Seafarers 5–6 maps of New Shores
+    and Through the Desert, to 16 VP.
+38. **Fog Islands, Forgotten Tribe and Pirate Islands interactions** (fog
+    discoveries paying commodities, development-card gifts, fortresses
+    against the barbarians) need no rule: those scenarios are refused.
+
+### The computer players (Seafarers)
+
+`ckBot.ts` plays these scenarios with the same levels (section 14), plus:
+
+- set-up and settlement spots value gold as a free pick (never a commodity)
+  and the island chits of a new area;
+- once its island is full, medium and hard save for a ship toward a spot
+  across the sea; roads and ships are scored by what each can reach (a
+  coastal road leads nowhere at sea);
+- hard sails for a Cloth village with cloth while it trades with fewer
+  than two and one is a few ships away (nearer villages, likelier numbers
+  and fewer traders first);
+- a knight next to the pirate chases it when the pirate holds the player's
+  ships;
+- The Wonders: claim the wonder whose costs fit the player's production,
+  then build its levels, first of all once the VP are there and only a
+  level more than everyone else wins;
+- gold picks follow what the player is short of.
+
+`npm run bots:league -- 60 ck:seafarers-1-new-shores official 3` (any
+scenario that combines, `official` or `random`, 3–6 players) plays the
+levels against each other; the README has the results.

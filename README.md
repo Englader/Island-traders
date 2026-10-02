@@ -29,7 +29,15 @@ GitHub Actions)
   VP, on the C&K beginners' map or a random one; with 5–6 players (the C&K
   5-6 extension: 18 of each commodity, 8 Defender of Catan cards, paired
   players or the special build phase) on the base game's 5–6 map or a
-  random one.
+  random one. It also combines with the Seafarers scenarios its rulebook
+  allows, to the scenario's VP + 2: Heading for New Shores and Through the
+  Desert (3–6 players, 16 VP), Cloth for Catan (3–4, 16 VP) and The Wonders
+  of Catan (3–4, 12 VP). Knights stand by your roads or ships, move along
+  both and may end a move at sea on your ship; a ship route to your knight
+  is closed; the robber and the pirate wait on the barbarian track until
+  the first attack, and a knight next to the pirate chases it. The other
+  five scenarios say on the new-game screen why the rulebook doesn't
+  combine them (many small islands or hidden hexes).
   Three dice (the event die shows the barbarian ship or a city gate, and
   says what it did), commodities (paper, cloth and coin) in the hand, the
   trades and the discards, knights to hire, activate, promote, move, use to
@@ -182,6 +190,33 @@ finished:
 
 In all, hard won 61%, medium 38% and easy 1%. A move took 1.4–1.7 ms on
 average and 126 ms at the slowest.
+
+On the Seafarers scenarios (section 16 of the spec) the bots also build
+ships toward spots across the sea once their island is full (roads and
+ships scored by what each can reach), value gold and island chits, chase the
+pirate off their ships with a knight, claim and build a wonder, and (hard)
+sail for Cloth villages. `npm run bots:league -- 60 ck:seafarers-1-new-shores official 3`
+(any scenario that combines, `official` or `random`, 3–6 players) plays them;
+60 games per setting (120 for Cloth for Catan), 1,680 in all, every one
+finished:
+
+| Scenario | Players | Map | Easy | Medium | Hard | Turns |
+|---|---|---|---|---|---|---|
+| Heading for New Shores | 3 | official / random | 0% / 3% | 25% / 25% | 75% / 72% | 74 / 76 |
+| | 4 | official / random | 5% / 0% | 40% / 42% | 55% / 58% | 83 / 82 |
+| | 5 | official / random | 0% / 0% | 38% / 43% | 62% / 57% | 71 / 71 |
+| | 6 | official / random | 2% / 0% | 30% / 45% | 68% / 55% | 72 / 71 |
+| Through the Desert | 3 | official / random | 2% / 0% | 33% / 37% | 65% / 63% | 72 / 72 |
+| | 4 | official / random | 0% / 0% | 38% / 45% | 62% / 55% | 73 / 77 |
+| | 5 | official / random | 0% / 0% | 42% / 40% | 58% / 60% | 68 / 75 |
+| | 6 | official / random | 0% / 0% | 33% / 33% | 67% / 67% | 81 / 85 |
+| Cloth for Catan | 3 | official / random | 2% / 3% | 32% / 38% | 67% / 58% | 68 / 74 |
+| | 4 | official / random | 3% / 2% | 46% / 34% | 52% / 64% | 74 / 80 |
+| The Wonders | 3 | official / random | 2% / 0% | 37% / 37% | 62% / 63% | 74 / 79 |
+| | 4 | official / random | 2% / 2% | 35% / 40% | 63% / 58% | 78 / 86 |
+
+In all, hard won 62%, medium 37% and easy 1%. A move took 1.4–2.5 ms on
+average; the bot's choice alone took about 1 ms (median) and at most 43 ms.
 
 ### Dice
 
@@ -342,7 +377,7 @@ In summary:
 | Victory | Only on your own turn (or part); checked after every action and at the start of every turn and part |
 | Seafarers | Ships, moving one open-ended ship per turn, closed routes, pirate (blocks and robs ships), gold, fog, island bonuses |
 | 5–6 players | 2021 **paired players** (default: P2 is the 3rd player to the left, supply trades only, no roll) and the legacy **Special Build Phase** |
-| Cities & Knights | In the browser game, progress cards included: `citiesAndKnights: true` on the base game with 3–6 players (5–6: the 5-6 Player Extension's commodities and Defender cards, paired players with knights and progress cards for player 2, or the special build phase with knights, walls, improvements, activating and promoting). Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, all 54 progress cards with their effects, and the beginners' map. [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
+| Cities & Knights | In the browser game, progress cards included: `citiesAndKnights: true` on the base game with 3–6 players (5–6: the 5-6 Player Extension's commodities and Defender cards, paired players with knights and progress cards for player 2, or the special build phase with knights, walls, improvements, activating and promoting). Commodities, the event die and the barbarians, knights, city improvements and metropolises, city walls, all 54 progress cards with their effects, and the beginners' map. With Seafarers (section 16 of the spec): Heading for New Shores and Through the Desert (3–6 players), Cloth for Catan and The Wonders (3–4), to the scenario's VP + 2; knights by roads and ships and at sea, closed routes to knights, the robber and pirate waiting on the barbarian track until the first attack, the pirate chased by knights; the other scenarios are refused with the rulebook's reason (`ckScenarioError`). [`docs/cities-and-knights.md`](docs/cities-and-knights.md) |
 | Options | `layout` official (default)/random, `tradeBuildMode` combined/separate, `fiveSixMode`, `tokenPlacement` spiral/random, `noAdjacentRed` (on), `noAdjacent2and12`, `noAdjacentSameNumber`, `friendlyRobber`, `discardLimit`, `setupGoldYield`, `victoryPoints`, `firstPlayer`, `citiesAndKnights` |
 
 ### Scenarios
@@ -473,7 +508,18 @@ and the differences between printings.
   actions always produce the same state.
 - **Regression fingerprints** (`test/regression.test.ts`): base and
   Seafarers games replay exactly as before Cities & Knights existed, and
-  3–4 player Cities & Knights games as before its 5–6 extension.
+  3–4 player Cities & Knights games as before its 5–6 extension (and
+  before its Seafarers combination).
+- **Cities & Knights with Seafarers** (`test/ckSeafarers.test.ts`,
+  `test/ckSeafarersBots.test.ts`): which scenarios combine and the
+  reasons for the others, the VP targets, the robber and pirate waiting
+  until the first attack, knights hired on land by a ship and moved to
+  sea, closed routes to knights, opponents' knights on routes, displacing
+  and retreating at sea, chasing the pirate, Road Building, the Bishop,
+  the Diplomat, Intrigue and the Deserter with ships, gold, the merchant,
+  harbors, the set-up city, Cloth for Catan's villages and pirate, The
+  Wonders' win and costs; and computer players finishing a game on every
+  scenario that combines, at every player count.
 
 - **Heuristic bots** finish a full game in every scenario, supported player
   count and layout, using only moves the engine accepts.
@@ -507,9 +553,13 @@ and the differences between printings.
   from crafted saves: the Alchemist's dice before the roll, the Spy taking
   a card, the Inventor's swap, the Diplomat's road, the Merchant and the
   Commercial Harbor's offers, a card that says why it can't be played, and
-  a friend playing the Spy online who alone sees the cards; and a 6-player
+  a friend playing the Spy online who alone sees the cards; a 6-player
   game on the 5–6 board played up to a special build phase with knights
-  and improvements on offer.
+  and improvements on offer; and Cities & Knights on Heading for New
+  Shores: the new-game switch (16 VP, The Four Islands refused with the
+  reason), the robber and pirate waiting on the barbarian track, the first
+  attack bringing them onto the board, a ship and a knight built, and a
+  knight chasing the pirate.
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 

@@ -60,6 +60,7 @@ export {
 export { cardCombinations, ckBankTradeActions, ckBuildActions, knightActions, progressPlays, progressTurnChoices } from './legal.js';
 export { openRoadError } from './effects.js';
 export { CK_BEGINNERS, ckMapSpec } from './map.js';
+export { CK_BLOCKED_SCENARIOS, CK_SEAFARERS_VP_BONUS, ckCombines, ckScenarioError, ckSeafarers, ckVictoryPoints } from './seafarers.js';
 export {
   drawProgress,
   effectCards,

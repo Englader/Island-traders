@@ -35,7 +35,7 @@ function savedLabel(r: GameRecord | null): { label: string } | null {
   } catch {
     return null;
   }
-  if (r.state.options?.citiesAndKnights) name = 'Cities & Knights';
+  if (r.state.options?.citiesAndKnights) name = r.state.scenario === 'base' ? 'Cities & Knights' : `${name} + Cities & Knights`;
   return { label: `${name} · turn ${r.state.turn.number} · ${r.seats.length} players` };
 }
 

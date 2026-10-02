@@ -193,6 +193,12 @@ export interface BarbarianState {
   total: number[];
   attacks: number;
   robberActive: boolean;
+  /**
+   * Seafarers scenarios before the first attack: the robber and the pirate
+   * wait at the end of the track, then take their scenario starting hexes
+   * (2025 rulebook p. 12). Null when they are on the board (or the base game).
+   */
+  waiting: { robber: boolean; pirate: boolean } | null;
 }
 
 export function barbarianState(view: GameView): BarbarianState | null {
@@ -220,6 +226,7 @@ export function barbarianState(view: GameView): BarbarianState | null {
     total,
     attacks: ck.attacks,
     robberActive: ck.robberActive,
+    waiting: ck.asleep ? { robber: ck.asleep.robber !== null, pirate: ck.asleep.pirate !== null } : null,
   };
 }
 

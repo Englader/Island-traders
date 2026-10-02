@@ -309,10 +309,34 @@ export function barbarianAttack(s: GameState): void {
   }
   ck.barbarians = 0;
   for (const k of Object.values(ck.knights)) k.active = false;
-  if (ck.attacks === 0) log(s, 'The barbarians return home; from now on the robber can be moved');
-  else log(s, 'The barbarians return home');
+  if (ck.attacks === 0) {
+    if (ck.asleep) wakeRobberAndPirate(s);
+    else log(s, 'The barbarians return home; from now on the robber can be moved');
+  } else log(s, 'The barbarians return home');
   ck.attacks++;
   s.phase = next;
+}
+
+/**
+ * Seafarers scenarios, the first attack: the robber and the pirate leave the
+ * barbarian track for the hexes where the scenario starts them (2025
+ * rulebook p. 12: "follow the directions in the Seafarers scenario for
+ * initial pirate placement"); from now on they move as usual. Nobody is
+ * robbed as they arrive.
+ */
+function wakeRobberAndPirate(s: GameState): void {
+  const ck = s.ck!;
+  const { robber, pirate } = ck.asleep!;
+  delete ck.asleep;
+  s.board.robber = robber;
+  s.board.pirate = pirate;
+  const pieces = [robber !== null ? 'robber' : null, pirate !== null ? 'pirate' : null].filter((x) => x !== null);
+  log(
+    s,
+    pieces.length === 0
+      ? 'The barbarians return home; from now on the robber can be moved'
+      : `The barbarians return home; the ${pieces.join(' and the ')} ${pieces.length > 1 ? 'take their places' : 'takes its place'} on the board and can be moved from now on`,
+  );
 }
 
 /** Reduces a city to a settlement; its city wall goes too (p. 6, 11). */
@@ -348,8 +372,11 @@ function robberPhase(s: GameState, resume: Phase): Phase {
 function production(s: GameState, resume: Phase): void {
   const dice = s.turn.dice!;
   const sum = dice[0] + dice[1];
+  // what a scenario adds to a roll (Cloth for Catan: the villages' cloth), as after the base game's roll
+  const afterRoll = scenarioOf(s).hooks.afterRoll;
   if (sum === 7) {
     s.phase = { kind: 'discard', pending: {}, resume: robberPhase(s, resume), lazy: true };
+    afterRoll?.(s, [dice[0], dice[1]]);
     return;
   }
   s.phase = resume;
@@ -362,6 +389,7 @@ function production(s: GameState, resume: Phase): void {
     s.phase = { kind: 'ck', step: 'aqueduct', pending, resume: s.phase };
   }
   addGoldChoice(s, prod.gold);
+  afterRoll?.(s, [dice[0], dice[1]]);
 }
 
 /**

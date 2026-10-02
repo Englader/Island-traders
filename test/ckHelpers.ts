@@ -13,6 +13,8 @@ import {
   nextInt,
   publicVP,
   rollDie,
+  scenarioOf,
+  topo,
   totalVP,
   viewFor,
   type Action,
@@ -132,6 +134,10 @@ export function countedVP(s: GameState, p: PlayerId): number {
   for (const t of ['trade', 'politics', 'science'] as const) if (ck.metropolises[t]?.owner === p) vp += 2;
   vp += ck.players[p].defenders + ck.players[p].vpCards.length;
   if (ck.merchant?.owner === p) vp += 1;
+  // Seafarers: island chits, and a scenario's own points (Cloth for Catan: 2 village cloth = 1 VP)
+  vp += s.players[p].bonusVP;
+  const cloth = (s.ext.cloth as { cloth: number[] } | undefined)?.cloth;
+  if (cloth) vp += Math.floor(cloth[p] / 2);
   return vp;
 }
 
@@ -180,6 +186,16 @@ export function checkInvariants(s: GameState, view = false): void {
     expect(pl.supply.cities + buildings.filter(([, b]) => b.type === 'city').length + tipped).toBe(PIECES_PER_PLAYER.cities);
     const roads = Object.values(s.board.pieces).filter((x) => x.owner === pl.id && x.type === 'road').length;
     expect(pl.supply.roads + roads).toBe(PIECES_PER_PLAYER.roads);
+    if (scenarioOf(s).rules.ships) {
+      // Seafarers: ships (a Wonders player's marker ship is off the board), and every knight still on its owner's roads or ships
+      const ships = Object.values(s.board.pieces).filter((x) => x.owner === pl.id && x.type === 'ship').length;
+      const marker = (s.ext.wonders as { owned: Array<string | null> } | undefined)?.owned[pl.id] ? 1 : 0;
+      expect(pl.supply.ships + ships + marker).toBe(PIECES_PER_PLAYER.ships);
+      for (const [v, k] of Object.entries(ck.knights)) {
+        if (k.owner !== pl.id) continue;
+        expect(topo(s).vertexEdges[v].some((e) => s.board.pieces[e]?.owner === pl.id), `knight at ${v} on its owner's route`).toBe(true);
+      }
+    }
     expect(ck.players[pl.id].progress.length).toBeLessThanOrEqual(s.turn.actor === pl.id || s.phase.kind === 'ck' ? 54 : 4);
     // VP: every point is public in Cities & Knights
     expect(totalVP(s, pl.id), `VP of ${pl.id}`).toBe(countedVP(s, pl.id));
@@ -206,6 +222,10 @@ export function checkInvariants(s: GameState, view = false): void {
     }
   }
   if (ck.merchant) expect(isLandHex(s, ck.merchant.hex)).toBe(true);
+  // Seafarers: never on gold (2025 rulebook p. 12)
+  if (ck.merchant) expect(s.board.hexes[ck.merchant.hex].terrain).not.toBe('gold');
+  // the robber and pirate wait off the board until the first attack, then stand on it
+  if (ck.asleep) expect(ck.attacks).toBe(0);
   for (const e of ck.turnEffects) expect(e.player).toBe(s.turn.actor);
   expect(ck.barbarians).toBeLessThan(7);
 }

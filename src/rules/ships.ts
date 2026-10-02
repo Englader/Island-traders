@@ -10,16 +10,28 @@ function shipEdgesOf(state: GameState, p: PlayerId): Set<EdgeId> {
   return out;
 }
 
-/**
- * Own buildings reachable from `start` along the player's ships, without using
- * `skip`. A walk stops at the first building it meets (that building is where
- * that part of the route ends). Opponent buildings are ignored, so a closed
- * route stays closed even if an opponent later settles along it.
- */
 function anchorsOf(state: GameState): Set<VertexId> {
   return new Set(scenarioOf(state).hooks.routeAnchors?.(state) ?? []);
 }
 
+/**
+ * Where a route of `p` ends: their settlement or city, a scenario anchor (a
+ * Cloth village), and in Cities & Knights their knight. A knight must stay
+ * connected to its owner's buildings, so a route between a building and a
+ * knight is closed (C&K rules p. 13, 2025 p. 12; Seafarers FAQ "When is a
+ * ship open?": "or for Cities & Knights also knights").
+ */
+function routeEnd(state: GameState, p: PlayerId, v: VertexId, anchors: Set<VertexId>): boolean {
+  return ownsBuildingAt(state, p, v) || anchors.has(v) || state.ck?.knights[v]?.owner === p;
+}
+
+/**
+ * Own buildings (and route ends, see routeEnd) reachable from `start` along
+ * the player's ships, without using `skip`. A walk stops at the first one it
+ * meets (that is where that part of the route ends). Opponent buildings and
+ * knights are ignored, so a closed route stays closed even if an opponent
+ * later settles along it, or places a knight on it (catan.com).
+ */
 function buildingsReachable(state: GameState, p: PlayerId, ships: Set<EdgeId>, start: VertexId, skip: EdgeId): Set<VertexId> {
   const t = topo(state);
   const anchors = anchorsOf(state);
@@ -28,7 +40,7 @@ function buildingsReachable(state: GameState, p: PlayerId, ships: Set<EdgeId>, s
   const stack = [start];
   while (stack.length) {
     const v = stack.pop()!;
-    if (ownsBuildingAt(state, p, v) || anchors.has(v)) {
+    if (routeEnd(state, p, v, anchors)) {
       found.add(v);
       continue;
     }
@@ -67,9 +79,9 @@ function connectedWithout(state: GameState, ships: Set<EdgeId>, from: VertexId, 
 
 /**
  * A route is closed when it links two different settlements/cities of the
- * owner (or one of them and a scenario anchor such as a Cloth village); its
- * ships can never move. A route that leaves and returns to the same settlement
- * counts as open.
+ * owner (or one of them and a scenario anchor such as a Cloth village, or in
+ * Cities & Knights one of the owner's knights); its ships can never move. A
+ * route that leaves and returns to the same settlement counts as open.
  */
 export function isShipOnClosedRoute(state: GameState, p: PlayerId, edge: EdgeId): boolean {
   const ships = shipEdgesOf(state, p);
@@ -90,8 +102,7 @@ export function isShipAtRouteEnd(state: GameState, p: PlayerId, edge: EdgeId): b
   const ships = shipEdgesOf(state, p);
   const [a, b] = t.edgeVertices[edge];
   const anchors = anchorsOf(state);
-  const freeEnd = (v: VertexId) =>
-    !ownsBuildingAt(state, p, v) && !anchors.has(v) && t.vertexEdges[v].every((e) => e === edge || !ships.has(e));
+  const freeEnd = (v: VertexId) => !routeEnd(state, p, v, anchors) && t.vertexEdges[v].every((e) => e === edge || !ships.has(e));
   if (freeEnd(a) || freeEnd(b)) return true;
   return connectedWithout(state, ships, a, b, edge);
 }

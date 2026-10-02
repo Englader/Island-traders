@@ -1,7 +1,7 @@
 import { generateMap } from '../board/mapSpec.js';
-import { CK_VICTORY_POINTS } from '../ck/constants.js';
 import { initCk } from '../ck/engine.js';
 import { ckMapSpec } from '../ck/map.js';
+import { ckScenarioError, ckVictoryPoints } from '../ck/seafarers.js';
 import { layoutKeyFor } from '../board/topology.js';
 import { PIECES_PER_PLAYER } from '../core/constants.js';
 import { emptyCounts, filledCounts } from '../core/resources.js';
@@ -48,8 +48,10 @@ export function createGame(config: GameConfig): GameState {
   }
   const options: GameOptions = { ...DEFAULT_OPTIONS, ...(config.options ?? {}) };
   const ck = options.citiesAndKnights === true;
-  // 3-6 players: 5-6 with the C&K 5-6 Player Extension (src/ck/constants.ts, docs/cities-and-knights.md section 15)
-  if (ck && scenario.expansion !== 'base') throw new Error('Cities & Knights is played on the base game for now');
+  // 3-6 players: 5-6 with the C&K 5-6 Player Extension (src/ck/constants.ts, docs/cities-and-knights.md section 15);
+  // the Seafarers scenarios the rulebook combines with it (src/ck/seafarers.ts, section 16)
+  const ckError = ck ? ckScenarioError(scenario) : null;
+  if (ckError) throw new Error(`${scenario.name}: ${ckError}`);
   const seed = String(config.seed);
   const rng = seedRng(seed);
 
@@ -103,7 +105,7 @@ export function createGame(config: GameConfig): GameState {
     scenario: scenario.id,
     seed,
     options,
-    victoryTarget: options.victoryPoints ?? (ck ? CK_VICTORY_POINTS : scenario.victoryPoints(n)),
+    victoryTarget: options.victoryPoints ?? (ck ? ckVictoryPoints(scenario, n) : scenario.victoryPoints(n)),
     rng,
     board: {
       layoutKey: layoutKeyFor(Object.keys(map.hexes)),
@@ -145,6 +147,12 @@ export function createGame(config: GameConfig): GameState {
   if (ck) {
     state.ck = initCk(state);
     for (const ps of state.stats!.players) ps.producedCommodities = { paper: 0, cloth: 0, coin: 0 };
+    // Seafarers: the robber and the pirate wait by the barbarian track until the first attack (2025 rulebook p. 12)
+    if (scenario.expansion !== 'base') {
+      state.ck.asleep = { robber: state.board.robber, pirate: state.board.pirate };
+      state.board.robber = null;
+      state.board.pirate = null;
+    }
   }
   // New World: players place the harbor tokens before the starting placement.
   const pool = state.ext.harborPool as unknown[] | undefined;
