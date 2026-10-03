@@ -8,6 +8,7 @@ import { CARD_INFO, COMMODITY_LIST, RESOURCE_INFO, RESOURCE_LIST, describeAction
 import { KNIGHT_LABEL, PROGRESS_TEXT, TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, namesList, progressDeck, sevenLimitOf } from '../game/ck';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
+import { rollLight } from '../game/rollLight';
 import type { ClockFeed } from '../game/clock';
 import { ClockIcon, LiveTime, useTimerShown } from './Clock';
 import { FxOverlay, fxFor, type FxEvent } from './Fx';
@@ -1195,6 +1196,11 @@ export function GameScreen(props: GameScreenProps) {
   const [rolling, setRolling] = useState<RollInfo | null>(null);
   // Trades and development cards are shown in the middle of the screen too.
   const prevView = useRef(view);
+  // The tiles a new roll paid out from, lit once the dice land: worked out
+  // while this render still holds the view from before the roll (prevView is
+  // moved on by the effect below), whose bank the roll was dealt from.
+  const light = useMemo(() => (rollFlash ? rollLight(prevView.current === view ? null : prevView.current, view) : null), [rollFlash?.key]);
+  const boardFlash: Flash | null = rolling && rollFlash ? null : rollFlash && light ? { ...rollFlash, light } : props.flash;
   const seenFx = useRef(props.last?.at ?? 0);
   const [fx, setFx] = useState<(FxEvent & { key: number; sounds?: CueCall[] }) | null>(null);
   // a roll's sounds (the rattle, a 7, the barbarian ship), waiting for the dice (the effect after this one)
@@ -1358,7 +1364,7 @@ export function GameScreen(props: GameScreenProps) {
           selected={mode?.kind === 'knight' ? mode.at : mode?.kind === 'knightTo' ? mode.from : mode?.kind === 'card' && mode.card === 'smith' ? (mode.first ?? null) : null}
           selectedHex={mode?.kind === 'card' && mode.card === 'inventor' ? (mode.first ?? null) : null}
           focusTokens={mode?.kind === 'card' && mode.card === 'inventor'}
-          flash={rolling && rollFlash ? null : props.flash}
+          flash={boardFlash}
           onPick={onPick}
           tools={
             <>

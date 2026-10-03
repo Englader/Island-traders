@@ -95,7 +95,12 @@ GitHub Actions)
   onto the board, trades show the cards sliding between the two sides, and
   development cards fly in and turn over when bought or played (tap to skip)
 - Dice rolls are animated: two 3D dice tumble in the middle of the screen,
-  show the total, then fly into the header (about 2 s; tap to skip)
+  show the total, then fly into the header (about 2 s; tap to skip). Then
+  the tiles that paid out glow for a moment, and only those. A tile with the
+  number stays dark if no settlement or city touches it, if the robber is on
+  it, or if the bank was short. The robber gives a little shake when it was
+  all that kept its tile from paying. Gold fields, Cities & Knights
+  commodities and Cloth for Catan's villages light up too.
 - Sounds, all made in the browser with the Web Audio API (no audio files):
   the dice rattle as long as they tumble, a bell on a 7, a chime when your
   turn comes (and a softer one when you must answer out of turn), taps,
@@ -534,6 +539,11 @@ and the differences between printings.
 
 - **Heuristic bots** finish a full game in every scenario, supported player
   count and layout, using only moves the engine accepts.
+- **The roll's glow** (`producingHexes`, `web/src/game/rollLight.ts`): over
+  random games on the base game, Seafarers scenarios and Cities & Knights,
+  plus the same positions with a nearly empty bank, the tiles lit are
+  exactly those whose cards (or gold picks, or village cloth) were dealt,
+  both from the engine's state and from what any seat's view shows.
 - **Game statistics** reconcile after whole bot games: every hand equals its
   gains minus its losses, the bank and the log agree, and trades and steals
   balance between players.
@@ -543,7 +553,8 @@ and the differences between printings.
   back paused, and a guest's reading matches the host's whatever the two
   devices think the time is.
 - **Browser** (`npm run test:e2e`, Playwright, phone viewport): a game
-  against the computer that is reloaded and continued, a Seafarers board,
+  against the computer that is reloaded and continued, a roll that lights
+  only the tile that paid (for the host and for a friend online), a Seafarers board,
   the pass-and-play hand-over, a random map whose preview (after a 🎲
   reroll) is the board the game starts with, a generated Seafarers map whose
   rerolls change the islands but not how many there are, the 5–6 maps (the

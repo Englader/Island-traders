@@ -213,6 +213,24 @@ function hasTrade(state: GameState, p: PlayerId): boolean {
   return Object.values(clothOf(state).villages).some((v) => v.traders.includes(p));
 }
 
+/** A village pays cloth on its number while it has cloth left and someone has reached it (the first trader takes the village's own cloth). */
+function villagePays(village: Village, roll: number): boolean {
+  return village.token === roll && village.cloth !== 0 && village.traders.length !== 0;
+}
+
+/**
+ * The Cloth for Catan villages that pay cloth on a roll of `roll`, from the
+ * game's `ext` (a GameState's or any seat's GameView: the villages are
+ * public). Empty in every other scenario, and on a 7.
+ */
+export function payingVillages(ext: Record<string, unknown>, roll: number): VertexId[] {
+  const c = ext.cloth as ClothState | undefined;
+  if (!c || roll === 7) return [];
+  return Object.entries(c.villages)
+    .filter(([, v]) => villagePays(v, roll))
+    .map(([at]) => at);
+}
+
 function giveCloth(state: GameState, p: PlayerId, village: Village, allowGeneral: boolean): boolean {
   const c = clothOf(state);
   if (village.cloth > 0) village.cloth--;
@@ -259,7 +277,7 @@ export const clothTrade: ScenarioDef = {
       if (sum === 7) return;
       const c = clothOf(state);
       for (const village of Object.values(c.villages)) {
-        if (village.token !== sum || village.cloth === 0 || village.traders.length === 0) continue;
+        if (!villagePays(village, sum)) continue;
         // The current player is served first, then the traders in order of arrival.
         const cur = state.turn.current;
         const order = village.traders.includes(cur) ? [cur, ...village.traders.filter((p) => p !== cur)] : village.traders;

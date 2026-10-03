@@ -3203,6 +3203,25 @@ svg.board text {
   stroke-width: 0.07;
   stroke-linejoin: round;
 }
+.roll-glow-village {
+  fill: rgba(255, 236, 140, 0.35);
+  stroke: #ffe066;
+  stroke-width: 0.06;
+}
+/* the robber kept a rolled number's tile from paying: a short shake */
+.robber-blocked {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: robber-blocked 0.45s ease-in-out 2;
+}
+@keyframes robber-blocked {
+  25% {
+    transform: rotate(-8deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+}
 @keyframes pulse {
   50% {
     transform: scale(1.3);
@@ -3256,6 +3275,7 @@ svg.board text {
   .gold-glint,
   .flash,
   .roll-glow,
+  .robber-blocked,
   .feed-line,
   .dice .die,
   .spinner,
