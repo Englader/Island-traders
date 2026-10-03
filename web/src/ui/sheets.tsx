@@ -178,9 +178,11 @@ function offerText(t: TradeOffer, view: GameView, seat: PlayerId): ComponentChil
         {who} gives <Counts c={t.give} />. What will you give for it?
       </>
     );
+  // a counter-offer to the player's own offer says so
+  const counters = t.replyTo !== undefined && view.turn.trades.some((x) => x.id === t.replyTo && x.from === seat && !x.open);
   return (
     <>
-      {who} gives <Counts c={t.give} /> for your <Counts c={t.get} />
+      {who} {counters ? 'counters: gives' : 'gives'} <Counts c={t.give} /> for your <Counts c={t.get} />
     </>
   );
 }
@@ -417,7 +419,7 @@ function OfferRow({
           {t.to.map((p) => (
             <span key={p} class="status-chip">
               <Dot color={colors[p]} /> {nameOf(view, p)}:{' '}
-              {t.accepted.includes(p) ? '✅ yes' : answered(p) ? '💬 made an offer' : t.rejected.includes(p) ? '❌ no' : '… waiting'}
+              {t.accepted.includes(p) ? '✅ yes' : answered(p) ? (t.open ? '💬 made an offer' : '💬 countered') : t.rejected.includes(p) ? '❌ no' : '… waiting'}
             </span>
           ))}
         </div>

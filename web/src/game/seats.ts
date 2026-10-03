@@ -91,6 +91,14 @@ export function botDelay(speed: BotSpeed, last: Action | null): number {
 }
 
 /**
+ * A computer player answering a trade offer (yes, no or a counter-offer):
+ * quicker than a move of its own, since the offer waits on it.
+ */
+export function answerDelay(speed: BotSpeed): number {
+  return Math.round(BOT_DELAY[speed] * 0.5);
+}
+
+/**
  * Players who must act now, most urgent first. While the active player's
  * trade offer is open, the players it is addressed to answer first.
  */

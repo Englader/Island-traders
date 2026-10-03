@@ -131,10 +131,12 @@ npm run test:e2e       # Playwright tests on a phone viewport (builds and serves
 ### Computer players
 
 A rule-based player (`src/bots/heuristicBot.ts`) that scores its options and
-looks a few moves ahead within its own turn. It doesn't see hidden cards,
-except that when answering an open trade offer it prefers to ask for a card
-the proposer actually holds. The level is chosen when starting a game and
-can be changed from the menu.
+looks a few moves ahead within its own turn. It decides only from what its
+seat can see: its own hand and cards, the board, the public counts and the
+game log as that seat sees it (see [Trading](#trading)); never another hand,
+a development or progress card it wasn't shown, the order of a deck or the
+dice to come. The level is chosen when starting a game and can be changed
+from the menu.
 
 Roads and ships are planned toward targets (`src/bots/expansion.ts`): the
 settlement spots that are legal now and the scenario's goals (Cloth
@@ -157,15 +159,17 @@ the city that just blocked it.
 | Robber and pirate | anyone, a bit at random | whoever it hurts most, leaning to the leader; the pirate when the ships next to it (and a sea route it blocks) matter more than the robber's best hex | the leader; plays knights to keep it there and to win Largest Army |
 | Development cards | a knight to free its own hex | Road Building with somewhere to go, Year of Plenty for its goal, Monopoly when the others hold many cards | Year of Plenty for the two cards that complete a settlement or city, Monopoly on what the others likely hold most of |
 | Discards on a 7 | keeps the cards of the build it is closest to, then its scarcest cards | keeps that build, then the next one, then cards it doesn't produce | same |
-| Taking offers | takes even slightly bad deals | takes deals that help it | only clearly good deals |
-| Near-winners | trades with anyone | no trades with someone 2 VP from winning | no trades with someone 3 VP from winning |
-| Its own offers | none | one per turn, one card for the one it needs | up to two, the second one two cards for one |
-| Answering open offers | generous, card for card | card for card when it gains | asks for up to one card more |
+| Taking offers | takes even slightly bad deals | takes deals that help it, weighing what they do for the partner by how far ahead the partner is; a little more generous with a player 2 VP or more behind | only clearly good deals, weighing the partner's gain more |
+| The leader and near-winners | no trade that wins someone the game | no trades with someone 2 VP from winning, and none that completes a settlement or city for the leader | no trades with someone 3 VP from winning, and none that completes a settlement or city for anyone level with it or ahead |
+| Counter-offers | none: yes or no | to an offer it turns down, one it would take itself: the cards you asked for where it can, for a card it needs that you likely hold | same, with a higher bar |
+| Answering open offers | a card it can spare for one it needs | a concrete counter-offer it gains from and you would likely take | same, with a higher bar |
+| Its own offers | now and then (two turns in five) one spare card for the one card a settlement or city lacks, to everyone | up to two a turn toward what it saves for (a city next turn too): one card for one, or two for two, to the players likely to hold them; then "who gives me grain?" | up to three: the same, then two cards for one when one card is all a settlement or city lacks, or its hand is over 7 before a 7 can take half |
 
 Whatever the level, a computer player never puts the robber on its own hex
-or where it hurts nobody while it could hit an opponent, and never makes a
+or where it hurts nobody while it could hit an opponent, never makes a
 trade (with the bank, an offer, an answer or a counter-offer) that brings
-none of its builds closer.
+none of its builds closer, and never makes the same offer twice in a turn or
+again after nobody took it on its last turn.
 
 `npm run bots:league -- [games] [scenarios] [official|random] [players] [paired|specialBuild]`
 seats one player of each level at a table (with more players the levels
@@ -174,38 +178,132 @@ games per setting, 960 in all:
 
 | Setting | Easy | Medium | Hard |
 |---|---|---|---|
-| 3 players, beginners' map | 4% | 48% | 48% |
-| 3 players, random map | 3% | 30% | 66% |
-| 4 players, beginners' map | 4% | 37% | 59% |
-| 4 players, random map | 1% | 33% | 66% |
+| 3 players, beginners' map | 5% | 49% | 46% |
+| 3 players, random map | 5% | 38% | 57% |
+| 4 players, beginners' map | 9% | 39% | 52% |
+| 4 players, random map | 2% | 45% | 53% |
 
-In all, hard won 60%, medium 37% and easy 3%. Medium now plans its turn
-the way hard does, and on the 3-player beginners' map the two are level.
+In all, hard won 52%, medium 43% and easy 5% (before the trading changes
+below: 60%, 37% and 3%). Medium gained the most from the new trading, and
+on the 3-player beginners' map medium and hard are level, as they were.
 
 The nine Seafarers scenarios, 3 players on the printed maps, 40 games each:
 
 | Scenario | Easy | Medium | Hard |
 |---|---|---|---|
-| Heading for New Shores | 0% | 33% | 68% |
-| The Four Islands | 0% | 28% | 73% |
-| The Fog Islands | 3% | 45% | 53% |
-| Through the Desert | 0% | 45% | 55% |
-| The Forgotten Tribe | 5% | 33% | 63% |
-| Cloth for Catan | 8% | 38% | 55% |
-| The Pirate Islands | 0% | 38% | 63% |
-| The Wonders | 3% | 45% | 53% |
-| New World | 0% | 48% | 53% |
+| Heading for New Shores | 3% | 40% | 58% |
+| The Four Islands | 5% | 48% | 48% |
+| The Fog Islands | 0% | 43% | 58% |
+| Through the Desert | 0% | 38% | 63% |
+| The Forgotten Tribe | 5% | 20% | 75% |
+| Cloth for Catan | 5% | 48% | 48% |
+| The Pirate Islands | 0% | 60% | 40% |
+| The Wonders | 5% | 35% | 60% |
+| New World | 3% | 38% | 60% |
 
-In all, hard won 59%, medium 39% and easy 2%. On the 5–6 maps of
-scenarios 1–4 (30 games per scenario, player count and layout, 480 in all,
-every one finished), hard won 59%, medium 40% and easy 1%.
+In all, hard won 56%, medium 41% and easy 3% (before the trading changes:
+59%, 39% and 2%). On the 5–6 maps of scenarios 1–4 (30 games per
+scenario, player count and layout, 480 in all, every one finished, before
+the trading changes), hard won 59%, medium 40% and easy 1%.
+
+#### Trading
+
+Trades with other players (`src/bots/trading.ts`) are decided from a card
+tracker (`src/bots/tracker.ts`) that follows each hand as the bot's seat
+sees it: the game log (production, starting cards, gold and discoveries,
+trades with players and the bank, discards, what was built and bought,
+Monopoly and Year of Plenty, and the Cities & Knights cards that move
+cards), with a card stolen between two other players counted as a card of
+unknown kind. Every hand's size and the bank's piles are public, so it also
+knows how many of each card the others hold between them, and fits its
+estimates to both. A card offered in public is in the proposer's hand.
+Before, an answer to an open offer looked at the proposer's hand; now a
+test deals every hidden card (the other hands, development and progress
+cards, the decks and the dice) anew in thousands of positions of base,
+Seafarers and Cities & Knights games and checks that no decision changes.
+What a Spy or Master Merchant shows its player is that seat's to use.
+
+- What a trade is worth: a card counts for what the bot wants it, more
+  while its goal lacks it and less once it has enough. A trade must bring a
+  build closer.
+- The partner: what the trade does for the other side, judged by the
+  tracker's picture of their hand, what they can build and what they asked
+  for, counts against it (medium a little, hard more), weighted by how far
+  ahead they are; a player well behind gets a little more. A trade that
+  completes a settlement or city for the leader (hard: for anyone level or
+  ahead) or wins someone the game is refused, and so is a counter-offer
+  that would do it.
+- Counter-offers and open offers: the bot answers with the deal it would
+  take that the proposer is most likely to accept: the cards they asked
+  for where it can, cards they likely hold, no more cards than they give
+  (people rarely take two for one).
+- Its own offers aim at what it saves for (the turn planner's builds, or a
+  city or settlement a card or three away) and go to the players likely to
+  hold the cards. It offers only when someone plausibly says yes, prefers a
+  fair offer to a 4:1 or 3:1 trade with the bank (a 2:1 harbor is as good),
+  and falls back to the bank when nobody takes it. It remembers its offers
+  this turn and last turn from the log: nothing is offered twice.
+
+Counter-offers show in the trade screen as "Ada counters: gives …", and
+the offer's status chip says she countered; the answers come quicker than
+a computer player's own moves.
+
+Measured with `npm run bots:audit` (10 games per line, 3 players on the
+printed maps), before (commit d3b32c1) → after. Every seat at one level,
+per game:
+
+| Mode, level | Offers (open) | Counter-offers | Trades between computer players | Offers repeated after nobody took them | Cards toward a build handed to the leader | Trades that let the leader build |
+|---|---|---|---|---|---|---|
+| Base, medium | 48.5 → 45.0 (17.9) | 0 → 14.9 | 12.8 → 7.6 | 11.0 → 0 | 2.4 → 1.3 | 0.1 → 0.1 |
+| Base, hard | 79.4 → 59.6 (21.8) | 0 → 17.1 | 11.5 → 3.1 | 17.4 → 0 | 1.6 → 0.4 | 0.5 → 0 |
+| New Shores, medium | 52.5 → 60.3 (24.9) | 0 → 20.4 | 12.3 → 11.5 | 14.7 → 0 | 3.7 → 2.5 | 0.9 → 0.1 |
+| New Shores, hard | 90.5 → 81.0 (31.7) | 0 → 22.7 | 17.5 → 6.7 | 16.3 → 0 | 2.1 → 1.3 | 0.7 → 0 |
+| C&K, medium | 50.5 → 61.3 (24.9) | 0 → 26.8 | 8.6 → 12.1 | 11.8 → 0 | 1.5 → 2.3 | 0.4 → 0 |
+| C&K, hard | 99.8 → 68.9 (27.2) | 0 → 24.0 | 16.7 → 8.5 | 11.3 → 0 | 2.0 → 1.1 | 0.1 → 0.2 |
+
+With a scripted person in seat 1 (`--human=0`) and two computer players,
+per game:
+
+| Mode, level | Trades with the person | The person's offers that ended in a trade | The bots' offers that did | Counter-offers | Offers repeated |
+|---|---|---|---|---|---|
+| Base, medium | 10.4 → 12.8 | 27% → 23% | 39% → 40% | 3.9 → 9.4 | 5.9 → 0 |
+| Base, hard | 10.8 → 14.6 | 18% → 14% | 28% → 42% | 2.8 → 8.6 | 6.9 → 0 |
+| New Shores, medium | 13.2 → 14.4 | 30% → 20% | 30% → 37% | 7.2 → 12.9 | 9.9 → 0 |
+| New Shores, hard | 10.5 → 14.3 | 15% → 16% | 22% → 26% | 5.6 → 16.4 | 13.1 → 0 |
+| C&K, medium | 12.6 → 13.8 | 34% → 25% | 32% → 35% | 5.5 → 14.6 | 8.3 → 0 |
+| C&K, hard | 15.8 → 18.2 | 20% → 18% | 28% → 39% | 6.5 → 11.3 | 5.7 → 0 |
+
+A person now trades more with the computer players, mostly through their
+counter-offers and better aimed offers, while fewer of the person's own
+offers go through as they stand: a computer player turns down a deal that
+does more for the other side than for itself, and counters instead.
+
+Head to head, the new computer players against those of commit d3b32c1 at
+the same level, seated alternately (`npm run bots:league -- 120 base official 3 --versus=<old src/index.ts> --level=medium,hard`;
+120 games per cell, 240 for hard with 4 players), share of the wins with
+half the seats:
+
+| | Base | Heading for New Shores | Cities & Knights |
+|---|---|---|---|
+| Medium, 3 players | 58% | 52% | 50% |
+| Hard, 3 players | 50% | 58% | 53% |
+| Medium, 4 players | 49% | 53% | 53% |
+| Hard, 4 players | 52% | 48% | 49% |
+
+In all the new players won 51.5% of 1,800 games (one cell's margin of
+error is about ±4 points at 120 games). Every game finished. A decision
+takes 0.7 ms at the median and 7 ms at the 99th percentile (at most 27 ms
+in 4-player games); answers to an offer in the browser come after half the
+usual pause.
 
 #### In Cities & Knights
 
 The same three levels play the expansion with a strategy of their own
 (`src/bots/ckBot.ts`, set by the `ck` part of each level's profile). Offers
 and answers follow the table above, with every card valued by what the
-player is saving for, commodities included; medium and hard trade with the
+player is saving for, commodities included (medium and hard also ask the
+others for the commodity their next city improvement lacks, from whoever
+likely holds it); medium and hard trade with the
 bank and harbors at their best rates (2:1 with the Merchant Guild, the
 merchant or a Merchant Fleet) and discard the cards they need least, after
 keeping those of the build they are closest to. Roads and ships use the
@@ -240,7 +338,9 @@ all, every one finished:
 | 4 players, random map | 1% | 38% | 61% | 71 |
 
 In all, hard won 68%, medium 30% and easy 2%. A computer move took about
-0.9 ms on average, the engine's own work included.
+0.9 ms on average, the engine's own work included. With the trading
+changes (see [Trading](#trading)), on the beginners' map over 120 games:
+3%, 21% and 76% with 3 players, 1%, 39% and 60% with 4.
 
 With 5–6 players the bots build, hire, wall, improve and wake knights in
 the special build phase and play their whole C&K turn as paired player 2.
@@ -293,7 +393,7 @@ average, the engine's own work included; the bot's choice alone took
 
 #### Blunder audit
 
-`npm run bots:audit -- [games] [modes] [official|random] [players] [levels] [--examples=N]`
+`npm run bots:audit -- [games] [modes] [official|random] [players] [levels] [--examples=N] [--human=N] [--bot=path]`
 (`src/bots/audit.ts`) plays whole games with every seat at the same level
 and counts clearly bad moves, by a yardstick of its own rather than the
 bots' scoring:
@@ -315,7 +415,17 @@ bots' scoring:
 - a turn that never ends
 
 It also times every decision and, with Seafarers, counts how often a
-player chose the pirate when it could move the robber or the pirate.
+player chose the pirate when it could move the robber or the pirate. A
+second table counts trades with other players per game: offers (and how
+many were open offers), counter-offers, the share that ended in a trade,
+trades between two computer players and with a person, cards toward a
+settlement or city handed to the leader, and offers repeated after nobody
+took them. `--human=N` makes seat N a scripted person who takes any fair
+offer (at least as many cards in as out, and it brings a build closer),
+never counters, and on its turn offers a spare card for the card a
+settlement or city lacks, then asks "who gives me one?". `--bot=path`
+audits another copy of the bot (`npm run bots:league -- … --versus=path`
+plays two copies head to head).
 Blunders per game, 20 games each with 3 players on the printed maps,
 before (the computer players of commit 7fc781f) and after:
 

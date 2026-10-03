@@ -103,6 +103,28 @@ test('trade screen: offers with the arrows, asking for offers, and the bank', as
   expect(await gameLog(page)).toContain('Sam trades 3 brick with the bank for 1 ore');
 });
 
+test('a computer player counters your offer, and you can take its counter-offer', async ({ page }) => {
+  // Ada (medium) lacks only a brick for her settlement and has no use for a second wool
+  await openGame(page, tradeGame({ ada: { lumber: 1, wool: 1, grain: 1, ore: 2 }, adaSettles: true }).record);
+  await page.getByRole('button', { name: /Trade/ }).first().click();
+  const sheet = page.locator('.sheet[aria-label="Trade"]');
+  // your wool for her ore, to Ada alone
+  await sheet.getByRole('button', { name: 'Give one more Wool' }).click();
+  await sheet.getByRole('button', { name: 'Get one more Ore' }).click();
+  await sheet.getByRole('button', { name: 'Björn' }).click();
+  await sheet.locator('.tsend button').click();
+  await expect.poll(() => gameLog(page)).toContain('Sam offers 1 wool for 1 ore');
+  // she answers with the ore you asked for, for one of your bricks
+  const counter = sheet.locator('.offers .offer', { hasText: 'Ada counters' });
+  await expect(counter).toBeVisible();
+  await expect(counter.locator('.count')).toHaveCount(2);
+  await expect(sheet.locator('.offer .status-chip', { hasText: 'Ada' })).toContainText('countered');
+  expect(await gameLog(page)).toContain('Ada offers 1 ore for 1 brick');
+  await counter.getByRole('button', { name: 'Accept' }).click();
+  await expect.poll(() => gameLog(page)).toContain('Ada trades 1 ore to Sam for 1 brick');
+  await expect.poll(() => yourCards(page)).toEqual([4, 2, 1, 3, 5]);
+});
+
 test('answering an open offer: the side it names is locked', async ({ page }) => {
   // Ada, on her turn, asks who gives her 1 brick
   const offer: TradeOffer = { id: 1, from: 1, to: [0], give: {}, get: { brick: 1 }, accepted: [], rejected: [], open: 'give' };
