@@ -22,8 +22,8 @@ import {
  * the views and the legal moves at the end. Two kinds:
  *
  * - Engine fingerprints must never change: random bots, and games replayed
- *   move by move from a recording (the computer players of commits 7fc781f
- *   and d3b32c1, test/fixtures/bot-games-<commit>.json.gz). They pin down
+ *   move by move from a recording (the computer players of commits 7fc781f,
+ *   d3b32c1 and 4d6b857, test/fixtures/bot-games-<commit>.json.gz). They pin down
  *   the rules engine alone; a change means base, Seafarers or Cities &
  *   Knights games behave differently.
  * - Computer player fingerprints change whenever the heuristic bots decide
@@ -39,7 +39,7 @@ function recorded(commit: string): Record<string, Action[]> {
 
 /** Recordings as `<commit>/<key>`. */
 const RECORDED: Record<string, Action[]> = {};
-for (const commit of ['7fc781f', 'd3b32c1']) for (const [key, actions] of Object.entries(recorded(commit))) RECORDED[`${commit}/${key}`] = actions;
+for (const commit of ['7fc781f', 'd3b32c1', '4d6b857']) for (const [key, actions] of Object.entries(recorded(commit))) RECORDED[`${commit}/${key}`] = actions;
 
 function fingerprint(config: GameConfig, mode: Mode, steps: number, levels?: BotLevel[], recording?: string): string {
   const h = createHash('sha256');
@@ -149,18 +149,37 @@ describe('games recorded with the computer players of d3b32c1 replay unchanged',
 });
 
 /**
+ * The computer players of commit 4d6b857 (before hard's Cities & Knights
+ * strategy changed), the game of theirs whose fingerprint that changed,
+ * replayed move by move. An engine fingerprint: it must never change.
+ */
+const C4D_CASES: Case[] = [
+  { name: 'C&K, 3 players, easy/medium/hard', config: { scenario: 'base', players: 3, seed: 'reg-ck-4', options: { ...CK, layout: 'random' } }, mode: 'replay', steps: 12000, recording: '4d6b857/ck-3p-reg-ck-4', hash: '8fcb1fb2c2d43b6e' },
+];
+
+describe('games recorded with the computer players of 4d6b857 replay unchanged', () => {
+  for (const c of C4D_CASES) {
+    it(c.name, () => {
+      expect(fingerprint(c.config, c.mode, c.steps, c.levels, c.recording)).toBe(c.hash);
+    });
+  }
+});
+
+/**
  * Whole games of today's computer players. These depend on the bots'
  * decisions as well as the engine: re-record them when the bots change on
  * purpose (the engine fingerprints above must not change with them). Last
- * re-recorded for the trading changes (src/bots/trading.ts, tracker.ts):
- * the games of the bots before them replay above with their old hashes.
+ * re-recorded for the trading changes (src/bots/trading.ts, tracker.ts),
+ * then for hard's Cities & Knights strategy (src/bots/ckWeights.ts, the
+ * easy/medium/hard game only): the games of the bots before them replay
+ * above with their old hashes.
  */
 const BOT_CASES: Case[] = [
   { name: 'base, 4 players, computer players', config: { scenario: 'base', players: 4, seed: 'reg-5' }, mode: 'heuristic', steps: 4000, hash: '0d3f42bc27a15b0a' },
   { name: 'The Pirate Islands, 4 players, computer players', config: { scenario: 'seafarers-7-pirate-islands', players: 4, seed: 'reg-9' }, mode: 'heuristic', steps: 4000, hash: '511a67aaa04fd0a2' },
   { name: 'The Wonders, 3 players, computer players', config: { scenario: 'seafarers-8-wonders', players: 3, seed: 'reg-10' }, mode: 'heuristic', steps: 4000, hash: '7ec283ac3164c725' },
   { name: 'C&K, 4 players, computer players', config: { scenario: 'base', players: 4, seed: 'reg-ck-3', options: CK }, mode: 'heuristic', steps: 12000, hash: '71dc5b7176e8a360' },
-  { name: 'C&K, 3 players, easy/medium/hard players', config: { scenario: 'base', players: 3, seed: 'reg-ck-4', options: { ...CK, layout: 'random' } }, mode: 'heuristic', steps: 12000, levels: ['easy', 'medium', 'hard'], hash: '8fcb1fb2c2d43b6e' },
+  { name: 'C&K, 3 players, easy/medium/hard players', config: { scenario: 'base', players: 3, seed: 'reg-ck-4', options: { ...CK, layout: 'random' } }, mode: 'heuristic', steps: 12000, levels: ['easy', 'medium', 'hard'], hash: 'f2ef5bc703408f03' },
 ];
 
 describe('computer players play whole games as recorded', () => {
