@@ -1,7 +1,9 @@
 import type { GameView, PlayerId } from 'engine';
 import { createPortal } from 'preact/compat';
-import { useLayoutEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import { formatRough, type ClockFeed } from '../game/clock';
+import { sound } from '../game/sound';
+import { endCue } from '../game/soundCues';
 import type { PlayerColor, SeatKind } from '../game/seats';
 import { Sheet } from './common';
 import { GameStatsSheet } from './GameStats';
@@ -41,6 +43,11 @@ export function EndGame({
   // The chip sits at the foot of the map (or of the screen, if there is no map area).
   const [boardArea, setBoardArea] = useState<Element | null>(null);
   useLayoutEffect(() => setBoardArea(document.querySelector('.game .board-area')), []);
+  // a fanfare for a win at this device, a gentle close otherwise (once, after the last move's own sound)
+  useEffect(() => {
+    const cue = endCue(view, seat, kinds);
+    if (cue) sound.play(cue, { delay: 0.45 });
+  }, []);
   const ph = view.phase;
   if (ph.kind !== 'gameOver' || covered) return null;
   if (stats) {

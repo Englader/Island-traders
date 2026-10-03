@@ -96,6 +96,17 @@ GitHub Actions)
   development cards fly in and turn over when bought or played (tap to skip)
 - Dice rolls are animated: two 3D dice tumble in the middle of the screen,
   show the total, then fly into the header (about 2 s; tap to skip)
+- Sounds, all made in the browser with the Web Audio API (no audio files):
+  the dice rattle as long as they tumble, a bell on a 7, a chime when your
+  turn comes (and a softer one when you must answer out of turn), taps,
+  knocks and thuds for roads, settlements and cities, a clink for knights,
+  stone for city walls, coins for trades, card flicks and flourishes, a low
+  tone for the robber and for cards taken from you, the barbarians' horn and
+  drums, a chat blip and a fanfare at the end. Other players' moves sound
+  softer, and a burst of fast computer moves is thinned out. The 🔊 button
+  beside the menu (also on the home and new-game screens, and the M key on
+  a computer) mutes everything; the menu has the volume. On phones your
+  turn also comes with a short buzz
 - Online play with friends: the host opens a room and friends join with a
   5-letter code or an invite link
 - Made for phones: tap-friendly board, portrait and sideways layouts, and
@@ -559,7 +570,17 @@ and the differences between printings.
   Shores: the new-game switch (16 VP, The Four Islands refused with the
   reason), the robber and pirate waiting on the barbarian track, the first
   attack bringing them onto the board, a ship and a knight built, and a
-  knight chasing the pirate.
+  knight chasing the pirate. Sound, with a stand-in AudioContext that counts
+  what it is asked to play: the mute button in the header (a toggle,
+  remembered after a reload, the same on the home and new-game screens and
+  in the menu with its volume), M on a computer, and a game played with
+  sound on (the dice and the 7, then "your turn") and off (no audio at all).
+- **Sound** (`web/src/game/sound.ts`, `soundCues.ts`, a stand-in
+  AudioContext): muting silences everything at once, the volume sets the
+  master gain, repeats and bursts are thinned out, nothing fails without
+  Web Audio, and which sound each move makes for each player (your build,
+  another's quieter one, a 7, your turn, a trade offer and its answers,
+  cards, the robber, the barbarians).
 
 Set `SIM_STEPS` and `SIM_SEEDS` to run longer simulations.
 

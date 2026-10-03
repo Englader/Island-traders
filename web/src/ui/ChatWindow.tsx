@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { PlayerColor } from '../game/seats';
+import { sound } from '../game/sound';
 import { CHAT_MAX_LENGTH, ChatRateLimiter, QUICK_PHRASES, cleanChatText, type ChatMessage } from '../net/chat';
 
 export interface ChatWindowProps {
@@ -66,7 +67,10 @@ export function ChatWindow({ messages, seat, colors, room, onSend }: ChatWindowP
     const m = fresh[fresh.length - 1];
     if (!m) return;
     setLive(m);
-    if (!open) setPeek(m);
+    if (open) return;
+    setPeek(m);
+    // a soft blip, only while the chat is closed (an open chat is being read)
+    sound.play('chat');
   }, [lastId]);
   useEffect(() => {
     if (!peek) return;

@@ -2,6 +2,7 @@ import { PROGRESS_CARDS, type Card, type CardCounts, type DevCardType, type Game
 import { useEffect, useRef } from 'preact/hooks';
 import { TRACK_INFO, TRACK_LIST, improvementName } from '../game/ck';
 import type { FxEvent } from '../game/fx';
+import { playCues, type CueCall } from '../game/soundCues';
 import { CARD_LIST, DEV_INFO, progressTitle } from '../game/names';
 import type { PlayerColor } from '../game/seats';
 import { DevCardView, ResourceCard } from './cards';
@@ -42,11 +43,28 @@ function DevFace({ card }: { card: DevCardType | null }) {
  * development card (bought: it flies in and, if it is yours, turns over;
  * played: it turns face up) for `ms` milliseconds. A tap skips it.
  */
-export function FxOverlay({ fx, view, colors, seat, ms, onDone }: { fx: FxEvent & { key: number }; view: GameView; colors: PlayerColor[]; seat: PlayerId | null; ms: number; onDone(): void }) {
+export function FxOverlay({
+  fx,
+  view,
+  colors,
+  seat,
+  ms,
+  onDone,
+}: {
+  /** `sounds`: what the moment sounds like, on its beats (game/soundCues.ts). */
+  fx: FxEvent & { key: number; sounds?: CueCall[] };
+  view: GameView;
+  colors: PlayerColor[];
+  seat: PlayerId | null;
+  ms: number;
+  onDone(): void;
+}) {
   const done = useRef(onDone);
   done.current = onDone;
   useEffect(() => {
     const t = setTimeout(() => done.current(), ms);
+    // its sounds keep their beats (the attack's drums, then its outcome)
+    if (fx.sounds) playCues(fx.sounds, { fx: ms / 1000 });
     return () => clearTimeout(t);
   }, [fx.key]);
   const name = (p: PlayerId) => (p === seat ? 'You' : view.players[p]?.name ?? `Player ${p + 1}`);
