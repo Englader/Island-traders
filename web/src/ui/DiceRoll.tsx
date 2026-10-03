@@ -1,6 +1,7 @@
 import type { EventFace } from 'engine';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { RollTiming } from '../game/seats';
+import { playCues, type CueCall } from '../game/soundCues';
 import { DiePips } from './common';
 import { EventFaceArt } from './ckArt';
 
@@ -11,6 +12,8 @@ export interface RollInfo {
   /** Cities & Knights: the event die, and what it did (shown under the total). */
   event?: EventFace;
   caption?: { title: string; sub: string; tone: 'ship' | 'attack' | ImprovementTone };
+  /** The roll's sounds (game/soundCues.ts): the rattle while the dice tumble, then a 7 or the barbarian ship as they land. */
+  sounds?: CueCall[];
 }
 
 type ImprovementTone = 'trade' | 'politics' | 'science';
@@ -92,6 +95,8 @@ export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; ti
         ),
       );
     });
+    // the rattle lasts as long as the dice tumble; a tap that skips the roll cuts it short
+    const voices = playCues(roll.sounds ?? [], { land: tumble / 1000 }, tumble / 1000, faces.length);
     timers.push(setTimeout(() => setStage('landed'), tumble + 50));
     timers.push(
       setTimeout(() => {
@@ -120,6 +125,7 @@ export function DiceRoll({ roll, timing, targets, onDone }: { roll: RollInfo; ti
     return () => {
       timers.forEach(clearTimeout);
       anims.forEach((a) => a.cancel());
+      voices.find((v) => v.cue === 'roll')?.stop();
     };
   }, [roll.key]);
 

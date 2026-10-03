@@ -8,6 +8,7 @@ import { Sheet } from './ui/common';
 import { ChatWindow } from './ui/ChatWindow';
 import { TimerSwitch } from './ui/Clock';
 import { AskSwitch } from './ui/ConfirmDialog';
+import { SoundSettings } from './ui/Sound';
 import { GameScreen } from './ui/GameScreen';
 import { flashOf } from './ui/flash';
 import { HomeScreen, NewGameScreen, ONLINE, PassScreen, RulesSheet, type NewGameConfig } from './ui/screens';
@@ -362,6 +363,7 @@ function GameMenu({
             </div>
           </div>
         )}
+        <SoundSettings />
         <TimerSwitch note={timerNote} />
         <AskSwitch />
         <button type="button" class="wide" onClick={onClose}>

@@ -2,8 +2,10 @@ import { CK_COSTS, COSTS, ckScenarioError, ckVictoryPoints, listScenarios, type 
 import { Fragment } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BOT_NAMES, LEVEL_HINT, LEVEL_LABEL, PLAYER_COLORS, type BotLevel, type BotSpeed, type Seat, type SeatKind } from '../game/seats';
+import { sound } from '../game/sound';
 import { loadJson, saveJson } from '../game/storage';
 import { Cost, Sheet, Stepper } from './common';
+import { SoundButton } from './Sound';
 import { MapPreview } from './MapPreview';
 import { GateGlyph, KnightGlyph } from './ckArt';
 
@@ -83,6 +85,7 @@ export function HomeScreen({
   return (
     <main class="home">
       <div class="home-card">
+        <SoundButton extraClass="corner" />
         <Logo />
         <h1>Island Traders</h1>
         <p class="tagline">Settle islands, trade goods and sail for glory. Play on one device, against the computer, or online with friends.</p>
@@ -222,6 +225,7 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
           ←
         </button>
         <h1>{online ? 'Host an online game' : 'New game'}</h1>
+        <SoundButton extraClass="end" />
       </header>
 
       <section class="setup-section">
@@ -451,6 +455,10 @@ export function NewGameScreen({ online, onStart, onBack }: { online: boolean; on
 }
 
 export function PassScreen({ name, color, reason, onReady }: { name: string; color: string; reason: string; onReady(): void }) {
+  // the device changes hands: the same chime as a turn coming round
+  useEffect(() => {
+    sound.play('yourTurn');
+  }, [name]);
   return (
     <main class="pass" style={{ '--pc': color } as Record<string, string>}>
       <div class="pass-card">

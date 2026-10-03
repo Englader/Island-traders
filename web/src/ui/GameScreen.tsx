@@ -12,6 +12,8 @@ import type { ClockFeed } from '../game/clock';
 import { ClockIcon, LiveTime, useTimerShown } from './Clock';
 import { FxOverlay, fxFor, type FxEvent } from './Fx';
 import { DiceRoll, type RollInfo } from './DiceRoll';
+import { cuesFor, playCues, type CueCall } from '../game/soundCues';
+import { SoundButton, toggleSound } from './Sound';
 import { DiceStatsSheet } from './DiceStats';
 import { ActionDeck, BUILD_KEYS, buildOrder, CheckIcon, EndIcon, notNowReason, StarIcon, TradeIcon, type DeckButton } from './ActionDeck';
 import { DockedLog, RichText, type LogPrefs } from './GameLog';
@@ -1129,8 +1131,8 @@ export function GameScreen(props: GameScreenProps) {
   }, [desk, tight, view.players.length, sc.id, primary.length, secondary.length]);
 
   // Keyboard: Esc closes a sheet or cancels a move; on wide screens R rolls, E ends
-  // the turn, T trades, C shows the development cards, B goes to the build tiles
-  // and 1-5 pick one.
+  // the turn, T trades, C shows the development cards, B goes to the build tiles,
+  // 1-5 pick one and M turns the sound on or off.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
@@ -1149,6 +1151,12 @@ export function GameScreen(props: GameScreenProps) {
         else if (mode?.kind === 'knight' || mode?.kind === 'knightTo') setMode({ kind: 'knights' });
         else if (mode && mode.kind !== 'robber') setMode(null);
         else return;
+        e.preventDefault();
+        return;
+      }
+      // the sound: also with a sheet open or the dice rolling
+      if (desk && !e.repeat && e.key.toLowerCase() === 'm') {
+        toggleSound();
         e.preventDefault();
         return;
       }
@@ -1188,14 +1196,24 @@ export function GameScreen(props: GameScreenProps) {
   // Trades and development cards are shown in the middle of the screen too.
   const prevView = useRef(view);
   const seenFx = useRef(props.last?.at ?? 0);
-  const [fx, setFx] = useState<(FxEvent & { key: number }) | null>(null);
+  const [fx, setFx] = useState<(FxEvent & { key: number; sounds?: CueCall[] }) | null>(null);
+  // a roll's sounds (the rattle, a 7, the barbarian ship), waiting for the dice (the effect after this one)
+  const rollSounds = useRef<{ key: number; cues: CueCall[] } | null>(null);
   useEffect(() => {
     const l = props.last;
     if (l && l.at !== seenFx.current) {
       seenFx.current = l.at;
       const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
       const e = fxFor(l.action, prevView.current, view, seat);
-      if (e && !reduced) setFx({ ...e, key: l.at });
+      // the move's sounds: at once, with the dice, or with the moment shown in the middle
+      const cues = cuesFor(l.action, prevView.current, view, seat, e);
+      const withDice = cues.filter((c) => c.cue === 'roll' || c.at === 'land');
+      const withFx = cues.filter((c) => c.at === 'fx');
+      rollSounds.current = withDice.length > 0 ? { key: l.at, cues: withDice } : null;
+      playCues(cues.filter((c) => c.at === 'now' && c.cue !== 'roll'));
+      // without the animation the moment's sounds play all the same, on its beats
+      if (e && reduced) playCues(withFx, { fx: fxTime(e.kind, FX_TIME[props.speed ?? 'normal']) / 1000 });
+      if (e && !reduced) setFx({ ...e, key: l.at, sounds: withFx });
       // without motion, the barbarians' attack and the cards you draw are still told, in a note that stays still
       else if (e?.kind === 'attack') setEventNote({ key: l.at, title: `The barbarians attack: ${e.barbarians} against ${e.knights}`, sub: e.outcome, tone: 'attack' });
       else if (e?.kind === 'draw' && e.draws.some((d) => d.p === seat && d.card))
@@ -1216,9 +1234,17 @@ export function GameScreen(props: GameScreenProps) {
     const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const event = view.ck?.event ?? null;
     const caption = dice && event ? { ...eventText(view, event, dice[1], seat), tone: event === 'ship' ? (view.ck!.barbarians === 0 ? 'attack' : 'ship') : event } : null;
-    if (dice && !reduced) setRolling({ key: rollFlash.key, dice: [dice[0], dice[1]], ...(event && caption ? { event, caption: caption as RollInfo['caption'] } : {}) });
+    // the sounds of this roll (worked out with the move, above): the rolling dice play them, or they play now
+    const sounds = rollSounds.current?.key === rollFlash.key ? rollSounds.current.cues : [];
+    rollSounds.current = null;
+    if (dice && !reduced) {
+      setRolling({ key: rollFlash.key, dice: [dice[0], dice[1]], ...(event && caption ? { event, caption: caption as RollInfo['caption'] } : {}), sounds });
+      return;
+    }
+    // no dice animation: a short rattle
+    playCues(sounds, { land: 0.22 }, 0.36, event ? 3 : 2);
     // (an attack's note comes with its outcome, from the effect above)
-    else if (caption && caption.tone !== 'attack') setEventNote((n) => (n && n.tone === 'attack' ? n : { key: rollFlash.key, ...caption }));
+    if (caption && caption.tone !== 'attack') setEventNote((n) => (n && n.tone === 'attack' ? n : { key: rollFlash.key, ...caption }));
   }, [rollFlash?.key]);
   useEffect(() => {
     if (!eventNote) return;
@@ -1247,6 +1273,7 @@ export function GameScreen(props: GameScreenProps) {
         <button type="button" class="icon-btn" aria-label="Menu" onClick={props.onMenu}>
           ☰
         </button>
+        <SoundButton shortcut={desk} />
         <div class="hud-main">
           <div class="status-text">
             {status}

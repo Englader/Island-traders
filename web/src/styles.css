@@ -4461,6 +4461,70 @@ input.switch:checked::before {
   }
 }
 
+/* --- sound: the mute button (header, home and new-game screens) and the menu's volume (ui/Sound.tsx) --- */
+button.sound-btn {
+  flex: none;
+  color: var(--ink);
+}
+button.sound-btn.muted {
+  color: var(--ink-2);
+}
+.speaker-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin: auto;
+}
+/* phones: a narrower button beside the menu, so the status keeps its room */
+@media (max-width: 899px) {
+  .hud .sound-btn {
+    min-width: 36px;
+    margin-left: -6px;
+  }
+}
+.home-card {
+  position: relative;
+}
+.sound-btn.corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.setup-head .sound-btn.end {
+  margin-left: auto;
+}
+.volume-row {
+  flex-wrap: nowrap;
+  min-height: var(--tap);
+  margin: 0;
+}
+.volume-row.off {
+  opacity: 0.55;
+}
+input.volume {
+  flex: 1;
+  max-width: 220px;
+  min-height: 0;
+  height: 30px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+input.volume:disabled {
+  cursor: default;
+}
+.volume-pct {
+  flex: none;
+  width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  font-size: 0.88rem;
+}
+
 /* --- "Ask before building": the confirmation dialog (ui/ConfirmDialog.tsx) -------------------- */
 .confirm-backdrop {
   position: fixed;
