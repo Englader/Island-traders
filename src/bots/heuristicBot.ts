@@ -12,23 +12,13 @@ import type {
   TradeOffer,
   VertexId,
 } from '../core/types.js';
-import { applyAction } from '../engine/apply.js';
+import { applyAction, setupOrder } from '../engine/apply.js';
 import { legalActions, playersToAct } from '../engine/legal.js';
-import { legalCities, legalRoads, legalSettlements, legalShips } from '../engine/placements.js';
-import {
-  distanceRuleOk,
-  handSize,
-  isBlockedVertex,
-  publicVP,
-  topo,
-  totalVP,
-  tradeRates,
-  vertexLandHexes,
-  vertexTouchesLand,
-  vertexZones,
-} from '../rules/queries.js';
+import { legalCities, legalSettlements, legalSetupSettlements } from '../engine/placements.js';
+import { handSize, publicVP, topo, totalVP, tradeRates, vertexLandHexes, vertexZones } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
 import { ckHeuristicAction, type CkProfile } from './ckBot.js';
+import { edgeKinds, openSpot, planExpansion, routeValue, type EdgeOption, type Expansion } from './expansion.js';
 
 /**
  * A rule-of-thumb bot. It never looks at hidden information it could not see
@@ -36,20 +26,25 @@ import { ckHeuristicAction, type CkProfile } from './ckBot.js';
  * state and its own hand.
  *
  * - Settlement spots are scored by pips, resources it lacks, harbors and
- *   island bonuses; roads and ships head for the best reachable spot.
- * - Each turn it picks a target (city, settlement, road/ship, wonder level,
- *   development card), builds it if it can and otherwise trades with the
- *   bank only when that completes the target right away.
- * - The robber goes where it hurts the leader most, never on its own hexes.
- * - It answers domestic offers by comparing what it needs; it does not make
- *   offers itself.
+ *   island bonuses (and, in the Pirate Islands, the pirate fleet's reach). Roads and ships are planned toward spots and scenario
+ *   goals that are still legal and reachable, re-checked at every decision
+ *   (src/bots/expansion.ts): a road that leads nowhere is never built, and a
+ *   spot an opponent will reach first counts for less.
+ * - Each turn it picks a target (city, settlement, road/ship toward a spot,
+ *   wonder level, development card), builds it if it can and otherwise
+ *   trades with the bank only when that completes the target right away.
+ *   Medium and hard look for the best set of settlements and cities they can
+ *   complete this turn, trades included; hard also plans its opening
+ *   placements in pairs.
+ * - The robber goes where it hurts the leader most, never on its own hexes
+ *   or where it hurts nobody while another hex hurts an opponent.
+ * - It answers domestic offers by comparing what it needs, and never takes
+ *   or makes a trade that leaves it further from its next build.
  * - Cities & Knights games have a strategy of their own (src/bots/ckBot.ts),
  *   tuned by the profile's `ck` settings.
  */
 
 type Kind = Action['type'];
-
-const ROAD_DECAY = 0.7;
 
 /** How well a computer player plays. */
 export type BotLevel = 'easy' | 'medium' | 'hard';
@@ -60,8 +55,14 @@ export interface Profile {
   noise: number;
   /** Saves up for a goal and trades with the bank and harbors to reach it. */
   plans: boolean;
-  /** Roads: the lowest value worth building one for (low = builds roads to nowhere). */
+  /** Roads and ships: the least a target (its value after distance and race) must be worth to build toward it. */
   roadBar: number;
+  /** Weighs the race for a spot: one an opponent reaches sooner counts for less. */
+  race: boolean;
+  /** Looks for the best set of settlements and cities it can complete this turn, bank trades included. */
+  planner: boolean;
+  /** Looks further: its opening placements in pairs, Year of Plenty and Monopoly by what they complete or take, a much better spot a road away first. */
+  lookahead: boolean;
   /** How hard the robber goes after whoever is ahead (0: anyone). */
   robberFocus: number;
   /** Plays development cards with a purpose (easy only plays a knight to free its own hex). */
@@ -76,7 +77,7 @@ export interface Profile {
   counterExtra: number;
   /** Trade offers it makes to other players per turn, when a card or two short of its goal. */
   offersPerTurn: number;
-  /** Before ending its turn with more than 7 cards, trades some away so a 7 costs less. */
+  /** With more than 7 cards at the end of its turn, trades a pile it can't use for a card it needs, so a 7 costs less. */
   handGuard: boolean;
   /** How far down its list of goals a development card comes (lower: buys more of them). */
   devRank: number;
@@ -88,7 +89,10 @@ const PROFILES: Record<BotLevel, Profile> = {
   easy: {
     noise: 0.8,
     plans: false,
-    roadBar: 0.2,
+    roadBar: 2,
+    race: false,
+    planner: false,
+    lookahead: false,
     robberFocus: 0,
     devCards: false,
     acceptGain: -0.6,
@@ -103,7 +107,10 @@ const PROFILES: Record<BotLevel, Profile> = {
   medium: {
     noise: 0.4,
     plans: true,
-    roadBar: 1,
+    roadBar: 3,
+    race: true,
+    planner: true,
+    lookahead: false,
     robberFocus: 1,
     devCards: true,
     acceptGain: 0.4,
@@ -118,7 +125,10 @@ const PROFILES: Record<BotLevel, Profile> = {
   hard: {
     noise: 0,
     plans: true,
-    roadBar: 1,
+    roadBar: 3,
+    race: true,
+    planner: true,
+    lookahead: true,
     robberFocus: 3,
     devCards: true,
     acceptGain: 0.7,
@@ -193,14 +203,6 @@ function hexValue(s: GameState, h: HexId, prod: Record<Resource, number>): numbe
   return n * (prod[r] === 0 ? 1.5 : prod[r] < 4 ? 1.15 : 1);
 }
 
-/** Could a settlement ever stand here (ignoring the road connection)? */
-function openSpot(s: GameState, p: PlayerId, v: VertexId): boolean {
-  if (!vertexTouchesLand(s, v) || isBlockedVertex(s, v) || !distanceRuleOk(s, v)) return false;
-  const sc = scenarioOf(s);
-  if (vertexZones(s, v).some((z) => sc.rules.forbiddenZones.includes(z))) return false;
-  return (sc.hooks.settlementAllowed?.(s, p, v, false) ?? null) === null;
-}
-
 /** Value of a settlement at `v` for player `p`. */
 export function spotValue(s: GameState, p: PlayerId, v: VertexId, prod = production(s, p)): number {
   const hexes = vertexLandHexes(s, v);
@@ -217,6 +219,9 @@ export function spotValue(s: GameState, p: PlayerId, v: VertexId, prod = product
     if (hb.type === 'generic') value += 1;
     else value += prod[hb.type] >= 5 ? 2.5 : 0.8;
   }
+  // Pirate Islands: the pirate fleet attacks every building next to its circuit, most rolls costing a card or more
+  const fleet = s.ext.pirateIslands as { circuit: HexId[] } | undefined;
+  if (fleet) for (const h of t.vertexHexes[v]) if (fleet.circuit.includes(h)) value -= 5;
   const bonus = scenarioOf(s).rules.islandBonus;
   if (bonus) {
     const pl = s.players[p];
@@ -229,8 +234,15 @@ export function spotValue(s: GameState, p: PlayerId, v: VertexId, prod = product
   return value;
 }
 
-/** Scenario targets that ships should head for, with a value. */
-function scenarioTargets(s: GameState, p: PlayerId): Map<VertexId, number> {
+/** What upgrading the settlement at `v` adds: its hexes once more. */
+function cityGain(s: GameState, v: VertexId, prod: Record<Resource, number>): number {
+  let gain = 0;
+  for (const h of vertexLandHexes(s, v)) if (h !== s.board.robber) gain += hexValue(s, h, prod);
+  return gain;
+}
+
+/** Scenario targets that roads and ships should head for, with a value: Cloth villages, tribe gifts, the fortress, fog to explore. */
+export function scenarioTargets(s: GameState, p: PlayerId): Map<VertexId, number> {
   const out = new Map<VertexId, number>();
   const t = topo(s);
   const cloth = s.ext.cloth as { villages: Record<VertexId, { cloth: number; traders: number[] }> } | undefined;
@@ -253,22 +265,44 @@ function scenarioTargets(s: GameState, p: PlayerId): Map<VertexId, number> {
       out.set(f.vertex, 12);
     }
   }
+  // fog: the first piece next to it explores it (a card, and maybe new land)
+  for (const [h, hex] of Object.entries(s.board.hexes)) {
+    if (hex.terrain !== 'fog') continue;
+    for (const v of t.hexVertices[h]) out.set(v, Math.max(out.get(v) ?? 0, 4));
+  }
   return out;
+}
+
+/** The player's expansion as it stands (see src/bots/expansion.ts). */
+export function expansionOf(s: GameState, p: PlayerId, pr: Profile, prod = production(s, p)): Expansion {
+  return planExpansion(s, p, {
+    value: (v) => spotValue(s, p, v, prod),
+    goals: scenarioTargets(s, p),
+    race: pr.race,
+    kinds: edgeKinds(s),
+  });
 }
 
 /**
  * How attractive each intersection is as a place to extend toward: settlement
  * spots and scenario targets, decaying with the number of paths to them.
- * `through` limits the paths it spreads along (the C&K bot: by road or by ship).
+ * Nothing spreads into or through another player's building or knight, and
+ * `through` limits the paths it spreads along. (The C&K bot uses it to judge
+ * where knights stand in an opponent's way; roads and ships use the planner.)
  */
 export function potentialField(s: GameState, p: PlayerId, through?: (e: EdgeId) => boolean): Map<VertexId, number> {
   const t = topo(s);
   const prod = production(s, p);
   const pot = new Map<VertexId, number>();
+  const blocked = (v: VertexId) => {
+    const b = s.board.buildings[v];
+    const k = s.ck?.knights[v];
+    return (!!b && b.owner !== p) || (!!k && k.owner !== p);
+  };
   for (const v of t.vertexIds) {
     if (openSpot(s, p, v)) pot.set(v, spotValue(s, p, v, prod));
   }
-  for (const [v, val] of scenarioTargets(s, p)) pot.set(v, Math.max(pot.get(v) ?? 0, val));
+  for (const [v, val] of scenarioTargets(s, p)) if (!blocked(v)) pot.set(v, Math.max(pot.get(v) ?? 0, val));
   const passable = (e: EdgeId) => {
     if (through && !through(e)) return false;
     const piece = s.board.pieces[e];
@@ -283,9 +317,8 @@ export function potentialField(s: GameState, p: PlayerId, through?: (e: EdgeId) 
         [a, b],
         [b, a],
       ] as const) {
-        const bx = s.board.buildings[x];
-        if (bx && bx.owner !== p) continue; // cannot pass an opponent's building
-        const val = (pot.get(x) ?? 0) * ROAD_DECAY;
+        if (blocked(x) || blocked(y)) continue;
+        const val = (pot.get(x) ?? 0) * 0.7;
         if (val > (pot.get(y) ?? 0) + 1e-9) {
           pot.set(y, val);
           changed = true;
@@ -303,24 +336,6 @@ function routeToFortressOpen(s: GameState, p: PlayerId): boolean {
   return !!pirate && !pirate.fortresses[p]?.captured;
 }
 
-function touchesOwnNetwork(s: GameState, p: PlayerId, v: VertexId): boolean {
-  if (s.board.buildings[v]?.owner === p) return true;
-  return topo(s).vertexEdges[v].some((e) => s.board.pieces[e]?.owner === p);
-}
-
-export function edgeScore(s: GameState, p: PlayerId, e: EdgeId, pot: Map<VertexId, number>): number {
-  const [a, b] = topo(s).edgeVertices[e];
-  const na = touchesOwnNetwork(s, p, a);
-  const nb = touchesOwnNetwork(s, p, b);
-  const far = na && !nb ? b : nb && !na ? a : null;
-  const pa = pot.get(a) ?? 0;
-  const pb = pot.get(b) ?? 0;
-  if (far === null) return Math.max(pa, pb) * 0.5;
-  const near = far === a ? b : a;
-  // Only worth it when it gets closer to something.
-  return (pot.get(far) ?? 0) - (pot.get(near) ?? 0) * 0.5;
-}
-
 function missing(have: ResourceCounts, cost: PartialCounts): PartialCounts {
   const out: PartialCounts = {};
   for (const r of RESOURCES) {
@@ -330,26 +345,35 @@ function missing(have: ResourceCounts, cost: PartialCounts): PartialCounts {
   return out;
 }
 
+function addCost(...costs: PartialCounts[]): PartialCounts {
+  const out: PartialCounts = {};
+  for (const c of costs) for (const r of RESOURCES) if (c[r]) out[r] = (out[r] ?? 0) + c[r]!;
+  return out;
+}
+
+type TradeStep = { give: Resource; rate: number; get: Resource };
+
 /** Bank trades that turn surplus into the missing cards; null if the surplus is not enough. */
-function tradePlan(s: GameState, p: PlayerId, cost: PartialCounts): Array<{ give: Resource; rate: number; get: Resource }> | null {
-  const have = { ...s.players[p].resources };
-  const need = missing(have, cost);
+function tradePlan(s: GameState, p: PlayerId, cost: PartialCounts, have = s.players[p].resources): TradeStep[] | null {
+  const hand = { ...have };
+  const need = missing(hand, cost);
   if (total(need) === 0) return [];
   const rates = tradeRates(s, p);
-  const plan: Array<{ give: Resource; rate: number; get: Resource }> = [];
+  const plan: TradeStep[] = [];
   const bank = { ...s.bank };
   for (const r of RESOURCES) {
     for (let i = 0; i < (need[r] ?? 0); i++) {
       if (bank[r] <= 0) return null;
       // cheapest surplus first
-      const giveOptions = RESOURCES.filter((g) => g !== r && have[g] - (cost[g] ?? 0) >= rates[g]).sort(
-        (x, y) => rates[x] - rates[y] || have[y] - have[x],
+      const giveOptions = RESOURCES.filter((g) => g !== r && hand[g] - (cost[g] ?? 0) >= rates[g]).sort(
+        (x, y) => rates[x] - rates[y] || hand[y] - hand[x],
       );
       const g = giveOptions[0];
       if (!g) return null;
-      have[g] -= rates[g];
-      have[r] += 1;
+      hand[g] -= rates[g];
+      hand[r] += 1;
       bank[r] -= 1;
+      bank[g] += rates[g];
       plan.push({ give: g, rate: rates[g], get: r });
     }
   }
@@ -381,23 +405,108 @@ export function leaderWeight(s: GameState, p: PlayerId, focus = 1, me?: PlayerId
   return w;
 }
 
-export function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>, pr: Profile = PROFILES.medium): number {
+/** What a robber (or pirate) move does: the player's own pieces next to it, and the opponents'. */
+export function robberEffect(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>): { own: number; hurt: number } {
   const t = topo(s);
-  let score = 0;
+  let own = 0;
+  let hurt = 0;
   if (a.piece === 'robber') {
-    const n = pips(s.board.hexes[a.hex].token);
     for (const v of t.hexVertices[a.hex]) {
       const b = s.board.buildings[v];
-      if (!b) continue;
-      const w = (b.type === 'city' ? 2 : 1) * n;
-      score += b.owner === p ? -3 * w : w * leaderWeight(s, b.owner, pr.robberFocus, p);
+      if (b) b.owner === p ? own++ : hurt++;
     }
   } else {
     for (const e of t.hexEdges[a.hex]) {
       const x = s.board.pieces[e];
-      if (x && x.type === 'ship') score += x.owner === p ? -2 : 1;
+      if (x?.type === 'ship') x.owner === p ? own++ : hurt++;
     }
   }
+  return { own, hurt };
+}
+
+/**
+ * The robber moves worth considering: away from the player's own pieces and
+ * onto an opponent's, whenever such a hex exists (even the easy level never
+ * robs itself or nobody by choice).
+ */
+export function sensibleRobberMoves<T extends Extract<Action, { type: 'moveRobber' }>>(s: GameState, p: PlayerId, moves: T[]): T[] {
+  const good = moves.filter((a) => {
+    const e = robberEffect(s, p, a);
+    return e.own === 0 && e.hurt > 0;
+  });
+  return good.length > 0 ? good : moves;
+}
+
+/** What the robber on `hex` does to the players next to it, as `p` sees it: their pips times how much it minds hurting them, its own pips three times over. */
+function robberHexValue(s: GameState, p: PlayerId, hex: HexId | null, pr: Profile): number {
+  if (hex === null || !s.board.hexes[hex]) return 0;
+  const n = pips(s.board.hexes[hex].token);
+  let score = 0;
+  for (const v of topo(s).hexVertices[hex]) {
+    const b = s.board.buildings[v];
+    if (!b) continue;
+    const w = (b.type === 'city' ? 2 : 1) * n;
+    score += b.owner === p ? -3 * w : w * leaderWeight(s, b.owner, pr.robberFocus, p);
+  }
+  return score;
+}
+
+/** Each player's expansion (roads and ships toward the spots and goals they can reach), per state: the pirate's targets. */
+const expansionCache = new WeakMap<GameState, Map<PlayerId, Expansion>>();
+
+function expansionFor(s: GameState, q: PlayerId): Expansion {
+  let m = expansionCache.get(s);
+  if (!m) expansionCache.set(s, (m = new Map()));
+  let x = m.get(q);
+  if (!x) m.set(q, (x = expansionOf(s, q, PROFILES.hard)));
+  return x;
+}
+
+/**
+ * What the pirate on `hex` does, as `p` sees it: the ships next to it can't
+ * move (and their owners can be robbed), and no ship can be built next to
+ * it, so a player whose best way on is by ship along it loses that (medium
+ * and hard weigh how much: what its best road or ship elsewhere is worth
+ * less). Ships of `p`'s own count against it.
+ */
+function pirateHexValue(s: GameState, p: PlayerId, hex: HexId | null, pr: Profile, blocking = true): number {
+  if (hex === null || !s.board.hexes[hex]) return 0;
+  const t = topo(s);
+  let score = 0;
+  const owners = new Set<PlayerId>();
+  for (const e of t.hexEdges[hex]) {
+    const x = s.board.pieces[e];
+    if (x?.type !== 'ship') continue;
+    owners.add(x.owner);
+    score += x.owner === p ? -2 : leaderWeight(s, x.owner, pr.robberFocus, p);
+  }
+  if (!blocking || pr.robberFocus <= 0) return score;
+  // the pirate stops ships next to it: what that takes from each player whose ships are there
+  for (const q of owners) {
+    let all = 0;
+    let free = 0;
+    for (const o of expansionFor(s, q).options) {
+      if (o.gain <= 0) continue;
+      all = Math.max(all, o.gain);
+      if (!(o.kind === 'ship' && t.edgeHexes[o.edge].includes(hex))) free = Math.max(free, o.gain);
+    }
+    const lost = (all - free) * 0.6;
+    score += q === p ? -lost : lost * leaderWeight(s, q, pr.robberFocus, p);
+  }
+  return score;
+}
+
+/**
+ * What moving the robber (or the pirate) gains: what it does where it lands
+ * less what it stops doing where it stands (a robber already on the
+ * leader's best hex is often better left there, with the pirate moved
+ * instead), plus the card taken from the victim.
+ */
+export function robberScore(s: GameState, p: PlayerId, a: Extract<Action, { type: 'moveRobber' }>, pr: Profile = PROFILES.medium): number {
+  let score =
+    a.piece === 'robber'
+      ? robberHexValue(s, p, a.hex, pr) - robberHexValue(s, p, s.board.robber, pr)
+      : pirateHexValue(s, p, a.hex, pr) - pirateHexValue(s, p, s.board.pirate, pr, false);
   if (a.victim !== undefined) score += handSize(s, a.victim) * 0.6 + publicVP(s, a.victim) * 0.4 * pr.robberFocus;
   if (a.take === 'cloth') score += 1.5;
   return score;
@@ -418,6 +527,45 @@ function resourceWants(s: GameState, p: PlayerId, target: PartialCounts | null):
   return out;
 }
 
+/**
+ * What the player could build next: a city, a settlement (where a spot is
+ * legal or a road leads to one), a development card, a road or ship that
+ * leads somewhere.
+ */
+function buildNeeds(s: GameState, p: PlayerId, x: Expansion | null): PartialCounts[] {
+  const out: PartialCounts[] = [];
+  if (legalCities(s, p).length > 0) out.push(COSTS.city);
+  if (s.players[p].supply.settlements > 0 && (legalSettlements(s, p).length > 0 || !!x?.best)) out.push(COSTS.settlement);
+  if (!s.ck && s.devDeck.length > 0) out.push(COSTS.devCard);
+  if (x && s.players[p].supply.settlements > 0) {
+    if (x.options.some((o) => o.kind === 'road' && o.gain > 0)) out.push(COSTS.road);
+    if (x.options.some((o) => o.kind === 'ship' && o.gain > 0)) out.push(COSTS.ship);
+  }
+  return out;
+}
+
+/**
+ * A trade is never worth it when nothing speaks for it: no build it could
+ * make gets any closer, and it costs cards or sets one of them back.
+ */
+export function keepsProgress(have: ResourceCounts, after: ResourceCounts, needs: PartialCounts[]): boolean {
+  let worse = false;
+  for (const c of needs) {
+    const d = total(missing(have, c)) - total(missing(after, c));
+    if (d > 0) return true;
+    if (d < 0) worse = true;
+  }
+  return !(worse || total(after) < total(have));
+}
+
+function tradeOk(s: GameState, p: PlayerId, give: PartialCounts, get: PartialCounts, x: Expansion | null): boolean {
+  const have = s.players[p].resources;
+  const after = { ...have };
+  for (const r of RESOURCES) after[r] += (get[r] ?? 0) - (give[r] ?? 0);
+  if (RESOURCES.some((r) => after[r] < 0)) return false;
+  return keepsProgress(have, after, buildNeeds(s, p, x));
+}
+
 interface Plan {
   cost: PartialCounts;
   /** The action that builds the target. */
@@ -425,74 +573,200 @@ interface Plan {
 }
 
 /**
- * Picks what the player is saving for: an open settlement spot first, then
- * whichever of city, road/ship toward a good spot, or development card is
- * fewest cards away. A claimed wonder always comes first.
+ * Picks what the player is saving for: a settlement at its best spot when
+ * one is legal (hard: unless a much better spot is a road away), then
+ * whichever of city, road/ship toward the best reachable spot, a road for
+ * Longest Road, or development card is fewest cards away. A claimed wonder
+ * always comes first.
  */
-function choosePlan(s: GameState, p: PlayerId, pot: Map<VertexId, number>, pr: Profile = PROFILES.medium): Plan | null {
+function choosePlan(s: GameState, p: PlayerId, x: Expansion, pr: Profile = PROFILES.medium): Plan | null {
   const pl = s.players[p];
   const wc = wonderCost(s, p);
   if (wc) return { cost: wc, action: { type: 'scenario', player: p, name: 'buildWonder' } };
   const prod = production(s, p);
   const spots = legalSettlements(s, p);
   if (spots.length > 0) {
-    const v = best(spots, (x) => spotValue(s, p, x, prod))!;
-    return { cost: COSTS.settlement, action: { type: 'buildSettlement', player: p, vertex: v } };
+    const v = best(spots, (y) => spotValue(s, p, y, prod))!;
+    const far = x.best && x.best.toward && x.targets.find((t) => t.vertex === x.best!.toward && t.spot);
+    // a much better spot a road away is worth the road first (hard)
+    if (!(pr.lookahead && far && far.score > spotValue(s, p, v, prod) * 1.5 && far.dist <= 1)) {
+      return { cost: COSTS.settlement, action: { type: 'buildSettlement', player: p, vertex: v } };
+    }
   }
   const options: Array<Plan & { rank: number }> = [];
   const cities = legalCities(s, p);
   if (cities.length > 0) {
-    const v = best(cities, (x) => spotValue(s, p, x, prod))!;
+    const v = best(cities, (y) => cityGain(s, y, prod))!;
     options.push({ cost: COSTS.city, action: { type: 'buildCity', player: p, vertex: v }, rank: 0 });
   }
-  const edges: Array<{ edge: EdgeId; ship: boolean }> = [
-    ...legalRoads(s, p).map((edge) => ({ edge, ship: false })),
-    ...legalShips(s, p).map((edge) => ({ edge, ship: true })),
-  ];
-  const top = best(edges, (x) => edgeScore(s, p, x.edge, pot));
   // Pirate Islands: every legal ship is a step of the route to the fortress.
-  const routeStep = routeToFortressOpen(s, p) && edges.some((x) => x.ship);
-  if (routeStep) {
-    const e = edges.find((x) => x.ship)!;
-    options.push({ cost: COSTS.ship, action: { type: 'buildShip', player: p, edge: e.edge }, rank: 0.5 });
-  } else if (top && edgeScore(s, p, top.edge, pot) > 0.5) {
-    options.push({
-      cost: top.ship ? COSTS.ship : COSTS.road,
-      action: { type: top.ship ? 'buildShip' : 'buildRoad', player: p, edge: top.edge },
-      rank: 1,
-    });
+  const routeShip = routeToFortressOpen(s, p) ? x.options.find((o) => o.kind === 'ship') : undefined;
+  if (routeShip) {
+    options.push({ cost: COSTS.ship, action: { type: 'buildShip', player: p, edge: routeShip.edge }, rank: 0.5 });
+  } else if (x.best && x.best.gain >= pr.roadBar * 0.5) {
+    options.push({ cost: edgeCost(x.best), action: edgeAction(p, x.best), rank: 1 });
   }
+  // Longest Road (or Trade Route) within two pieces, or held with a rival close behind
+  const lr = routeEdge(s, p, x);
+  if (lr && lr.value >= 0.6) options.push({ cost: edgeCost(lr.option), action: edgeAction(p, lr.option), rank: lr.value >= 2 ? 0 : 1.2 });
   if (s.devDeck.length > 0) options.push({ cost: COSTS.devCard, action: { type: 'buyDevCard', player: p }, rank: pr.devRank });
   const have = pl.resources;
   return best(options, (o) => -(total(missing(have, o.cost)) + o.rank * 0.4));
 }
 
+/** The road or ship that does most for Longest Road (with its value in VP, see routeValue), if any does. */
+function routeEdge(s: GameState, p: PlayerId, x: Expansion): { option: EdgeOption; value: number } | null {
+  let top: { option: EdgeOption; value: number } | null = null;
+  for (const o of x.options) {
+    const v = routeValue(s, p, o.edge, o.kind);
+    if (v > 0 && (!top || v + o.gain * 0.01 > top.value + top.option.gain * 0.01)) top = { option: o, value: v };
+  }
+  return top;
+}
+
+const edgeCost = (o: EdgeOption): PartialCounts => (o.kind === 'ship' ? COSTS.ship : COSTS.road);
+const edgeAction = (p: PlayerId, o: EdgeOption): Action => ({ type: o.kind === 'ship' ? 'buildShip' : 'buildRoad', player: p, edge: o.edge });
+
 function setupAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
   const settle = byType(acts, 'placeSettlement');
   if (settle.length > 0) {
     const prod = production(s, p);
+    if (pr.lookahead) {
+      const ahead = setupLookahead(s, p, settle.map((a) => a.vertex), (st, q) => {
+        const pq = production(st, q);
+        return (v) => spotValue(st, q, v, pq);
+      });
+      if (ahead) return settle.find((a) => a.vertex === ahead) ?? null;
+    }
     return pickBest(s, p, pr, settle, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   }
-  const pot = potentialField(s, p);
+  const x = expansionOf(s, p, pr);
   const edges = [...byType(acts, 'placeRoad'), ...byType(acts, 'placeShip')];
-  return best(edges, (a) => edgeScore(s, p, a.edge, pot) + (a.type === 'placeRoad' ? 0.1 : 0));
+  const gain = (a: (typeof edges)[number]) => x.byEdge.get(`${a.type === 'placeShip' ? 'ship' : 'road'}:${a.edge}`)?.gain ?? 0;
+  return best(edges, (a) => gain(a) + (a.type === 'placeRoad' ? 0.1 : 0));
 }
 
-function discardAction(s: GameState, p: PlayerId): Action | null {
+/**
+ * Hard's opening: each of the best few spots is scored together with the
+ * spot it would likely get on its next placement, after the others between
+ * now and then take theirs (each the best spot for them, as they see it).
+ * Null when this is its last starting placement (then the best spot is the
+ * best spot). `valueFor(state, player)` scores spots for that player.
+ */
+export function setupLookahead(
+  s: GameState,
+  p: PlayerId,
+  spots: VertexId[],
+  valueFor: (st: GameState, q: PlayerId) => (v: VertexId) => number,
+  candidates = 6,
+): VertexId | null {
+  const ph = s.phase;
+  if (ph.kind !== 'setup') return null;
+  const rounds = scenarioOf(s).rules.setupRounds.length;
+  // the placements between this one and the player's next one
+  const between: PlayerId[] = [];
+  let mine = false;
+  for (let r = ph.round; r < rounds && !mine; r++) {
+    const order = setupOrder(s, r);
+    for (let i = r === ph.round ? ph.index + 1 : 0; i < order.length; i++) {
+      if (order[i] === p) {
+        mine = true;
+        break;
+      }
+      between.push(order[i]);
+    }
+  }
+  if (!mine) return null;
+  const t = topo(s);
+  // where each player may place now; a pick then rules out its spot and the neighbours
+  const legal = new Map<PlayerId, VertexId[]>();
+  const legalOf = (q: PlayerId) => {
+    let l = legal.get(q);
+    if (!l) legal.set(q, (l = legalSetupSettlements(s, q)));
+    return l;
+  };
+  const mineNow = valueFor(s, p);
+  const ranked = spots.map((v) => ({ v, value: mineNow(v) })).sort((a, b) => b.value - a.value);
+  let top: VertexId | null = null;
+  let topScore = -Infinity;
+  for (const { v, value: first } of ranked.slice(0, s.players.length >= 5 ? 4 : candidates)) {
+    const sim: GameState = { ...s, board: { ...s.board, buildings: { ...s.board.buildings, [v]: { owner: p, type: 'settlement' } } } };
+    const taken = new Set<VertexId>([v]);
+    const free = (w: VertexId) => !taken.has(w) && !t.vertexNeighbors[w].some((n) => taken.has(n));
+    for (const q of between) {
+      const pick = best(legalOf(q).filter(free), valueFor(sim, q));
+      if (!pick) continue;
+      sim.board.buildings[pick] = { owner: q, type: 'settlement' };
+      taken.add(pick);
+    }
+    const next = legalOf(p).filter(free);
+    const later = valueFor(sim, p);
+    const second = next.length > 0 ? Math.max(...next.map(later)) : 0;
+    const score = first + second;
+    if (score > topScore) {
+      topScore = score;
+      top = v;
+    }
+  }
+  return top;
+}
+
+/**
+ * The cards it gives up on a 7: it keeps the cards of the build it is
+ * closest to (a city or settlement first on a tie), then (medium, hard) the
+ * ones it lacks most; easy throws the rest from its biggest piles.
+ */
+function discardAction(s: GameState, p: PlayerId, pr: Profile): Action | null {
   const ph = s.phase;
   if (ph.kind !== 'discard') return null;
   const need = ph.pending[p];
   if (need === undefined) return null;
   const have = { ...s.players[p].resources };
-  const keep = { ...COSTS.city, brick: 1, lumber: 1, wool: 1 } as PartialCounts;
-  const cards: PartialCounts = {};
-  for (let i = 0; i < need; i++) {
+  const keepN = total(have) - need;
+  const x = expansionOf(s, p, pr);
+  const goals: PartialCounts[] = [];
+  if (legalCities(s, p).length > 0) goals.push(COSTS.city);
+  if (s.players[p].supply.settlements > 0 && (legalSettlements(s, p).length > 0 || x.best)) goals.push(COSTS.settlement);
+  if (s.devDeck.length > 0) goals.push(COSTS.devCard);
+  if (x.best) goals.push(edgeCost(x.best));
+  // the goal it can keep closest to complete (in that order on a tie)
+  const short = (g: PartialCounts) => {
+    let lack = 0;
+    let used = 0;
+    for (const r of RESOURCES) {
+      lack += Math.max(0, (g[r] ?? 0) - have[r]);
+      used += Math.min(g[r] ?? 0, have[r]);
+    }
+    return lack + Math.max(0, used - keepN);
+  };
+  const goal = best(goals, (g) => -short(g)) ?? {};
+  const keep: PartialCounts = {};
+  let kept = 0;
+  for (const r of RESOURCES) {
+    const n = Math.min(goal[r] ?? 0, have[r], keepN - kept);
+    if (n > 0) keep[r] = n;
+    kept += Math.max(0, n);
+  }
+  const prod = production(s, p);
+  const left = { ...have };
+  for (const r of RESOURCES) left[r] -= keep[r] ?? 0;
+  const second = goals.find((g) => g !== goal) ?? {};
+  while (kept < keepN) {
     const r = best(
-      RESOURCES.filter((x) => have[x] > 0),
-      (x) => have[x] - (keep[x] ?? 0) + (x === 'ore' || x === 'grain' ? -0.2 : 0),
+      RESOURCES.filter((y) => left[y] > 0),
+      (y) =>
+        pr.plans
+          ? ((second[y] ?? 0) > (keep[y] ?? 0) ? 2 : 0) + (prod[y] === 0 ? 0.8 : 0) - (keep[y] ?? 0) * 0.5 + (y === 'ore' || y === 'grain' ? 0.2 : 0)
+          : -left[y],
     )!;
-    have[r]--;
-    cards[r] = (cards[r] ?? 0) + 1;
+    left[r]--;
+    keep[r] = (keep[r] ?? 0) + 1;
+    kept++;
+  }
+  const cards: PartialCounts = {};
+  for (const r of RESOURCES) {
+    const n = have[r] - (keep[r] ?? 0);
+    if (n > 0) cards[r] = n;
   }
   return { type: 'discard', player: p, cards };
 }
@@ -520,6 +794,8 @@ function goldAction(s: GameState, p: PlayerId): Action | null {
 }
 
 function respondToTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
+  let x: Expansion | null = null;
+  const exp = () => (x ??= expansionOf(s, p, pr));
   for (const t of s.turn.trades) {
     if (!t.to.includes(p) || t.accepted.includes(p) || t.rejected.includes(p)) continue;
     const accept = acts.find((a) => a.type === 'acceptTrade' && a.tradeId === t.id);
@@ -529,13 +805,13 @@ function respondToTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile)
     const proposerClose = nearWin(s, t.from, pr);
     if (t.open) {
       const counter = proposerClose ? null : counterOffer(s, p, t, wants, pr);
-      if (counter) return counter;
+      if (counter && counter.type === 'proposeTrade' && tradeOk(s, p, counter.give, counter.get, exp())) return counter;
       if (reject) return reject;
       continue;
     }
     let gain = 0;
     for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
-    if (accept && gain > pr.acceptGain && !proposerClose) return accept;
+    if (accept && gain > pr.acceptGain && !proposerClose && tradeOk(s, p, t.get, t.give, exp())) return accept;
     if (reject) return reject;
   }
   return null;
@@ -582,11 +858,19 @@ function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Re
   return { type: 'proposeTrade', player: p, give: { [pay]: n }, get: { ...t.give }, to: [t.from], replyTo: t.id };
 }
 
-function totalVPPublic(s: GameState, p: PlayerId): number {
-  return publicVP(s, p);
+/** Expected cards of `r` the others hold, from their production (hands are hidden). */
+function guessHeld(s: GameState, p: PlayerId, r: Resource): number {
+  let n = 0;
+  for (const pl of s.players) {
+    if (pl.id === p) continue;
+    const prod = production(s, pl.id);
+    const all = RESOURCES.reduce((x, y) => x + prod[y], 0);
+    n += all > 0 ? (handSize(s, pl.id) * prod[r]) / all : handSize(s, pl.id) / 5;
+  }
+  return n;
 }
 
-function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | null, pr: Profile): Action | null {
+function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | null, pr: Profile, x: Expansion | null): Action | null {
   const knight = acts.find((a) => a.type === 'playKnight');
   if (knight) {
     const t = topo(s);
@@ -600,7 +884,7 @@ function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | n
     // Pirate Islands: a knight arms the rearmost normal ship, so keep it until there is one.
     const warship =
       s.ext.pirateIslands !== undefined &&
-      Object.values(s.board.pieces).some((x) => x.owner === p && x.type === 'ship' && !x.warship);
+      Object.values(s.board.pieces).some((y) => y.owner === p && y.type === 'ship' && !y.warship);
     if (blocked || armyGain || warship) return knight;
     // A focused player keeps the robber on the leader and races for Largest Army.
     if (pr.robberFocus > 1 && scenarioOf(s).rules.largestArmy && s.ext.pirateIslands === undefined) return knight;
@@ -608,41 +892,40 @@ function devCardAction(s: GameState, p: PlayerId, acts: Action[], plan: Plan | n
   if (!pr.devCards) return null;
   if (s.phase.kind !== 'main') return null;
   const rb = acts.find((a) => a.type === 'playRoadBuilding');
-  if (rb && s.players[p].supply.roads + s.players[p].supply.ships >= 2) {
-    const pot = potentialField(s, p);
-    if (legalEdgeScores(s, p, pot) > 0.5) return rb;
-  }
+  if (rb && s.players[p].supply.roads + s.players[p].supply.ships >= 2 && x?.best && x.best.gain >= pr.roadBar) return rb;
   const yop = byType(acts, 'playYearOfPlenty');
-  if (yop.length > 0 && plan) {
-    const need = missing(s.players[p].resources, plan.cost);
-    if (total(need) > 0 && total(need) <= 2) {
-      const want: Resource[] = [];
-      for (const r of RESOURCES) for (let i = 0; i < (need[r] ?? 0); i++) want.push(r);
-      const pick = yop.find((a) => want.every((r) => a.resources.includes(r)));
-      if (pick) return pick;
+  if (yop.length > 0) {
+    // the two cards that complete a settlement or city now (hard), or the plan
+    const have = s.players[p].resources;
+    const goals: PartialCounts[] = [];
+    if (pr.lookahead) {
+      if (legalCities(s, p).length > 0) goals.push(COSTS.city);
+      if (legalSettlements(s, p).length > 0) goals.push(COSTS.settlement);
+    }
+    if (plan) goals.push(plan.cost);
+    for (const g of goals) {
+      const need = missing(have, g);
+      if (total(need) > 0 && total(need) <= 2) {
+        const want: Resource[] = [];
+        for (const r of RESOURCES) for (let i = 0; i < (need[r] ?? 0); i++) want.push(r);
+        const pick = yop.find((a) => want.every((r) => a.resources.includes(r)));
+        if (pick) return pick;
+      }
     }
   }
   const mono = byType(acts, 'playMonopoly');
   if (mono.length > 0) {
-    const others = s.players.filter((x) => x.id !== p).reduce((n, x) => n + handSize(s, x.id), 0);
-    if (others >= 6) {
-      const wants = resourceWants(s, p, plan?.cost ?? null);
-      return best(mono, (a) => wants[a.resource]);
+    const wants = resourceWants(s, p, plan?.cost ?? null);
+    if (pr.lookahead) {
+      // the resource the others hold most of, by what they produce, weighed by what it wants
+      const top = best(mono, (a) => guessHeld(s, p, a.resource) * wants[a.resource]);
+      if (top && guessHeld(s, p, top.resource) >= 3) return top;
+    } else {
+      const others = s.players.filter((y) => y.id !== p).reduce((n, y) => n + handSize(s, y.id), 0);
+      if (others >= 6) return best(mono, (a) => wants[a.resource]);
     }
   }
   return null;
-}
-
-function legalEdgeScores(s: GameState, p: PlayerId, pot: Map<VertexId, number>): number {
-  let top = 0;
-  const t = topo(s);
-  for (const e of t.edgeIds) {
-    if (s.board.pieces[e]) continue;
-    const [a, b] = t.edgeVertices[e];
-    if (!touchesOwnNetwork(s, p, a) && !touchesOwnNetwork(s, p, b)) continue;
-    top = Math.max(top, edgeScore(s, p, e, pot));
-  }
-  return top;
 }
 
 function scenarioMainAction(s: GameState, p: PlayerId, acts: Action[]): Action | null {
@@ -691,7 +974,7 @@ function wonderCost(s: GameState, p: PlayerId): PartialCounts | null {
  * answered, and take or turn down counter-offers. `null` means "wait for the
  * answers"; `undefined` means there is nothing to do.
  */
-function actorTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null | undefined {
+function actorTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile, x: () => Expansion): Action | null | undefined {
   for (const t of s.turn.trades) {
     if (t.from !== p) continue;
     if (t.accepted.length > 0) {
@@ -703,12 +986,12 @@ function actorTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Ac
   }
   for (const t of s.turn.trades) {
     if (t.from === p || !t.to.includes(p)) continue;
-    const plan = choosePlan(s, p, potentialField(s, p));
+    const plan = choosePlan(s, p, x(), pr);
     const wants = resourceWants(s, p, plan?.cost ?? null);
     let gain = 0;
     for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
     const accept = acts.find((a) => a.type === 'acceptTrade' && a.tradeId === t.id);
-    if (accept && gain > pr.acceptGain && !nearWin(s, t.from, pr)) return accept;
+    if (accept && gain > pr.acceptGain && !nearWin(s, t.from, pr) && tradeOk(s, p, t.get, t.give, x())) return accept;
     return { type: 'rejectTrade', player: p, tradeId: t.id };
   }
   return undefined;
@@ -718,7 +1001,7 @@ function actorTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Ac
  * Offers another player a card for the one or two it is missing for its goal:
  * one spare card for one needed card, and on a second try (hard) two for one.
  */
-function offerToPlayers(s: GameState, p: PlayerId, plan: Plan, pr: Profile): Action | null {
+function offerToPlayers(s: GameState, p: PlayerId, plan: Plan, pr: Profile, x: Expansion): Action | null {
   const made = s.turn.offers ?? 0;
   if (made >= pr.offersPerTurn || s.turn.role !== 'active') return null;
   if (s.options.tradeBuildMode === 'separate' && s.turn.buildingStarted) return null;
@@ -728,7 +1011,7 @@ function offerToPlayers(s: GameState, p: PlayerId, plan: Plan, pr: Profile): Act
   const want = RESOURCES.find((r) => (need[r] ?? 0) > 0)!;
   const spare = minus(have, plan.cost);
   const wants = resourceWants(s, p, plan.cost);
-  const pool = RESOURCES.filter((r) => r !== want && spare[r] >= 1).sort((x, y) => wants[x] - wants[y] || spare[y] - spare[x]);
+  const pool = RESOURCES.filter((r) => r !== want && spare[r] >= 1).sort((a, b) => wants[a] - wants[b] || spare[b] - spare[a]);
   if (pool.length === 0) return null;
   const give: PartialCounts = { [pool[0]]: 1 };
   if (made >= 1) {
@@ -736,10 +1019,135 @@ function offerToPlayers(s: GameState, p: PlayerId, plan: Plan, pr: Profile): Act
     if (!second) return null;
     give[second] = (give[second] ?? 0) + 1;
   }
-  const to = s.players.map((x) => x.id).filter((q) => q !== p && !nearWin(s, q, pr));
-  if (to.length === 0) return null;
+  const to = s.players.map((y) => y.id).filter((q) => q !== p && !nearWin(s, q, pr));
+  if (to.length === 0 || !tradeOk(s, p, give, { [want]: 1 }, x)) return null;
   return { type: 'proposeTrade', player: p, give, get: { [want]: 1 }, to };
 }
+
+// ---------------------------------------------------------------------------
+// The turn planner (medium, hard): the best settlements and cities to complete this turn
+// ---------------------------------------------------------------------------
+
+/** What a VP is worth against the cards in hand, in cards (the turn planner's unit). */
+const VP_WORTH = 6;
+/** A card kept in hand. */
+const CARD_WORTH = 0.75;
+
+interface Build {
+  action: Action;
+  cost: PartialCounts;
+  value: number;
+  /** The settlement spot it takes (no two adjacent ones in a package). */
+  vertex?: VertexId;
+  /** It starts with a road or ship (one per package). */
+  road?: boolean;
+}
+
+interface Package {
+  builds: Build[];
+  trades: TradeStep[];
+  value: number;
+}
+
+/**
+ * The turn planner (medium, hard): the settlements and cities it can build
+ * this turn (a spot one road or ship away included, and the road that takes
+ * Longest Road), with the bank trades they need. Every set of up to two
+ * builds is scored by what it adds (a VP and the production of the spot
+ * each) less the cards it costs (cards traded away included); the best set
+ * wins.
+ */
+function bestPackage(s: GameState, p: PlayerId, x: Expansion): Package | null {
+  const pl = s.players[p];
+  const prod = production(s, p);
+  const have = pl.resources;
+  const items: Build[] = [];
+  const cities = legalCities(s, p)
+    .map((v) => ({ v, gain: cityGain(s, v, prod) }))
+    .sort((a, b) => b.gain - a.gain)
+    .slice(0, 2);
+  for (const c of cities) {
+    items.push({ action: { type: 'buildCity', player: p, vertex: c.v }, cost: COSTS.city, value: VP_WORTH + c.gain * 0.35 });
+  }
+  const spots = legalSettlements(s, p)
+    .map((v) => ({ v, value: spotValue(s, p, v, prod) }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3);
+  for (const sp of spots) {
+    items.push({ action: { type: 'buildSettlement', player: p, vertex: sp.v }, cost: COSTS.settlement, value: VP_WORTH + sp.value * 0.35, vertex: sp.v });
+  }
+  // a spot one road (or ship) away
+  if (pl.supply.settlements > 0) {
+    for (const o of x.options.slice(0, 3)) {
+      if (o.gain <= 0 || o.left !== 0 || !o.toward) continue;
+      const t = x.targets.find((y) => y.vertex === o.toward && y.spot);
+      if (!t || legalSettlements(s, p).includes(t.vertex)) continue;
+      items.push({
+        action: edgeAction(p, o),
+        cost: addCost(edgeCost(o), COSTS.settlement),
+        value: VP_WORTH + t.value * 0.35 - 0.3,
+        vertex: t.vertex,
+        road: true,
+      });
+    }
+  }
+  // the road that takes Longest Road now
+  const lr = routeEdge(s, p, x);
+  if (lr && lr.value >= 2) items.push({ action: edgeAction(p, lr.option), cost: edgeCost(lr.option), value: VP_WORTH * 2, road: true });
+  if (items.length === 0) return null;
+  const sets: Build[][] = items.map((i) => [i]);
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i];
+      const b = items[j];
+      if (a.vertex && b.vertex && (a.vertex === b.vertex || topo(s).vertexNeighbors[a.vertex].includes(b.vertex))) continue;
+      if (a.action.type === 'buildCity' && b.action.type === 'buildCity' && pl.supply.cities < 2) continue;
+      const settles = [a, b].filter((y) => y.vertex).length;
+      if (settles > pl.supply.settlements) continue;
+      if (a.road && b.road) continue;
+      sets.push([a, b]);
+    }
+  }
+  let top: Package | null = null;
+  for (const set of sets) {
+    const cost = addCost(...set.map((b) => b.cost));
+    const trades = tradePlan(s, p, cost, have);
+    if (!trades) continue;
+    const spent = total(cost) + trades.reduce((n, t) => n + t.rate - 1, 0);
+    const value = set.reduce((n, b) => n + b.value, 0) - spent * CARD_WORTH;
+    if (!top || value > top.value) top = { builds: set, trades, value };
+  }
+  return top && top.value > 0 ? top : null;
+}
+
+/** The next step of a package: a trade it needs (an offer to the players first), then its builds, cities first. */
+function packageStep(s: GameState, p: PlayerId, pkg: Package, acts: Action[], pr: Profile, x: Expansion): Action | null {
+  if (pkg.trades.length > 0) {
+    const t = pkg.trades[0];
+    if (t.rate >= 3) {
+      const cost = addCost(...pkg.builds.map((b) => b.cost));
+      const offer = offerToPlayers(s, p, { cost, action: pkg.builds[0].action }, pr, x);
+      if (offer && applyAction(s, offer).ok) return offer;
+    }
+    const trade: Action = { type: 'bankTrade', player: p, give: { [t.give]: t.rate }, get: { [t.get]: 1 } };
+    return applyAction(s, trade).ok ? trade : null;
+  }
+  const order = [...pkg.builds].sort((a, b) => rankOf(a) - rankOf(b));
+  for (const b of order) {
+    if (acts.some((a) => sameAction(a, b.action))) return b.action;
+  }
+  return null;
+}
+
+function sameAction(a: Action, b: Action): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+const rankOf = (b: Build) => (b.action.type === 'buildCity' ? 0 : b.action.type === 'buildSettlement' ? 1 : 2);
+
+// ---------------------------------------------------------------------------
+// The turn
+// ---------------------------------------------------------------------------
 
 function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
   const pl = s.players[p];
@@ -747,19 +1155,30 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
   const harbors = byType(acts, 'placeHarbor');
   if (harbors.length > 0) return best(harbors, (a) => harborScore(s, p, a.edge));
 
-  const deal = actorTrades(s, p, acts, pr);
+  let xMemo: Expansion | null = null;
+  const exp = () => (xMemo ??= expansionOf(s, p, pr));
+  const deal = actorTrades(s, p, acts, pr, exp);
   if (deal !== undefined) return deal;
 
-  const pot = potentialField(s, p);
-  const plan = pr.plans ? choosePlan(s, p, pot, pr) : null;
+  const x = exp();
+  const plan = pr.plans ? choosePlan(s, p, x, pr) : null;
 
-  const dev = devCardAction(s, p, acts, plan, pr);
+  const dev = devCardAction(s, p, acts, plan, pr, x);
   if (dev) return dev;
+
+  // Medium, hard: the best settlements and cities it can complete this turn.
+  if (pr.planner) {
+    const pkg = bestPackage(s, p, x);
+    if (pkg) {
+      const step = packageStep(s, p, pkg, acts, pr, x);
+      if (step) return step;
+    }
+  }
 
   // Immediate builds, best first.
   const prod = production(s, p);
   const city = byType(acts, 'buildCity');
-  if (city.length > 0) return pickBest(s, p, pr, city, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
+  if (city.length > 0) return pickBest(s, p, pr, city, (a) => cityGain(s, a.vertex, prod), (a) => a.vertex);
   const settle = byType(acts, 'buildSettlement');
   if (settle.length > 0) return pickBest(s, p, pr, settle, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   const scen = scenarioMainAction(s, p, acts);
@@ -767,7 +1186,7 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
 
   if (plan) {
     if (applyAction(s, plan.action).ok) return plan.action;
-    const offer = offerToPlayers(s, p, plan, pr);
+    const offer = offerToPlayers(s, p, plan, pr, x);
     if (offer && applyAction(s, offer).ok) return offer;
     const trades = tradePlan(s, p, plan.cost);
     if (trades && trades.length > 0) {
@@ -777,26 +1196,97 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
     }
   }
   // Spare cards: extend toward good spots or buy a card, if that keeps the plan intact.
-  const spare = (cost: PartialCounts) => !plan || hasAtLeast(minus(pl.resources, cost), plan.cost) || total(pl.resources) > 7;
-  const routeShip = routeToFortressOpen(s, p) ? byType(acts, 'buildShip')[0] : undefined;
-  if (routeShip && spare(COSTS.ship)) return routeShip;
-  const edges = [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')];
-  const edge = pickBest(s, p, pr, edges, (a) => edgeScore(s, p, a.edge, pot), (a) => a.edge);
-  if (edge && edgeScore(s, p, edge.edge, pot) > pr.roadBar && spare(edge.type === 'buildRoad' ? COSTS.road : COSTS.ship)) return edge;
+  const big = total(pl.resources) > s.options.discardLimit;
+  const spare = (cost: PartialCounts) => !plan || hasAtLeast(minus(pl.resources, cost), plan.cost) || big;
+  if (routeToFortressOpen(s, p)) {
+    const routeShip = byType(acts, 'buildShip')[0];
+    if (routeShip && spare(COSTS.ship)) return routeShip;
+  }
+  const edge = spareEdge(s, p, acts, pr, x);
+  if (edge && spare(edge.type === 'buildRoad' ? COSTS.road : COSTS.ship)) return edge;
   const buy = acts.find((a) => a.type === 'buyDevCard');
   if (buy && spare(COSTS.devCard)) return buy;
-  // Too many cards: trade the biggest pile into something useful.
-  if (total(pl.resources) > 7) {
-    const wants = resourceWants(s, p, plan?.cost ?? null);
-    const gain = (a: Extract<Action, { type: 'bankTrade' }>) => {
-      const g = RESOURCES.find((r) => (a.get[r] ?? 0) > 0)!;
-      const give = RESOURCES.find((r) => (a.give[r] ?? 0) > 0)!;
-      return wants[g] - wants[give];
-    };
-    const t = best(byType(acts, 'bankTrade'), gain);
-    if (t && (gain(t) > 0 || (pr.handGuard && gain(t) > -1.5 && total(pl.resources) - total(t.give) + 1 <= 7))) return t;
+  // More cards than a 7 leaves alone: something useful, with a trade if that completes it.
+  if (pr.plans && big) {
+    const spend = spendHand(s, p, acts, x, pr);
+    if (spend) return spend;
+    // or (hard) a pile it can't use traded for a card that brings a build closer
+    const down = pr.handGuard ? tradeDown(s, p, acts, plan, x) : null;
+    if (down) return down;
   }
   return acts.find((a) => a.type === 'endTurn') ?? null;
+}
+
+/**
+ * A hand over the 7 limit: cards from a pile its plan doesn't need traded
+ * with the bank for one that brings a build closer (four spare cards for a
+ * needed one beat half the hand on a 7).
+ */
+function tradeDown(s: GameState, p: PlayerId, acts: Action[], plan: Plan | null, x: Expansion): Action | null {
+  const have = s.players[p].resources;
+  const wants = resourceWants(s, p, plan?.cost ?? null);
+  const trades = byType(acts, 'bankTrade').filter((a) => {
+    const give = RESOURCES.find((r) => (a.give[r] ?? 0) > 0)!;
+    return have[give] - (a.give[give] ?? 0) >= (plan?.cost[give] ?? 0) && tradeOk(s, p, a.give, a.get, x);
+  });
+  const gain = (a: (typeof trades)[number]) => {
+    const get = RESOURCES.find((r) => (a.get[r] ?? 0) > 0)!;
+    const give = RESOURCES.find((r) => (a.give[r] ?? 0) > 0)!;
+    return wants[get] - wants[give] + have[give] * 0.05;
+  };
+  const t = best(trades, gain);
+  return t && gain(t) > 0 ? t : null;
+}
+
+/**
+ * A large hand at the end of the turn: a development card, or a road or
+ * ship that leads somewhere (or lengthens a route in play), bought with one
+ * bank trade if it takes one, rather than half the hand lost to a 7.
+ */
+function spendHand(s: GameState, p: PlayerId, acts: Action[], x: Expansion, pr: Profile): Action | null {
+  const options: Plan[] = [];
+  if (s.devDeck.length > 0) options.push({ cost: COSTS.devCard, action: { type: 'buyDevCard', player: p } });
+  const edge = best(
+    x.options.filter((o) => o.gain > 0 || routeValue(s, p, o.edge, o.kind) > 0),
+    (o) => o.gain + routeValue(s, p, o.edge, o.kind) * VP_WORTH,
+  );
+  if (edge) options.push({ cost: edgeCost(edge), action: edgeAction(p, edge) });
+  for (const o of options) if (acts.some((a) => sameAction(a, o.action))) return o.action;
+  // (not while already looking one step ahead)
+  if (spendDepth > 0) return null;
+  for (const o of options) {
+    const trades = tradePlan(s, p, o.cost);
+    if (trades && trades.length === 1) {
+      const t = trades[0];
+      const trade: Action = { type: 'bankTrade', player: p, give: { [t.give]: t.rate }, get: { [t.get]: 1 } };
+      // only if, with the card, it really builds that next
+      const r = applyAction(s, trade);
+      if (!r.ok) continue;
+      spendDepth++;
+      try {
+        if (sameAction(mainAction(r.state, p, legalActions(r.state, p), pr) ?? trade, o.action)) return trade;
+      } finally {
+        spendDepth--;
+      }
+    }
+  }
+  return null;
+}
+
+/** How deep spendHand is in its own look one step ahead (it never nests). */
+let spendDepth = 0;
+
+/**
+ * A road or ship worth building with spare cards: one that brings a spot or
+ * goal worth at least the level's bar closer, or (medium, hard) one that
+ * takes Longest Road or keeps it in reach.
+ */
+function spareEdge(s: GameState, p: PlayerId, acts: Action[], pr: Profile, x: Expansion): Extract<Action, { type: 'buildRoad' | 'buildShip' }> | null {
+  const edges = [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')];
+  const option = (a: (typeof edges)[number]) => x.byEdge.get(`${a.type === 'buildShip' ? 'ship' : 'road'}:${a.edge}`);
+  const route = (a: (typeof edges)[number]) => (pr.plans ? routeValue(s, p, a.edge, a.type === 'buildShip' ? 'ship' : 'road') * VP_WORTH : 0);
+  const useful = edges.filter((a) => (option(a)?.gain ?? 0) >= pr.roadBar || route(a) >= VP_WORTH * 0.5);
+  return pickBest(s, p, pr, useful, (a) => (option(a)?.gain ?? 0) + route(a), (a) => a.edge);
 }
 
 function minus(have: ResourceCounts, cost: PartialCounts): ResourceCounts {
@@ -812,6 +1302,11 @@ function harborScore(s: GameState, p: PlayerId, e: EdgeId): number {
   for (const h of t.edgeHexes[e]) score += pips(s.board.hexes[h].token);
   for (const v of t.edgeVertices[e]) if (s.board.buildings[v]?.owner === p) score += 5;
   return score;
+}
+
+function robberAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
+  const moves = sensibleRobberMoves(s, p, byType(acts, 'moveRobber'));
+  return pickBest(s, p, pr, moves, (a) => robberScore(s, p, a, pr), (a) => `${a.hex}:${a.victim ?? ''}`) ?? acts[0];
 }
 
 /**
@@ -831,18 +1326,22 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
     case 'setup':
       return setupAction(s, p, acts, pr);
     case 'discard':
-      return discardAction(s, p);
+      return discardAction(s, p, pr);
     case 'gold':
       return goldAction(s, p);
     case 'robber':
-      return (
-        pickBest(s, p, pr, byType(acts, 'moveRobber'), (a) => robberScore(s, p, a, pr), (a) => `${a.hex}:${a.victim ?? ''}`) ?? acts[0]
-      );
+      return robberAction(s, p, acts, pr);
     case 'roadBuilding': {
-      const pot = potentialField(s, p);
+      const x = expansionOf(s, p, pr);
       const edges = [...byType(acts, 'buildRoad'), ...byType(acts, 'buildShip')];
-      const e = best(edges, (a) => edgeScore(s, p, a.edge, pot));
-      return e ?? acts.find((a) => a.type === 'endRoadBuilding') ?? acts[0];
+      const value = (a: (typeof edges)[number]) => {
+        const kind = a.type === 'buildShip' ? 'ship' : 'road';
+        return (x.byEdge.get(`${kind}:${a.edge}`)?.gain ?? 0) + routeValue(s, p, a.edge, kind) * VP_WORTH;
+      };
+      const e = best(edges, value);
+      // free roads go where they lead somewhere; with nowhere to go, it stops
+      if (e && value(e) > 0) return e;
+      return acts.find((a) => a.type === 'endRoadBuilding') ?? e ?? acts[0];
     }
     case 'scenario': {
       const harbors = byType(acts, 'placeHarbor');
@@ -859,14 +1358,14 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
       return acts[0];
     }
     case 'preRoll': {
-      const dev = devCardAction(s, p, acts, null, pr);
+      const dev = devCardAction(s, p, acts, null, pr, null);
       if (dev) return dev;
       return acts.find((a) => a.type === 'rollDice') ?? acts[0];
     }
     case 'specialBuild': {
-      const city = byType(acts, 'buildCity')[0];
-      if (city) return city;
       const prod = production(s, p);
+      const city = best(byType(acts, 'buildCity'), (a) => cityGain(s, a.vertex, prod));
+      if (city) return city;
       const settle = best(byType(acts, 'buildSettlement'), (a) => spotValue(s, p, a.vertex, prod));
       if (settle) return settle;
       return acts.find((a) => a.type === 'endTurn') ?? acts[0];
@@ -880,10 +1379,6 @@ export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'me
   }
 }
 
-/**
- * Plays heuristic bots until the game ends or `maxSteps` is reached (used by
- * tests). Throws if a chosen move is rejected or nobody can act.
- */
 /** Plays a whole game with computer players only; `levels` sets each seat's level (default medium). */
 export function simulateHeuristic(
   initial: GameState,

@@ -10,6 +10,7 @@
     "test": "vitest run",
     "demo": "vite-node scripts/demo.ts --",
     "bots:league": "vite-node scripts/bot-league.ts",
+    "bots:audit": "vite-node scripts/bot-audit.ts",
     "web:dev": "vite --config web/vite.config.ts",
     "web:build": "vite build --config web/vite.config.ts",
     "web:preview": "vite preview --config web/vite.config.ts",
