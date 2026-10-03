@@ -19,6 +19,7 @@ import type {
 } from '../core/types.js';
 import { addGoldChoice, describeCounts, log, nameOf, payFromBank } from '../rules/helpers.js';
 import { updateLongestRoute } from '../rules/longestRoute.js';
+import { productionClaims, shareOut } from '../rules/production.js';
 import { buildingsOf, topo } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
 import { noteCommodityProduction, noteProduction } from '../engine/stats.js';
@@ -34,7 +35,6 @@ import {
   METROPOLIS_LEVEL,
   PROGRESS_CARD_NAMES,
   PROGRESS_CARDS,
-  TERRAIN_COMMODITY,
   TRACK_COMMODITY,
   TRACKS,
   WALL_HAND_BONUS,
@@ -400,32 +400,13 @@ function production(s: GameState, resume: Phase): void {
  * kind of card separately.
  */
 export function produceCards(s: GameState, roll: number): { dealt: Record<number, CardCounts>; gold: Record<number, number>; received: Set<PlayerId> } {
-  const ck = s.ck!;
-  const t = topo(s);
   const demand = new Map<Card, Map<PlayerId, number>>(CARDS.map((k) => [k, new Map()]));
   const gold: Record<number, number> = {};
   const add = (k: Card, p: PlayerId, n: number) => demand.get(k)!.set(p, (demand.get(k)!.get(p) ?? 0) + n);
-  for (const id of Object.keys(s.board.hexes)) {
-    const hex = s.board.hexes[id];
-    if (hex.token !== roll || id === s.board.robber) continue;
-    const res = TERRAIN_RESOURCE[hex.terrain];
-    const com = TERRAIN_COMMODITY[hex.terrain];
-    if (!res && hex.terrain !== 'gold') continue;
-    for (const v of t.hexVertices[id]) {
-      const b = s.board.buildings[v];
-      if (!b) continue;
-      const city = b.type === 'city';
-      if (!res) {
-        gold[b.owner] = (gold[b.owner] ?? 0) + (city ? 2 : 1);
-      } else if (!city) {
-        add(res, b.owner, 1);
-      } else if (com) {
-        add(res, b.owner, 1);
-        add(com, b.owner, 1);
-      } else {
-        add(res, b.owner, 2);
-      }
-    }
+  // the same claims as the base game's production, with the cities' commodities (rules/production.ts)
+  for (const c of productionClaims(s, roll)) {
+    if (c.card === 'gold') gold[c.owner] = (gold[c.owner] ?? 0) + c.n;
+    else add(c.card, c.owner, c.n);
   }
   const dealt: Record<number, CardCounts> = {};
   const shortages: Card[] = [];
@@ -439,19 +420,9 @@ export function produceCards(s: GameState, roll: number): { dealt: Record<number
   for (const k of CARDS) {
     const owed = demand.get(k)!;
     if (owed.size === 0) continue;
-    let need = 0;
-    for (const n of owed.values()) need += n;
-    if (need > bank[k]) {
-      if (owed.size === 1) {
-        const [[p, n]] = [...owed.entries()];
-        pay(k, p, Math.min(n, bank[k]));
-        if (bank[k] < n) shortages.push(k);
-      } else {
-        shortages.push(k);
-      }
-      continue;
-    }
-    for (const [p, n] of owed) pay(k, p, n);
+    const { paid, short } = shareOut(owed, bank[k]);
+    for (const [p, n] of paid) pay(k, p, n);
+    if (short) shortages.push(k);
   }
   for (const [p, got] of Object.entries(dealt)) log(s, `${nameOf(s, Number(p))} receives ${describeCounts(got)}`);
   for (const k of shortages) log(s, `The bank is short of ${k}: it is not paid out`);

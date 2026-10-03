@@ -410,17 +410,20 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
     function renderFlash(f: Flash) {
       const col = color(f.by).fill;
       if (f.kind === 'roll') {
-        const dice = view.turn.dice;
-        const sum = dice ? dice[0] + dice[1] : 0;
-        if (sum === 7) return null;
-        // the tiles that produce this roll glow for a moment
+        // the tiles (and Cloth villages) that paid out on this roll glow for a moment
+        const lit = new Set(f.light?.hexes ?? []);
+        const villages = (f.light?.villages ?? []).filter((v) => vpt[v]);
+        if (lit.size === 0 && villages.length === 0) return null;
         return (
           <g key={`fl${f.key}`} class="roll-glow">
             {land
-              .filter((h) => b.hexes[h].token === sum && b.robber !== h)
+              .filter((h) => lit.has(h))
               .map((h) => (
-                <polygon key={h} points={polygon(hexPts[h])} class="roll-glow-hex" />
+                <polygon key={h} points={polygon(hexPts[h])} class="roll-glow-hex" data-hex={h} />
               ))}
+            {villages.map((v) => (
+              <ellipse key={v} cx={vpt[v].x} cy={vpt[v].y} rx={0.3} ry={0.3 * TILT} class="roll-glow-village" data-vertex={v} />
+            ))}
           </g>
         );
       }
@@ -700,7 +703,17 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
             )}
             {/* robber & pirate (land with a bounce when moved); in Cities & Knights the robber sleeps until the barbarians first attack */}
             {b.robber && centers[b.robber] && (
-              <g key={`robber${b.robber}`} class={flash?.kind === 'hex' && flash.id === b.robber ? 'arrive-drop' : undefined}>
+              <g
+                key={`robber${b.robber}`}
+                class={
+                  flash?.kind === 'hex' && flash.id === b.robber
+                    ? 'arrive-drop'
+                    : // the number came up, but the robber kept its hex from paying: a short shake
+                      flash?.kind === 'roll' && flash.light?.blocked === b.robber
+                      ? 'robber-blocked'
+                      : undefined
+                }
+              >
                 <Robber p={centers[b.robber]} asleep={!!ck && !ck.robberActive} />
               </g>
             )}

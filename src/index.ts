@@ -15,7 +15,8 @@ export { viewFor, type GameView, type PlayerPublicView } from './engine/view.js'
 export * from './rules/queries.js';
 export { longestRouteLength, updateLongestRoute } from './rules/longestRoute.js';
 export { isShipOnClosedRoute, isShipAtRouteEnd, movableShips, moveShipError } from './rules/ships.js';
-export { produce } from './rules/production.js';
+export { produce, producingHexes, productionClaims, shareOut, type Claim, type ProductionSource } from './rules/production.js';
+export { payingVillages } from './scenarios/seafarers/tribes.js';
 export { getScenario, hasOfficialMap, listScenarios, mapSpecFor, registerScenario, scenarioOf } from './scenarios/registry.js';
 export { baseRules, seafarersRules, DEFAULT_SETUP, type ScenarioDef, type ScenarioHooks, type ScenarioRules, type SetupRound } from './scenarios/types.js';
 export { BUILT_IN_SCENARIOS } from './scenarios/all.js';

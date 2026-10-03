@@ -1,4 +1,5 @@
 import type { Action } from 'engine';
+import type { RollLight } from '../game/rollLight';
 
 /** What to highlight on the board for the latest move, and whose it was. */
 export interface Flash {
@@ -6,6 +7,8 @@ export interface Flash {
   id: string;
   key: number;
   by: number;
+  /** A roll: what it paid out from (the game screen works it out; nothing lights without it). */
+  light?: RollLight;
 }
 
 export function flashOf(a: Action | undefined, key: number): Flash | null {
