@@ -130,29 +130,75 @@ npm run test:e2e       # Playwright tests on a phone viewport (builds and serves
 
 ### Computer players
 
-A rule-based player (`src/bots/heuristicBot.ts`) that scores its options. It
-doesn't look ahead by searching and doesn't see hidden cards, except that
-when answering an open trade offer it prefers to ask for a card the
-proposer actually holds. The level is chosen when starting a game and can
-be changed from the menu:
+A rule-based player (`src/bots/heuristicBot.ts`) that scores its options and
+looks a few moves ahead within its own turn. It doesn't see hidden cards,
+except that when answering an open trade offer it prefers to ask for a card
+the proposer actually holds. The level is chosen when starting a game and
+can be changed from the menu.
+
+Roads and ships are planned toward targets (`src/bots/expansion.ts`): the
+settlement spots that are legal now and the scenario's goals (Cloth
+villages, tribe gifts, the pirate fortress, fog to explore). The planner
+finds the shortest way to each, by road over land or by ship over sea,
+switching between the two only at the player's own buildings and never
+through another player's building, knight, road or ship. A road or ship is
+built only when it shortens the way to such a target, or for Longest Road
+(or the Longest Trade Route) when that is within two pieces or a rival is
+close behind. Nothing is remembered between moves, so a spot that is taken
+or cut off is dropped at once: a computer player never builds a road into
+the city that just blocked it.
 
 | | Easy | Medium | Hard |
 |---|---|---|---|
-| Building spots | often not the best | sometimes not the best | the best it sees |
-| Goals | none: builds whatever it can afford, roads to nowhere included | saves for a settlement, city, road or card and trades with the bank and harbors to get there | same, and trades a big hand down before a 7 can cost it |
-| Robber | anyone, a bit at random | whoever it hurts most, leaning to the leader | the leader; plays knights to keep it there and to win Largest Army |
+| Building spots | often not the best | sometimes not the best | the best it sees; plans its two opening settlements together |
+| Roads and ships | toward the spot or goal it likes, a bit at random | the same, and a spot an opponent will reach first counts for less; Longest Road when it is in reach | the same, and a much better spot one road away comes before a settlement now |
+| Goals | builds whatever it can afford | the best settlements and cities it can complete this turn, bank and harbor trades included; otherwise saves for a city, settlement, road, ship or card; spends a hand over 7 on something useful | same |
+| Bank and harbor trades | none | for the build it is after, when they complete it or bring it closer | same, and trades a big hand down before a 7 can cost it |
+| Robber and pirate | anyone, a bit at random | whoever it hurts most, leaning to the leader; the pirate when the ships next to it (and a sea route it blocks) matter more than the robber's best hex | the leader; plays knights to keep it there and to win Largest Army |
+| Development cards | a knight to free its own hex | Road Building with somewhere to go, Year of Plenty for its goal, Monopoly when the others hold many cards | Year of Plenty for the two cards that complete a settlement or city, Monopoly on what the others likely hold most of |
+| Discards on a 7 | keeps the cards of the build it is closest to, then its scarcest cards | keeps that build, then the next one, then cards it doesn't produce | same |
 | Taking offers | takes even slightly bad deals | takes deals that help it | only clearly good deals |
 | Near-winners | trades with anyone | no trades with someone 2 VP from winning | no trades with someone 3 VP from winning |
 | Its own offers | none | one per turn, one card for the one it needs | up to two, the second one two cards for one |
 | Answering open offers | generous, card for card | card for card when it gains | asks for up to one card more |
 
+Whatever the level, a computer player never puts the robber on its own hex
+or where it hurts nobody while it could hit an opponent, and never makes a
+trade (with the bank, an offer, an answer or a counter-offer) that brings
+none of its builds closer.
+
 `npm run bots:league -- [games] [scenarios] [official|random] [players] [paired|specialBuild]`
 seats one player of each level at a table (with more players the levels
-repeat round the table), rotates the seats and counts wins. Over 60 base
-games, hard won 68%, medium 28% and easy 3%. Over the nine Seafarers
-scenarios (30–60 games each), hard won 55%, medium 44% and easy 1%. On the
-5–6 maps of scenarios 1–4 (30 games per scenario, player count and layout,
-480 in all, every one finished), hard won 56%, medium 42% and easy 2%.
+repeat round the table), rotates the seats and counts wins. Base game, 240
+games per setting, 960 in all:
+
+| Setting | Easy | Medium | Hard |
+|---|---|---|---|
+| 3 players, beginners' map | 4% | 48% | 48% |
+| 3 players, random map | 3% | 30% | 66% |
+| 4 players, beginners' map | 4% | 37% | 59% |
+| 4 players, random map | 1% | 33% | 66% |
+
+In all, hard won 60%, medium 37% and easy 3%. Medium now plans its turn
+the way hard does, and on the 3-player beginners' map the two are level.
+
+The nine Seafarers scenarios, 3 players on the printed maps, 40 games each:
+
+| Scenario | Easy | Medium | Hard |
+|---|---|---|---|
+| Heading for New Shores | 0% | 33% | 68% |
+| The Four Islands | 0% | 28% | 73% |
+| The Fog Islands | 3% | 45% | 53% |
+| Through the Desert | 0% | 45% | 55% |
+| The Forgotten Tribe | 5% | 33% | 63% |
+| Cloth for Catan | 8% | 38% | 55% |
+| The Pirate Islands | 0% | 38% | 63% |
+| The Wonders | 3% | 45% | 53% |
+| New World | 0% | 48% | 53% |
+
+In all, hard won 59%, medium 39% and easy 2%. On the 5–6 maps of
+scenarios 1–4 (30 games per scenario, player count and layout, 480 in all,
+every one finished), hard won 59%, medium 40% and easy 1%.
 
 #### In Cities & Knights
 
@@ -161,17 +207,26 @@ The same three levels play the expansion with a strategy of their own
 and answers follow the table above, with every card valued by what the
 player is saving for, commodities included; medium and hard trade with the
 bank and harbors at their best rates (2:1 with the Merchant Guild, the
-merchant or a Merchant Fleet) and discard the cards they need least.
+merchant or a Merchant Fleet) and discard the cards they need least, after
+keeping those of the build they are closest to. Roads and ships use the
+same planner as in the base game, and medium and hard plan their turn's
+settlements and cities with the bank trades they need.
 
 | | Easy | Medium | Hard |
 |---|---|---|---|
-| Set-up | often not the best spot; a commodity counts as an ordinary card | its city where forest, pasture and mountains give commodities, sometimes not the best spot | the same, the best spot it sees, commodities weighted most |
+| Set-up | often not the best spot; a commodity counts as an ordinary card | its city where forest, pasture and mountains give commodities, sometimes not the best spot | the same, the best spot it sees, commodities weighted most; its settlement planned together with the city it will likely place next |
 | Barbarians | notices the ship only in its last two moves, and not always | from three moves out keeps a knight ready; wakes knights when an attack before its next turn is likely and it would lose a city as the weakest defender | from five moves out; weighs the odds of an attack before its next turn and the others' idle knights, and races for Defender of Catan (with 5–6 players only when one knight level wins it) |
 | Knights | hires one when it has none; chases the robber off its hexes | also guards its best hexes against the robber | also moves knights into opponents' paths and displaces knights in its way |
 | City improvements | whatever it can afford | one main track by commodity income, toward a metropolis; the cheap levels of the others | also weighs the level-3 abilities (Aqueduct for a weak producer, Merchant Guild for a heavy commodity producer, Fortress for strong knights) and the others' levels: a race it can win, level 5 to take or keep a metropolis, never a metropolis locked at level 5 |
-| City walls | none | when its hand is large, under a metropolis first | the same |
+| City walls | none | when its hand is large, under a metropolis first | the same, and with spare bricks once its hand nears the limit |
 | Progress cards | each card as soon as it can, with random choices | when a card plainly helps | when it matters most: the Alchemist for a big roll, Spy, Master Merchant, Bishop, Saboteur and Diplomat against the leader, the Deserter on the strongest knights |
 | Near 13 VP | – | cities and settlements first | also Longest Road and Defender of Catan |
+
+Every level now wakes its idle knights in the barbarian ship's last two
+moves when it could otherwise be the weakest defender and lose a city
+(trading for the grain if it must), keeps a knight home then rather than
+chasing the robber, uses a Merchant Fleet once it has played one, and
+plays Road Building only with somewhere to build.
 
 `npm run bots:league -- 120 ck official 3` (and `random`, and 4 players)
 plays the levels against each other. Over 120 games per setting, 480 in
@@ -179,13 +234,13 @@ all, every one finished:
 
 | Setting | Easy | Medium | Hard | Turns a game (all players) |
 |---|---|---|---|---|
-| 3 players, beginners' map | 1% | 32% | 68% | 65 |
-| 3 players, random map | 0% | 26% | 74% | 65 |
-| 4 players, beginners' map | 2% | 34% | 64% | 75 |
-| 4 players, random map | 3% | 33% | 65% | 75 |
+| 3 players, beginners' map | 3% | 19% | 78% | 66 |
+| 3 players, random map | 4% | 27% | 69% | 65 |
+| 4 players, beginners' map | 1% | 37% | 63% | 72 |
+| 4 players, random map | 1% | 38% | 61% | 71 |
 
-In all, hard won 68%, medium 31% and easy 1%. A computer move took 0.6 ms
-on average and 34 ms at the slowest, the engine's own work included.
+In all, hard won 68%, medium 30% and easy 2%. A computer move took about
+0.9 ms on average, the engine's own work included.
 
 With 5–6 players the bots build, hire, wall, improve and wake knights in
 the special build phase and play their whole C&K turn as paired player 2.
@@ -195,44 +250,112 @@ finished:
 
 | Setting | Easy | Medium | Hard | Turns a game (all players) |
 |---|---|---|---|---|
-| 5 players, paired, 5–6 beginners' map | 3% | 34% | 63% | 67 |
-| 5 players, paired, random map | 1% | 37% | 63% | 65 |
-| 5 players, special build, 5–6 beginners' map | 3% | 38% | 59% | 64 |
-| 5 players, special build, random map | 0% | 36% | 64% | 62 |
-| 6 players, paired, 5–6 beginners' map | 0% | 43% | 58% | 72 |
-| 6 players, paired, random map | 0% | 35% | 65% | 69 |
-| 6 players, special build, 5–6 beginners' map | 3% | 38% | 60% | 69 |
-| 6 players, special build, random map | 0% | 41% | 59% | 71 |
+| 5 players, paired, 5–6 beginners' map | 2% | 38% | 61% | 66 |
+| 5 players, paired, random map | 2% | 38% | 60% | 65 |
+| 5 players, special build, 5–6 beginners' map | 6% | 35% | 59% | 64 |
+| 5 players, special build, random map | 1% | 43% | 56% | 65 |
+| 6 players, paired, 5–6 beginners' map | 0% | 34% | 66% | 67 |
+| 6 players, paired, random map | 2% | 41% | 58% | 69 |
+| 6 players, special build, 5–6 beginners' map | 2% | 33% | 66% | 65 |
+| 6 players, special build, random map | 0% | 45% | 55% | 68 |
 
-In all, hard won 61%, medium 38% and easy 1%. A move took 1.4–1.7 ms on
-average and 126 ms at the slowest.
+In all, hard won 60%, medium 38% and easy 2%. A move took 1.3–1.4 ms on
+average.
 
 On the Seafarers scenarios (section 16 of the spec) the bots also build
-ships toward spots across the sea once their island is full (roads and
-ships scored by what each can reach), value gold and island chits, chase the
-pirate off their ships with a knight, claim and build a wonder, and (hard)
-sail for Cloth villages. `npm run bots:league -- 60 ck:seafarers-1-new-shores official 3`
+ships toward spots across the sea once their island is full (the same
+planner, toward the spots and goals each can reach), value gold and island
+chits, move the pirate when it hurts more than the robber, chase it off
+their ships with a knight, claim and build a wonder, and (hard) sail for
+Cloth villages. `npm run bots:league -- 60 ck:seafarers-1-new-shores official 3`
 (any scenario that combines, `official` or `random`, 3–6 players) plays them;
 60 games per setting (120 for Cloth for Catan), 1,680 in all, every one
 finished:
 
 | Scenario | Players | Map | Easy | Medium | Hard | Turns |
 |---|---|---|---|---|---|---|
-| Heading for New Shores | 3 | official / random | 0% / 3% | 25% / 25% | 75% / 72% | 74 / 76 |
-| | 4 | official / random | 5% / 0% | 40% / 42% | 55% / 58% | 83 / 82 |
-| | 5 | official / random | 0% / 0% | 38% / 43% | 62% / 57% | 71 / 71 |
-| | 6 | official / random | 2% / 0% | 30% / 45% | 68% / 55% | 72 / 71 |
-| Through the Desert | 3 | official / random | 2% / 0% | 33% / 37% | 65% / 63% | 72 / 72 |
-| | 4 | official / random | 0% / 0% | 38% / 45% | 62% / 55% | 73 / 77 |
-| | 5 | official / random | 0% / 0% | 42% / 40% | 58% / 60% | 68 / 75 |
-| | 6 | official / random | 0% / 0% | 33% / 33% | 67% / 67% | 81 / 85 |
-| Cloth for Catan | 3 | official / random | 2% / 3% | 32% / 38% | 67% / 58% | 68 / 74 |
-| | 4 | official / random | 3% / 2% | 46% / 34% | 52% / 64% | 74 / 80 |
-| The Wonders | 3 | official / random | 2% / 0% | 37% / 37% | 62% / 63% | 74 / 79 |
-| | 4 | official / random | 2% / 2% | 35% / 40% | 63% / 58% | 78 / 86 |
+| Heading for New Shores | 3 | official / random | 7% / 2% | 22% / 27% | 72% / 72% | 68 / 77 |
+| | 4 | official / random | 2% / 0% | 37% / 50% | 62% / 50% | 80 / 81 |
+| | 5 | official / random | 0% / 2% | 37% / 32% | 63% / 67% | 69 / 72 |
+| | 6 | official / random | 2% / 3% | 37% / 32% | 62% / 65% | 71 / 71 |
+| Through the Desert | 3 | official / random | 0% / 2% | 45% / 38% | 55% / 60% | 68 / 72 |
+| | 4 | official / random | 2% / 3% | 23% / 43% | 75% / 53% | 73 / 80 |
+| | 5 | official / random | 2% / 0% | 47% / 45% | 52% / 55% | 72 / 76 |
+| | 6 | official / random | 3% / 0% | 45% / 42% | 52% / 58% | 76 / 81 |
+| Cloth for Catan | 3 | official / random | 0% / 0% | 44% / 42% | 56% / 58% | 70 / 72 |
+| | 4 | official / random | 6% / 1% | 39% / 37% | 55% / 63% | 74 / 80 |
+| The Wonders | 3 | official / random | 2% / 2% | 22% / 40% | 77% / 58% | 72 / 80 |
+| | 4 | official / random | 2% / 2% | 30% / 50% | 68% / 48% | 81 / 91 |
 
-In all, hard won 62%, medium 37% and easy 1%. A move took 1.4–2.5 ms on
-average; the bot's choice alone took about 1 ms (median) and at most 43 ms.
+In all, hard won 60%, medium 38% and easy 2%. A move took 1.0–1.9 ms on
+average, the engine's own work included; the bot's choice alone took
+0.22 ms at the median and at most 28 ms with 6 players.
+
+#### Blunder audit
+
+`npm run bots:audit -- [games] [modes] [official|random] [players] [levels] [--examples=N]`
+(`src/bots/audit.ts`) plays whole games with every seat at the same level
+and counts clearly bad moves, by a yardstick of its own rather than the
+bots' scoring:
+
+- a road or ship that leads nowhere (no legal spot or goal it could still
+  reach, and no gain for Longest Road)
+- a road or ship built when a settlement or city was affordable and
+  legal, or a settlement or city it could afford and left unbuilt at the
+  end of its turn
+- a trade with another player, or with the bank, that brings none of its
+  builds closer and costs it cards or sets a build back
+- a discard that leaves it two or more cards further from its nearest
+  build than another discard would
+- the robber on its own hex, or where it hurts nobody while an opponent
+  could be hit
+- in Cities & Knights, losing a city to the barbarians with idle knights it
+  could have woken (or the cards to wake them), and progress cards played
+  for nothing
+- a turn that never ends
+
+It also times every decision and, with Seafarers, counts how often a
+player chose the pirate when it could move the robber or the pirate.
+Blunders per game, 20 games each with 3 players on the printed maps,
+before (the computer players of commit 7fc781f) and after:
+
+| Mode | Easy | Medium | Hard |
+|---|---|---|---|
+| Base game | 13.8 → 0 | 2.6 → 0 | 5.9 → 0 |
+| Heading for New Shores | 12.4 → 0 | 4.2 → 0 | 11.7 → 0 |
+| The Fog Islands | 18.3 → 0.05 | 7.8 → 0 | 15.4 → 0 |
+| Through the Desert | 16.2 → 0 | 4.8 → 0 | 14.7 → 0 |
+| Cities & Knights | 24.4 → 0 | 1.3 → 0 | 6.0 → 0 |
+| C&K + New Shores | 15.0 → 0 | 1.3 → 0 | 8.8 → 0 |
+
+Before, they built up to 4.9 roads or ships a game into dead ends (the
+most in The Fog Islands). Easy made 8–17 bank trades a game that brought
+no build closer; hard made 5–11 trades a game with other players that did
+nothing for it (medium 0.3–4.3) and put the robber on its own hex up to
+0.8 times a game; in Cities & Knights easy lost 1.3–1.7 cities a game that
+waking a knight would have saved. The one blunder left is an easy discard
+in The Fog Islands. Medium and hard chose the pirate twice in about 2,800
+chances before; now they do in 19–31% of the moves where they could (easy,
+choosing a bit at random, in 5–12% before and 12–32% now).
+
+Head to head, two new players against two of commit 7fc781f at a 4-player
+table (seats alternating, 160 games each on random maps unless noted):
+
+| Mode | Hard | Medium |
+|---|---|---|
+| Base game | 68% (beginners' map 64%) | 56% |
+| Heading for New Shores | 72% | 64% |
+| Through the Desert | 75% | 59% |
+| Cities & Knights | 55% (beginners' map 51%) | 58% |
+| C&K + New Shores | 48% | 54% |
+
+The new players also scored more VP on average in every one of these. In
+Cities & Knights hard is about even with the old one in wins: its strategy
+for improvements, knights and progress cards is largely unchanged.
+
+A decision takes 0.12 ms at the median, 3.9 ms at the 99th percentile and
+28 ms at the slowest (over 43,000 decisions in base, Seafarers and Cities &
+Knights games with 4–6 players).
 
 ### Dice
 
@@ -287,7 +410,7 @@ change the networking code, every week, and on demand.
 
 ```bash
 npm install
-npm test                                  # 445 tests: golden positions, official and generated maps, scenarios, bots, fuzzing
+npm test                                  # 766 tests: golden positions, official and generated maps, scenarios, bots, fuzzing
 npm run demo -- list                      # list scenarios
 npm run demo -- seafarers-3-fog-islands 4 my-seed   # play a bot game and print the board (add "random" for a generated map)
 npm run build                             # emit dist/ (ESM + .d.ts)
@@ -315,7 +438,7 @@ src/
   rules/       legality queries, production, longest route, ship rules, mutation helpers
   engine/      createGame, applyAction (turn state machine), legal actions, player views
   scenarios/   base game + 9 Seafarers scenarios as data + rule hooks
-  bots/        heuristic bot, weighted-random bot and simulators (fuzzing)
+  bots/        heuristic bot, road and ship planner, blunder audit, weighted-random bot and simulators (fuzzing)
 web/           browser game: Vite + Preact, SVG board, pass-and-play, online (PeerJS)
 e2e/           Playwright tests for the browser game
 ```
@@ -525,7 +648,11 @@ and the differences between printings.
 - **Regression fingerprints** (`test/regression.test.ts`): base and
   Seafarers games replay exactly as before Cities & Knights existed, and
   3–4 player Cities & Knights games as before its 5–6 extension (and
-  before its Seafarers combination).
+  before its Seafarers combination). Games that computer players played
+  are replayed move by move from a recording of the bots of commit 7fc781f
+  (`test/fixtures/bot-games-7fc781f.json.gz`), so they pin down the engine
+  alone; the same games played by today's bots have fingerprints of their
+  own, re-recorded whenever the bots change on purpose.
 - **Cities & Knights with Seafarers** (`test/ckSeafarers.test.ts`,
   `test/ckSeafarersBots.test.ts`): which scenarios combine and the
   reasons for the others, the VP targets, the robber and pirate waiting
@@ -539,6 +666,20 @@ and the differences between printings.
 
 - **Heuristic bots** finish a full game in every scenario, supported player
   count and layout, using only moves the engine accepts.
+- **Computer players' blunders** (`test/botBlunders.test.ts`): positions
+  built for each blunder the audit counts: no road into the city that cut
+  the way, at any level, and no road at all when every one is a dead end; a
+  target dropped once an opponent takes it, and a spot an opponent reaches
+  sooner counted for less; no ship into an opponent's coastal settlement;
+  the robber never on its own hex or an empty one; discards that keep a
+  settlement; offers turned down when they help nothing; hard building a
+  city and a settlement in one turn with the trade it needs; the pirate
+  onto the leader's ship when the robber already blocks the leader, and the
+  robber when that hurts more; in Cities & Knights, grain traded for to wake
+  a knight before an attack, the only awake knight kept home, and a played
+  Merchant Fleet used. Whole audited games in the base game, two Seafarers
+  scenarios, Cities & Knights and both together find no blunders by medium
+  and hard and none of the absurd ones by easy.
 - **The roll's glow** (`producingHexes`, `web/src/game/rollLight.ts`): over
   random games on the base game, Seafarers scenarios and Cities & Knights,
   plus the same positions with a nearly empty bank, the tiles lit are
