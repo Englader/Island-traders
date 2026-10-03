@@ -53,6 +53,9 @@ import { longestRouteLength, updateLongestRoute } from '../rules/longestRoute.js
 import { edgeAllowsShip, handSize, publicVP, topo, vertexLandHexes, vertexZones } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
 import { WONDERS, WONDER_LEVELS } from '../scenarios/seafarers/wonders.js';
+import { drawGain, remainingRolls } from './ckPlan.js';
+import { HARD_CK_WEIGHTS, type CkWeights } from './ckWeights.js';
+import { handEstimates } from './tracker.js';
 import { planExpansion, routeValue, type EdgeKind, type Expansion } from './expansion.js';
 import { answerOffer, ownOffer, settleTrades, type TradeView } from './trading.js';
 import {
@@ -79,12 +82,20 @@ import {
  *   every player's active knights, and keeps from being the weakest
  *   defender when an attack would be lost and a city is at risk; the hard
  *   level weighs the odds of an attack before its next turn and the others'
- *   idle knights, and races for Defender of Catan.
+ *   idle knights. Medium races one knight level ahead for Defender of
+ *   Catan; with 3-4 players hard no longer races for it (the knights cost
+ *   more than the card brings) but keeps level with the best defender when
+ *   one knight level does it (two that it only has to wake), so nobody gets
+ *   the card; with 5-6 it races one level ahead, as medium does.
  * - City improvements: one main track picked by commodity income, the
  *   level-3 abilities and (hard) the metropolis race; cheap levels of the
- *   others for their progress cards.
+ *   others for their progress cards. Hard also trades resources at the
+ *   bank for a level whose extra progress cards (an ability, a metropolis)
+ *   are worth more than the cards it gives (src/bots/ckPlan.ts).
  * - Progress cards: played when they help (hard: when they matter most, on
  *   the leader); every card step answered.
+ * - Hard's numbers are weights (src/bots/ckWeights.ts), tuned by self-play
+ *   (`npm run bots:tune-ck`).
  * - Trading, discards and the hand: every card, commodities included, is
  *   valued by what the player is saving for.
  * - Seafarers scenarios: ships head for settlement spots and scenario targets
@@ -102,8 +113,9 @@ export interface CkProfile {
   /**
    * The barbarians: 0 notices them only when the ship is about to land
    * (two moves out); 1 keeps from being the weakest defender once an attack is
-   * likely before its next turn; 2 plans from further out, counts the
-   * others' idle knights and races for Defender of Catan.
+   * likely before its next turn and races one level ahead for Defender of
+   * Catan; 2 plans from further out and counts the others' idle knights (how
+   * far it goes for Defender of Catan: its weights).
    */
   barbarians: 0 | 1 | 2;
   /** What a city's commodity (forest, pasture, mountains) is worth on top of an ordinary card. */
@@ -131,6 +143,8 @@ export interface CkProfile {
    * also sails for Cloth villages until it trades with two.
    */
   sea: 0 | 1 | 2;
+  /** The hard level's weights (src/bots/ckWeights.ts); the others play without them. */
+  weights?: CkWeights;
 }
 
 /** What Longest Road's 2 VP are worth against a road's expansion value. */
@@ -368,6 +382,9 @@ function context(s: GameState, p: PlayerId, pr: Profile): Ctx {
   };
 }
 
+/** The level's weights (hard's; the other levels only reach the code that reads them at hard's settings). */
+const W = (c: Ctx): CkWeights => c.ck.weights ?? HARD_CK_WEIGHTS;
+
 function lazy<T>(c: Ctx, key: string, f: () => T): T {
   if (!c.memo.has(key)) c.memo.set(key, f());
   return c.memo.get(key) as T;
@@ -593,11 +610,11 @@ function defence(c: Ctx): Defence {
     if (level === 0 && o.steps > 2) return none;
     const odds = level === 2 ? Math.max(o.soon, o.later * 0.5) : o.soon;
     // knights on the board ahead of the attack (hard from five moves out, medium three), woken when an attack is plausible
-    const planning = o.steps <= (level === 2 ? 5 : level === 1 ? 3 : 0);
+    const planning = o.steps <= (level === 2 ? W(c).planAhead : level === 1 ? 3 : 0);
     if (odds < (level === 2 ? 0.1 : level === 1 ? 0.45 : 0) && !planning) return none;
     const opp = opponents(s, p);
     // the others may wake their idle knights before the ship lands (hard)
-    const est = (q: PlayerId) => o.strength[q] + (level === 2 ? Math.floor(o.idle[q] / 2) : 0);
+    const est = (q: PlayerId) => o.strength[q] + (level === 2 ? Math.floor(o.idle[q] * W(c).idleShare) : 0);
     const othersTotal = sum(opp.map(est));
     let want = mine;
     let worth = 0;
@@ -621,11 +638,18 @@ function defence(c: Ctx): Defence {
     if (level >= 1 && s.ck!.defenderCards > 0) {
       const top = Math.max(0, ...opp.map(est)) + 1;
       const held = othersTotal + Math.max(top, want) >= o.cities;
-      // hard races a few levels ahead for the card; with 5-6 players (four or five rivals for it) only one, like medium
-      const reach = level === 2 && s.players.length <= 4 ? (c.gap <= 3 ? 4 : 3) : 1;
+      // hard as far as its weights say (it used to race three levels ahead); with 5-6 players (four or five rivals for it) one, like medium
+      const reach = level === 2 && s.players.length <= 4 ? W(c).defenderReach + (c.gap <= 3 ? 1 : 0) : 1;
       if (held && top > want && top - mine <= reach) {
-        worth += odds * (c.gap <= 2 ? 9 : 5);
+        worth += odds * W(c).defenderWorth * (c.gap <= 2 ? 1.8 : 1);
         want = top;
+      }
+      // hard, 3-4 players: as strong as the best of the others, so nobody is Defender (and it draws a progress card)
+      const tie = top - 1;
+      const tieReach = W(c).tieReach + (tie <= mine + o.idle[p] ? W(c).tieIdle : 0);
+      if (level === 2 && s.players.length <= 4 && tieReach > 0 && tie > want && tie - mine <= tieReach && othersTotal + tie >= o.cities) {
+        worth += odds * W(c).tieWorth;
+        want = tie;
       }
     }
     // more cities appear before the ship lands (its own next city too): at least one knight ready, unless every city is a metropolis
@@ -911,15 +935,53 @@ function improvement(c: Ctx, acts: Action[]): Action | null {
   // other tracks: the cheap levels (progress cards), an ability or a metropolis, with commodities the main track doesn't need
   return (
     best(
-      options.filter((a) => {
-        const next = s.ck!.players[p].improvements[a.track] + 1;
-        if (winsMetropolis(s, p, a.track)) return true;
-        if (next <= 2) return true;
-        return next === ABILITY_LEVEL && (c.ck.tracks === 1 || abilityValue(c, a.track) >= 3);
-      }),
+      options.filter((a) => wouldImprove(c, a.track)),
       (a) => -level(a) + site(a) * 0.01,
     ) ?? null
   );
+}
+
+/** Whether the player buys the next level of `track` once it has the commodities. */
+function wouldImprove(c: Ctx, t: ImprovementTrack): boolean {
+  const { s, p } = c;
+  if (t === mainTrack(c) || winsMetropolis(s, p, t)) return true;
+  const next = s.ck!.players[p].improvements[t] + 1;
+  if (next <= (c.ck.tracks === 2 ? W(c).cheapLevel : 2)) return true;
+  return next === ABILITY_LEVEL && (c.ck.tracks === 1 || abilityValue(c, t) >= 3);
+}
+
+/**
+ * Hard: what the next level of a track brings, in cards: the progress cards
+ * it draws until the game is likely over (one red die face more, two at
+ * level 1), its ability at level 3, a metropolis.
+ */
+function levelGain(c: Ctx, t: ImprovementTrack): number {
+  const next = c.s.ck!.players[c.p].improvements[t] + 1;
+  let v = drawGain(next) * lazy(c, 'rolls', () => remainingRolls(c.s)) * W(c).cardWorth;
+  if (next === ABILITY_LEVEL) v += abilityValue(c, t);
+  if (winsMetropolis(c.s, c.p, t)) v += 12;
+  return v;
+}
+
+/**
+ * Hard: resources to the bank for the commodities of an improvement level
+ * whose progress cards (ability, metropolis) are worth more than the cards
+ * it trades away, keeping the cards of what it saves for.
+ */
+function levelTrade(c: Ctx, acts: Action[], keep: CardCounts, metropolisOnly = false): Action | null {
+  const { s, p } = c;
+  if (W(c).levelTrade <= 0) return null;
+  let top: { plan: Array<{ give: Card; rate: number; get: Card }>; value: number } | null = null;
+  for (const t of TRACKS) {
+    if (improvementError(s, p, t, true) !== null || !wouldImprove(c, t) || (metropolisOnly && !winsMetropolis(s, p, t))) continue;
+    const cost = improvementPrice(s, p, t);
+    const plan = bankPlan(c, cost, keep);
+    if (!plan || plan.length === 0) continue;
+    const spent = plan.reduce((n, x) => n + x.rate, 0);
+    const value = levelGain(c, t) - spent * W(c).levelTrade;
+    if (value > 0 && (!top || value > top.value)) top = { plan, value };
+  }
+  return top ? bankTrade(acts, top.plan[0].give, top.plan[0].rate, top.plan[0].get) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1045,7 +1107,7 @@ function villageShip(c: Ctx): EdgeId | null {
 /** Hard, near the end: the road that brings Longest Road within reach (2 VP), if a road or two does it. */
 function routePush(c: Ctx): EdgeId | null {
   const { s, p } = c;
-  if (c.ck.tracks < 2 || c.gap > 4 || s.longestRoute.holder === p || s.players[p].supply.roads === 0) return null;
+  if (c.ck.tracks < 2 || c.gap > W(c).routeGap || s.longestRoute.holder === p || s.players[p].supply.roads === 0) return null;
   const holder = s.longestRoute.holder;
   const need = holder === null ? 5 : longestRouteLength(s, holder) + 1;
   const now = longestRouteLength(s, p);
@@ -1067,7 +1129,9 @@ function wonderGoal(c: Ctx): Goal | null {
   if (!w?.id || w.mine >= WONDER_LEVELS) return null;
   const def = WONDERS.find((x) => x.id === w.id);
   if (!def) return null;
-  return { cost: { ...def.cost } as CardCounts, action: { type: 'scenario', player: c.p, name: 'buildWonder' }, rank: wonderRank(c, w), label: 'wonder' };
+  // (hard: the four levels win outright, and cost fewer cards than the VP do)
+  const rush = c.ck.sea >= 2 ? W(c).wonderRush : 0;
+  return { cost: { ...def.cost } as CardCounts, action: { type: 'scenario', player: c.p, name: 'buildWonder' }, rank: wonderRank(c, w) - rush, label: 'wonder' };
 }
 
 /**
@@ -1089,7 +1153,7 @@ function wonderPlay(c: Ctx, acts: Action[]): Action | null {
   if (build) {
     const goal = resourceGoal(c);
     const w = wonderState(c)!;
-    if (!goal || goal.label === 'wonder' || goal.rank >= 0 || wonderRank(c, w) <= -1.5) return build;
+    if (!goal || goal.label === 'wonder' || goal.rank >= 0 || wonderRank(c, w) <= -1.5 || (c.ck.sea >= 2 && W(c).wonderRush >= 1)) return build;
   }
   const claims = sc.filter((a) => a.name === 'claimWonder');
   if (claims.length === 0) return null;
@@ -1225,8 +1289,9 @@ function keepValue(c: Ctx, card: ProgressCardName): number {
   }
 }
 
-/** Estimated cards of kind `k` an opponent holds, from their production (hands are hidden). */
+/** Estimated cards of kind `k` an opponent holds, from their production (hands are hidden; hard follows them with the card tracker). */
 function guessHeld(c: Ctx, q: PlayerId, k: Card): number {
+  if (c.ck.cards === 2 && W(c).tracked > 0) return lazy(c, 'tracked', () => handEstimates(c.s, c.p))[q][k];
   const prod = lazy(c, `prod:${q}`, () => ckProduction(c.s, q));
   const commodity = isCommodity(k);
   const kinds = commodity ? COMMODITIES : RESOURCES;
@@ -1445,7 +1510,7 @@ function playValue(c: Ctx, a: Play): number {
     case 'saboteur': {
       let n = 0;
       for (const q of opponents(s, p)) {
-        if (publicVP(s, q) >= c.vp) n += Math.floor(handSize(s, q) / 2) * (c.ck.cards === 2 ? 0.5 * weightOf(c, q) : 0.6);
+        if (publicVP(s, q) >= c.vp) n += Math.floor(handSize(s, q) / 2) * (c.ck.cards === 2 ? W(c).sabotage * weightOf(c, q) : 0.6);
       }
       return n;
     }
@@ -1762,17 +1827,17 @@ function spare(c: Ctx, acts: Action[]): Action | null {
   // robber guard (medium, hard): an active knight next to the player's best hexes once the robber moves
   if (c.ck.knights >= 1 && robberActive(s) && free(CK_COSTS.knight)) {
     const knights = knightsOf(s, p);
-    if (knights.length < (c.ck.knights >= 2 ? 3 : 2)) {
+    if (knights.length < (c.ck.knights >= 2 ? W(c).guards : 2)) {
       const site = best(byType(acts, 'buildKnight'), (a) => knightSite(c, a.vertex));
       if (site && knightSite(c, site.vertex) >= (c.ck.knights >= 2 ? 2 : 3)) return site;
     }
   }
-  if (c.ck.knights >= 2 && c.out.steps <= 4 && free(CK_COSTS.activate)) {
+  if (c.ck.knights >= 2 && c.out.steps <= W(c).earlyWake && free(CK_COSTS.activate)) {
     const wake = best(byType(acts, 'activateKnight'), (a) => s.ck!.knights[a.vertex].level);
     if (wake) return wake;
   }
   // hard: a city wall with spare bricks once the hand runs large (each raises the 7 limit by two)
-  if (c.ck.walls && c.pr.lookahead && handCount(c) >= c.limit - 2 && free(CK_COSTS.cityWall)) {
+  if (c.ck.walls && c.pr.lookahead && handCount(c) >= c.limit - W(c).wallMargin && free(CK_COSTS.cityWall)) {
     const wall = wallAction(c, acts);
     if (wall) return wall;
   }
@@ -1847,6 +1912,11 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
 
   const goal = resourceGoal(c);
   const cgoal = commodityGoal(c);
+  if (c.ck.tracks === 2 && W(c).metropolisFirst > 0) {
+    // hard: a metropolis it can win now (2 VP) comes before what it saves for, a city or settlement apart
+    const trade = levelTrade(c, acts, goal?.label === 'city' || goal?.label === 'settlement' ? goal.cost : {}, true);
+    if (trade) return trade;
+  }
   if (goal) {
     if (covers(c.hand, goal.cost)) {
       if (goal.label === 'defence') {
@@ -1865,6 +1935,10 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
       const step = pursue(c, acts, goal, keep, true);
       if (step) return step;
     }
+  }
+  if (c.ck.tracks === 2) {
+    const trade = levelTrade(c, acts, goal?.cost ?? {});
+    if (trade) return trade;
   }
   // the improvement: trade spare cards into the commodity when that completes it
   if (cgoal && pr.plans && !covers(c.hand, cgoal.cost)) {
@@ -1970,8 +2044,9 @@ function spendHand(c: Ctx, acts: Action[]): Action | null {
 function packageStep(c: Ctx, acts: Action[]): Action | null {
   const { s, p } = c;
   const pl = s.players[p];
-  const VP = 6;
-  const CARD = 0.75;
+  const hard = c.ck.tracks === 2;
+  const VP = hard ? W(c).buildVP : 6;
+  const CARD = hard ? W(c).buildCard : 0.75;
   type Item = { action: Action; cost: CardCounts; value: number; vertex?: VertexId; road?: boolean };
   const items: Item[] = [];
   const cities = legalCities(s, p)

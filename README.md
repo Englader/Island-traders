@@ -313,12 +313,13 @@ settlements and cities with the bank trades they need.
 | | Easy | Medium | Hard |
 |---|---|---|---|
 | Set-up | often not the best spot; a commodity counts as an ordinary card | its city where forest, pasture and mountains give commodities, sometimes not the best spot | the same, the best spot it sees, commodities weighted most; its settlement planned together with the city it will likely place next |
-| Barbarians | notices the ship only in its last two moves, and not always | from three moves out keeps a knight ready; wakes knights when an attack before its next turn is likely and it would lose a city as the weakest defender | from five moves out; weighs the odds of an attack before its next turn and the others' idle knights, and races for Defender of Catan (with 5–6 players only when one knight level wins it) |
+| Barbarians | notices the ship only in its last two moves, and not always | from three moves out keeps a knight ready; wakes knights when an attack before its next turn is likely and it would lose a city as the weakest defender; races one knight level ahead for Defender of Catan | from further out; weighs the odds of an attack before its next turn and the others' idle knights; with 3–4 players doesn't race for Defender of Catan but keeps level with the best defender when one knight level does it (two, when it only has to wake idle knights), so nobody gets the card; with 5–6 races one level ahead, as medium does |
 | Knights | hires one when it has none; chases the robber off its hexes | also guards its best hexes against the robber | also moves knights into opponents' paths and displaces knights in its way |
-| City improvements | whatever it can afford | one main track by commodity income, toward a metropolis; the cheap levels of the others | also weighs the level-3 abilities (Aqueduct for a weak producer, Merchant Guild for a heavy commodity producer, Fortress for strong knights) and the others' levels: a race it can win, level 5 to take or keep a metropolis, never a metropolis locked at level 5 |
+| City improvements | whatever it can afford | one main track by commodity income, toward a metropolis; the cheap levels of the others | also weighs the level-3 abilities (Aqueduct for a weak producer, Merchant Guild for a heavy commodity producer, Fortress for strong knights) and the others' levels: a race it can win, level 5 to take or keep a metropolis, never a metropolis locked at level 5; trades resources at the bank for a level whose extra progress cards (an ability, a metropolis) are worth more than the cards it gives, so it buys the first level of every track early, and a metropolis it can win now before anything but a city or settlement |
 | City walls | none | when its hand is large, under a metropolis first | the same, and with spare bricks once its hand nears the limit |
-| Progress cards | each card as soon as it can, with random choices | when a card plainly helps | when it matters most: the Alchemist for a big roll, Spy, Master Merchant, Bishop, Saboteur and Diplomat against the leader, the Deserter on the strongest knights |
-| Near 13 VP | – | cities and settlements first | also Longest Road and Defender of Catan |
+| Progress cards | each card as soon as it can, with random choices | when a card plainly helps | when it matters most: the Alchemist for a big roll, Spy, Master Merchant, Bishop, Saboteur and Diplomat against the leader (the Saboteur when the leader holds many cards), the Deserter on the strongest knights; Resource and Trade Monopoly by the card tracker's estimate of the hands |
+| The Wonders | builds a level whenever it has the cards | a level when that is its nearest goal, first of all once the VP are there and only a level more than everyone else wins | a level whenever it can, before anything else: the four levels win outright and cost fewer cards than the VP |
+| Near 13 VP | – | cities and settlements first | also Longest Road, and Defender of Catan when one knight level more wins it |
 
 Every level now wakes its idle knights in the barbarian ship's last two
 moves when it could otherwise be the weakest defender and lose a city
@@ -326,21 +327,98 @@ moves when it could otherwise be the weakest defender and lose a city
 chasing the robber, uses a Merchant Fleet once it has played one, and
 plays Road Building only with somewhere to build.
 
+##### How hard was made stronger
+
+`npm run bots:match -- [games] [mode] [official|random] [players] --old=<module> --stats`
+(`scripts/bot-match.ts`) seats two copies of the bot against each other,
+half the seats each, and with `--stats` shows how each side played: its
+VP by source, metropolises won and lost, cities pillaged, knights hired,
+woken and promoted, progress cards drawn and played (by card), bank
+trades, cards lost on 7s. With it, hard's Cities & Knights play was
+measured before it was changed. In games of four hard players on random
+maps the winners had a city more than the others (3.1 against 2.1),
+0.85 metropolises against 0.3, Longest Road in 62% of the games against
+8%, and drew 15 progress cards against 11, while Defender of Catan barely
+told them apart (0.9 VP against 0.65). Yet hard spent about 16 cards a
+game on knights (2.6 hired, 7.5 woken, 1.5 promoted) racing up to three
+knight levels ahead for that card, and against medium most of its edge
+came from it (1 Defender VP a game to medium's 0.15) and from fewer
+cities pillaged, not from metropolises (even, 0.36 each) or cities.
+Taking away the cheap levels of its other tracks (fewer progress cards)
+dropped it to 38% against itself: the cards are worth a lot.
+
+So hard now:
+
+- doesn't race for Defender of Catan (with 3–4 players; with 5–6 it
+  still races one knight level ahead, as medium does); when the best of
+  the others is one knight level ahead (two, if waking its idle knights
+  does it), it keeps level with them instead, so nobody gets the card and
+  the tied players draw progress cards. It still never stays the weakest
+  defender with a city at risk;
+- trades resources at the bank for an improvement level whose extra
+  progress cards (one more red die face for the rolls the game likely has
+  left), ability or metropolis are worth more than the cards it gives: the
+  first level of every track early on, and a metropolis it can win now
+  before anything but a city or settlement;
+- plays the Saboteur when the leader holds many cards (not to make it
+  throw away one), and Resource and Trade Monopoly by the card tracker's
+  estimate of the other hands;
+- in The Wonders builds its wonder's levels before anything else.
+
+Its numbers are weights in one place (`src/bots/ckWeights.ts`);
+`npm run bots:match -- … --w=name:value,...` plays another set of them,
+and `npm run bots:tune-ck -- [iterations] [games] [--params=…] [--old=<module>]`
+(`scripts/bot-tune-ck.ts`, offline only) tunes them by self-play: a (1+1)
+evolution strategy that changes one to three weights at a time and keeps
+a change when it wins more against the reference bot over two fixed sets
+of seeds, then checks the result on held-out seeds. Run for 7 steps of
+320 games against the hard level of commit 4d6b857 (and before that 7
+steps against d3b32c1's), it kept only changes within the noise (a few
+points on 320 games), and none of them held up when played again on 600
+games, so the weights are the ones chosen by playing each change against
+the previous hard with `bots:match`.
+
+Tried and dropped, as no better or worse when measured: a metropolis
+race model that compares how many rounds each player needs from its
+commodity production; spending the hand ahead of a 7 by the cards a 7
+would likely cost; cities ahead of the other goals; buying the levels of
+the other tracks by their draws instead of the fixed cheap levels; the
+robber on hexes that pay commodities; more or less patience with progress
+cards; racing for Defender of Catan when only idle knights need waking;
+Longest Road from further out; a setup that weighs commodities more or
+less; more knights guarding against the robber, waking them later.
+
+Head to head against the hard level of commit 4d6b857 (the trading
+changes), two seats each at 4-player tables, seats alternating, on seeds
+not used while choosing the changes
+(`npm run bots:match -- 400 ck official 4 --old=<4d6b857's src/index.ts> --seed=final`,
+and `--from=400` for the second set):
+
+| Setting | This hard's wins |
+|---|---|
+| Cities & Knights, beginners' map | 62% (66% and 58% on two sets of 400) |
+| Cities & Knights, random maps | 61% |
+| C&K + Heading for New Shores, random maps | 61% |
+| C&K + The Wonders, random maps | 72% |
+
+800 games per setting, every one finished; half the seats are the new
+player's, so 50% is even.
+
 `npm run bots:league -- 120 ck official 3` (and `random`, and 4 players)
 plays the levels against each other. Over 120 games per setting, 480 in
 all, every one finished:
 
 | Setting | Easy | Medium | Hard | Turns a game (all players) |
 |---|---|---|---|---|
-| 3 players, beginners' map | 3% | 19% | 78% | 66 |
-| 3 players, random map | 4% | 27% | 69% | 65 |
-| 4 players, beginners' map | 1% | 37% | 63% | 72 |
-| 4 players, random map | 1% | 38% | 61% | 71 |
+| 3 players, beginners' map | 2% | 14% | 84% | 63 |
+| 3 players, random map | 0% | 31% | 69% | 65 |
+| 4 players, beginners' map | 2% | 31% | 68% | 71 |
+| 4 players, random map | 1% | 29% | 70% | 71 |
 
-In all, hard won 68%, medium 30% and easy 2%. A computer move took about
-0.9 ms on average, the engine's own work included. With the trading
-changes (see [Trading](#trading)), on the beginners' map over 120 games:
-3%, 21% and 76% with 3 players, 1%, 39% and 60% with 4.
+In all, hard won 73%, medium 26% and easy 1% (before hard's strategy
+changed, 68%, 30% and 2%; with the trading changes, on the beginners' map,
+3%, 21% and 76% with 3 players, 1%, 39% and 60% with 4). A computer move
+took about 1.0–1.1 ms on average, the engine's own work included.
 
 With 5–6 players the bots build, hire, wall, improve and wake knights in
 the special build phase and play their whole C&K turn as paired player 2.
@@ -350,17 +428,19 @@ finished:
 
 | Setting | Easy | Medium | Hard | Turns a game (all players) |
 |---|---|---|---|---|
-| 5 players, paired, 5–6 beginners' map | 2% | 38% | 61% | 66 |
-| 5 players, paired, random map | 2% | 38% | 60% | 65 |
-| 5 players, special build, 5–6 beginners' map | 6% | 35% | 59% | 64 |
-| 5 players, special build, random map | 1% | 43% | 56% | 65 |
-| 6 players, paired, 5–6 beginners' map | 0% | 34% | 66% | 67 |
-| 6 players, paired, random map | 2% | 41% | 58% | 69 |
-| 6 players, special build, 5–6 beginners' map | 2% | 33% | 66% | 65 |
-| 6 players, special build, random map | 0% | 45% | 55% | 68 |
+| 5 players, paired, 5–6 beginners' map | 3% | 35% | 63% | 62 |
+| 5 players, paired, random map | 3% | 30% | 68% | 62 |
+| 5 players, special build, 5–6 beginners' map | 6% | 33% | 61% | 62 |
+| 5 players, special build, random map | 3% | 43% | 55% | 61 |
+| 6 players, paired, 5–6 beginners' map | 1% | 34% | 65% | 64 |
+| 6 players, paired, random map | 1% | 39% | 60% | 66 |
+| 6 players, special build, 5–6 beginners' map | 2% | 37% | 62% | 61 |
+| 6 players, special build, random map | 2% | 43% | 55% | 63 |
 
-In all, hard won 60%, medium 38% and easy 2%. A move took 1.3–1.4 ms on
-average.
+In all, hard won 61%, medium 37% and easy 2% (before, 60%, 38% and 2%;
+with five or six players hard still races one knight level ahead for
+Defender of Catan, as medium does, and doesn't tie). A move took 1.2–1.4
+ms on average.
 
 On the Seafarers scenarios (section 16 of the spec) the bots also build
 ships toward spots across the sea once their island is full (the same
@@ -374,22 +454,24 @@ finished:
 
 | Scenario | Players | Map | Easy | Medium | Hard | Turns |
 |---|---|---|---|---|---|---|
-| Heading for New Shores | 3 | official / random | 7% / 2% | 22% / 27% | 72% / 72% | 68 / 77 |
-| | 4 | official / random | 2% / 0% | 37% / 50% | 62% / 50% | 80 / 81 |
-| | 5 | official / random | 0% / 2% | 37% / 32% | 63% / 67% | 69 / 72 |
-| | 6 | official / random | 2% / 3% | 37% / 32% | 62% / 65% | 71 / 71 |
-| Through the Desert | 3 | official / random | 0% / 2% | 45% / 38% | 55% / 60% | 68 / 72 |
-| | 4 | official / random | 2% / 3% | 23% / 43% | 75% / 53% | 73 / 80 |
-| | 5 | official / random | 2% / 0% | 47% / 45% | 52% / 55% | 72 / 76 |
-| | 6 | official / random | 3% / 0% | 45% / 42% | 52% / 58% | 76 / 81 |
-| Cloth for Catan | 3 | official / random | 0% / 0% | 44% / 42% | 56% / 58% | 70 / 72 |
-| | 4 | official / random | 6% / 1% | 39% / 37% | 55% / 63% | 74 / 80 |
-| The Wonders | 3 | official / random | 2% / 2% | 22% / 40% | 77% / 58% | 72 / 80 |
-| | 4 | official / random | 2% / 2% | 30% / 50% | 68% / 48% | 81 / 91 |
+| Heading for New Shores | 3 | official / random | 5% / 2% | 20% / 22% | 75% / 77% | 68 / 76 |
+| | 4 | official / random | 7% / 2% | 30% / 37% | 63% / 62% | 77 / 79 |
+| | 5 | official / random | 0% / 0% | 33% / 43% | 67% / 57% | 66 / 71 |
+| | 6 | official / random | 2% / 2% | 33% / 40% | 65% / 58% | 71 / 68 |
+| Through the Desert | 3 | official / random | 2% / 2% | 40% / 32% | 58% / 67% | 67 / 70 |
+| | 4 | official / random | 0% / 0% | 30% / 35% | 70% / 65% | 67 / 76 |
+| | 5 | official / random | 0% / 0% | 42% / 33% | 58% / 67% | 66 / 72 |
+| | 6 | official / random | 2% / 2% | 38% / 40% | 60% / 58% | 74 / 81 |
+| Cloth for Catan | 3 | official / random | 1% / 2% | 35% / 41% | 64% / 58% | 70 / 72 |
+| | 4 | official / random | 1% / 1% | 41% / 37% | 58% / 63% | 72 / 81 |
+| The Wonders | 3 | official / random | 7% / 2% | 25% / 28% | 68% / 70% | 69 / 72 |
+| | 4 | official / random | 2% / 5% | 25% / 27% | 73% / 68% | 80 / 84 |
 
-In all, hard won 60%, medium 38% and easy 2%. A move took 1.0–1.9 ms on
-average, the engine's own work included; the bot's choice alone took
-0.22 ms at the median and at most 28 ms with 6 players.
+In all, hard won 64%, medium 34% and easy 2% (before, 60%, 38% and 2%;
+the two settings where medium had kept level, New Shores and The Wonders
+with 4 players on random maps, went from 50% / 50% and 50% / 48% for
+medium / hard to 37% / 62% and 27% / 68%). A move took 1.6–2.5 ms on
+average, the engine's own work included.
 
 #### Blunder audit
 
@@ -460,12 +542,21 @@ table (seats alternating, 160 games each on random maps unless noted):
 | C&K + New Shores | 48% | 54% |
 
 The new players also scored more VP on average in every one of these. In
-Cities & Knights hard is about even with the old one in wins: its strategy
-for improvements, knights and progress cards is largely unchanged.
+Cities & Knights hard was about even with the old one in wins: its strategy
+for improvements, knights and progress cards was largely unchanged then
+(see [How hard was made stronger](#how-hard-was-made-stronger) for what
+changed since).
 
 A decision takes 0.12 ms at the median, 3.9 ms at the 99th percentile and
 28 ms at the slowest (over 43,000 decisions in base, Seafarers and Cities &
 Knights games with 4–6 players).
+
+With hard's new Cities & Knights strategy (and the trading changes before
+it) the audit still finds no blunder by medium or hard in any of its modes
+(20 games each, 3 players, printed maps). In Cities & Knights games a
+decision now takes 0.5–0.7 ms at the median (1.2–1.4 ms on the Seafarers
+scenarios), 2–5 ms at the 99th percentile and at most 16 ms (over 37,000
+decisions with 4–6 players, hard, medium and easy seated together).
 
 ### Dice
 
@@ -790,6 +881,20 @@ and the differences between printings.
   Merchant Fleet used. Whole audited games in the base game, two Seafarers
   scenarios, Cities & Knights and both together find no blunders by medium
   and hard and none of the absurd ones by easy.
+- **Hard in Cities & Knights** (`test/ckHardStrategy.test.ts`): no knight
+  hired or woken while the ship is far and it isn't the weakest defender,
+  level with the best defender rather than past it (and a knight woken to
+  tie), still never the weakest with a city at risk; the Saboteur when the
+  leader holds many cards and not for one card; a first level of a track
+  bought at the bank; the last coins of a metropolis off its main track
+  traded for; a wonder level before a city. Each of these fails with the
+  hard level of commit 4d6b857.
+- **Fairness** (`test/ckBotFairness.test.ts`): through whole C&K games (and
+  C&K + New Shores), every other decision of the medium and hard players,
+  trades included, is made again with the other players' hidden cards
+  swapped between them (hand sizes and commodity counts kept), their
+  progress cards swapped with others from the same decks, the decks
+  reshuffled and the dice reseeded: the decision must not change.
 - **The roll's glow** (`producingHexes`, `web/src/game/rollLight.ts`): over
   random games on the base game, Seafarers scenarios and Cities & Knights,
   plus the same positions with a nearly empty bank, the tiles lit are

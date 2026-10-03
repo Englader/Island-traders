@@ -533,9 +533,13 @@ them only when `state.ck` exists.
   game to `ckHeuristicAction` (`src/bots/ckBot.ts`); the level's profile
   (`ck` in `PROFILES`, `src/bots/heuristicBot.ts`) sets how it watches the
   barbarians, picks improvement tracks, plays progress cards and uses its
-  knights. The README's "Computer players" section describes the levels and
-  the league results (`npm run bots:league -- 60 ck`);
-  `test/ckBot.test.ts` covers the key decisions.
+  knights; the hard level's numbers are weights (`src/bots/ckWeights.ts`)
+  tuned by self-play (`npm run bots:tune-ck`, `npm run bots:match`). The
+  README's "Computer players" section describes the levels and the league
+  results (`npm run bots:league -- 60 ck`); `test/ckBot.test.ts` and
+  `test/ckHardStrategy.test.ts` cover the key decisions, and
+  `test/ckBotFairness.test.ts` checks that they don't depend on hidden
+  cards.
 - **Phase 4, UI (done).** `viewFor(...).ck` (`CkView`) has everything public plus the
   viewer's own commodities and progress cards, and `played`, the progress
   cards played so far. A card step's `data` (what a Spy or Master Merchant

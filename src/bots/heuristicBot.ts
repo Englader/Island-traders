@@ -17,6 +17,7 @@ import { legalCities, legalSettlements, legalSetupSettlements } from '../engine/
 import { handSize, publicVP, topo, totalVP, tradeRates, vertexLandHexes, vertexZones } from '../rules/queries.js';
 import { scenarioOf } from '../scenarios/registry.js';
 import { ckHeuristicAction, type CkProfile } from './ckBot.js';
+import { HARD_CK_WEIGHTS } from './ckWeights.js';
 import { edgeKinds, openSpot, planExpansion, routeValue, type EdgeOption, type Expansion } from './expansion.js';
 import { emptyHand } from './tracker.js';
 import { answerOffer, ownOffer, settleTrades, type TradeView } from './trading.js';
@@ -164,7 +165,7 @@ const PROFILES: Record<BotLevel, Profile> = {
     trade: { partner: 1, generous: 0.2, counters: true, offers: 'full', guard: 'rivals', sweeten: true, chance: 0.3 },
     handGuard: true,
     devRank: 2.5,
-    ck: { barbarians: 2, commodities: 1.2, tracks: 2, cards: 2, knights: 2, walls: true, sea: 2 },
+    ck: { barbarians: 2, commodities: 1.2, tracks: 2, cards: 2, knights: 2, walls: true, sea: 2, weights: HARD_CK_WEIGHTS },
   },
 };
 

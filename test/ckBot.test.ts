@@ -63,7 +63,7 @@ describe('Cities & Knights computer players: the barbarians', () => {
     expect(botMove(s, 0, 'medium')).toEqual({ type: 'endTurn', player: 0 });
   });
 
-  it('hard races for Defender of Catan when the attack will be held; medium does not chase it from behind', () => {
+  it('hard keeps up with the best defender when a knight woken does it, when the attack will be held; medium does not chase it from behind', () => {
     const s = bare();
     // player 0 has no city at risk (a settlement only); the others hold the attack between them
     put(s, C(0, 0, 0), 0);
@@ -74,11 +74,11 @@ describe('Cities & Knights computer players: the barbarians', () => {
     knight(s, C(0, 0, 2), 0, 2);
     give(s, 0, { grain: 1 });
     s.ck!.barbarians = 6;
-    // a strong knight woken makes it the sole best defender
+    // a knight woken keeps anyone else from becoming Defender (a strong one makes it the best defender)
     expect(botMove(s, 0, 'hard')).toEqual({ type: 'activateKnight', player: 0, vertex: C(0, 0, 2) });
     s.ck!.knights[C(0, 0, 2)].level = 1;
     s.ck!.knights[C(0, 0, 3)] = { ...s.ck!.knights[C(0, 0, 2)] };
-    // two knights to wake to get ahead: too far for medium
+    // two knights to wake to get ahead: too far for medium; hard wakes one, to tie
     expect(botMove(s, 0, 'medium')).toEqual({ type: 'endTurn', player: 0 });
     expect(botMove(s, 0, 'hard')).toMatchObject({ type: 'activateKnight' });
   });
