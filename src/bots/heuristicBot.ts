@@ -9,7 +9,6 @@ import type {
   PlayerId,
   Resource,
   ResourceCounts,
-  TradeOffer,
   VertexId,
 } from '../core/types.js';
 import { applyAction, setupOrder } from '../engine/apply.js';
@@ -19,6 +18,8 @@ import { handSize, publicVP, topo, totalVP, tradeRates, vertexLandHexes, vertexZ
 import { scenarioOf } from '../scenarios/registry.js';
 import { ckHeuristicAction, type CkProfile } from './ckBot.js';
 import { edgeKinds, openSpot, planExpansion, routeValue, type EdgeOption, type Expansion } from './expansion.js';
+import { emptyHand } from './tracker.js';
+import { answerOffer, ownOffer, settleTrades, type TradeView } from './trading.js';
 
 /**
  * A rule-of-thumb bot. It never looks at hidden information it could not see
@@ -38,8 +39,10 @@ import { edgeKinds, openSpot, planExpansion, routeValue, type EdgeOption, type E
  *   placements in pairs.
  * - The robber goes where it hurts the leader most, never on its own hexes
  *   or where it hurts nobody while another hex hurts an opponent.
- * - It answers domestic offers by comparing what it needs, and never takes
- *   or makes a trade that leaves it further from its next build.
+ * - Trades with other players (src/bots/trading.ts) are judged by what they
+ *   do for its goal and for the partner, from a card tracker that follows
+ *   only what its seat has seen (src/bots/tracker.ts); it never takes or
+ *   makes a trade that leaves it further from its next build.
  * - Cities & Knights games have a strategy of their own (src/bots/ckBot.ts),
  *   tuned by the profile's `ck` settings.
  */
@@ -71,18 +74,38 @@ export interface Profile {
   acceptGain: number;
   /** Won't trade with anyone this close to winning (VP short of the target); -1 never checks. */
   leaderGuard: number;
-  /** Makes a counter-offer to an open offer when it gains more than this. */
+  /** Makes a counter-offer when it gains more than this. */
   counterGain: number;
   /** Cards it may ask for beyond the ones it gives, in a counter-offer. */
   counterExtra: number;
-  /** Trade offers it makes to other players per turn, when a card or two short of its goal. */
+  /** Trade offers it makes to other players per turn, at most. */
   offersPerTurn: number;
+  /** How it trades with other players (src/bots/trading.ts). */
+  trade: TradeProfile;
   /** With more than 7 cards at the end of its turn, trades a pile it can't use for a card it needs, so a 7 costs less. */
   handGuard: boolean;
   /** How far down its list of goals a development card comes (lower: buys more of them). */
   devRank: number;
   /** Cities & Knights (src/bots/ckBot.ts). */
   ck: CkProfile;
+}
+
+/** Trading with other players, by level (src/bots/trading.ts). */
+export interface TradeProfile {
+  /** How much what a trade does for the partner counts against it (spread over the opponents by how far ahead each is). */
+  partner: number;
+  /** A lower bar for players two or more VP behind it. */
+  generous: number;
+  /** Answers an offer it turns down with a counter-offer it would take. */
+  counters: boolean;
+  /** Its own offers: now and then one card for one ('simple'), or every kind ('full'). */
+  offers: 'simple' | 'full';
+  /** No trade that completes a settlement or city for: the player it makes win ('win'), also the leader ('leader'), also anyone level or ahead ('rivals'). */
+  guard: 'win' | 'leader' | 'rivals';
+  /** Offers two cards for one when a card is all a settlement or city lacks this turn (hard: or the hand is over the 7 limit). */
+  sweeten: boolean;
+  /** The least chance of a yes (as it pictures the others) for an offer it makes. */
+  chance: number;
 }
 
 const PROFILES: Record<BotLevel, Profile> = {
@@ -99,7 +122,8 @@ const PROFILES: Record<BotLevel, Profile> = {
     leaderGuard: -1,
     counterGain: -0.3,
     counterExtra: 0,
-    offersPerTurn: 0,
+    offersPerTurn: 1,
+    trade: { partner: 0, generous: 0, counters: false, offers: 'simple', guard: 'win', sweeten: false, chance: 0 },
     handGuard: false,
     devRank: 2.5,
     ck: { barbarians: 0, commodities: 0, tracks: 0, cards: 0, knights: 0, walls: false, sea: 0 },
@@ -117,7 +141,8 @@ const PROFILES: Record<BotLevel, Profile> = {
     leaderGuard: 2,
     counterGain: 0.3,
     counterExtra: 0,
-    offersPerTurn: 1,
+    offersPerTurn: 2,
+    trade: { partner: 0.6, generous: 0.3, counters: true, offers: 'full', guard: 'leader', sweeten: true, chance: 0.3 },
     handGuard: false,
     devRank: 2.5,
     ck: { barbarians: 1, commodities: 0.8, tracks: 1, cards: 1, knights: 1, walls: true, sea: 1 },
@@ -133,9 +158,10 @@ const PROFILES: Record<BotLevel, Profile> = {
     devCards: true,
     acceptGain: 0.7,
     leaderGuard: 3,
-    counterGain: 1,
-    counterExtra: 1,
-    offersPerTurn: 2,
+    counterGain: 0.7,
+    counterExtra: 0,
+    offersPerTurn: 3,
+    trade: { partner: 1, generous: 0.2, counters: true, offers: 'full', guard: 'rivals', sweeten: true, chance: 0.3 },
     handGuard: true,
     devRank: 2.5,
     ck: { barbarians: 2, commodities: 1.2, tracks: 2, cards: 2, knights: 2, walls: true, sea: 2 },
@@ -793,69 +819,38 @@ function goldAction(s: GameState, p: PlayerId): Action | null {
   return { type: 'chooseGold', player: p, resources: pick };
 }
 
+/**
+ * How the bot sees a trade: its hand, what it wants (for its plan, or a
+ * settlement or city), and what it must not set back (src/bots/trading.ts).
+ */
+function tradeView(s: GameState, p: PlayerId, pr: Profile, x: () => Expansion, plan?: Plan | null): TradeView {
+  const pl = s.players[p];
+  const target = (plan === undefined ? (pr.plans ? choosePlan(s, p, x(), pr) : null) : plan)?.cost ?? (pl.supply.settlements > 0 ? COSTS.settlement : COSTS.city);
+  const w = resourceWants(s, p, target);
+  const hand = emptyHand();
+  const wants = emptyHand();
+  for (const r of RESOURCES) {
+    hand[r] = pl.resources[r];
+    wants[r] = w[r];
+  }
+  const rates = { ...emptyHand(), ...tradeRates(s, p) };
+  return { s, p, pr, kinds: RESOURCES, hand, wants, goals: [{ cost: target, boost: 2 }], ok: (give, get) => tradeOk(s, p, give, get, x()), rates };
+}
+
+/** Offers to the bot on another player's turn: take them, counter them or turn them down (src/bots/trading.ts). */
 function respondToTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
   let x: Expansion | null = null;
   const exp = () => (x ??= expansionOf(s, p, pr));
+  let view: TradeView | null = null;
   for (const t of s.turn.trades) {
     if (!t.to.includes(p) || t.accepted.includes(p) || t.rejected.includes(p)) continue;
-    const accept = acts.find((a) => a.type === 'acceptTrade' && a.tradeId === t.id);
-    const reject = acts.find((a) => a.type === 'rejectTrade' && a.tradeId === t.id);
-    const target = s.players[p].supply.settlements > 0 ? COSTS.settlement : COSTS.city;
-    const wants = resourceWants(s, p, target);
-    const proposerClose = nearWin(s, t.from, pr);
-    if (t.open) {
-      const counter = proposerClose ? null : counterOffer(s, p, t, wants, pr);
-      if (counter && counter.type === 'proposeTrade' && tradeOk(s, p, counter.give, counter.get, exp())) return counter;
-      if (reject) return reject;
-      continue;
-    }
-    let gain = 0;
-    for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
-    if (accept && gain > pr.acceptGain && !proposerClose && tradeOk(s, p, t.get, t.give, exp())) return accept;
+    view ??= tradeView(s, p, pr, exp);
+    const a = answerOffer(view, t, acts);
+    if (a && (a.type !== 'proposeTrade' || applyAction(s, a).ok)) return a;
+    const reject = acts.find((x) => x.type === 'rejectTrade' && x.tradeId === t.id);
     if (reject) return reject;
   }
   return null;
-}
-
-/**
- * Answers an open offer card for card: for "who has X for me?" the bot gives
- * X (if it can spare it) for what it needs most; for "what will you give for
- * X?" it pays with what it needs least, if it wants X. It prefers asking for
- * something the proposer actually holds, so the offer can be taken.
- */
-function counterOffer(s: GameState, p: PlayerId, t: TradeOffer, wants: Record<Resource, number>, pr: Profile): Action | null {
-  const mine = s.players[p].resources;
-  const theirs = s.players[t.from].resources;
-  if (t.open === 'give') {
-    const n = total(t.get);
-    if (n === 0 || !hasAtLeast(mine, t.get)) return null;
-    let cost = 0;
-    for (const r of RESOURCES) cost += (t.get[r] ?? 0) * wants[r];
-    // ask card by card for what it values most, up to one card more than it gives
-    const ask: PartialCounts = {};
-    let value = 0;
-    for (let k = 0; k < n + 1 + pr.counterExtra && value - cost <= pr.counterGain; k++) {
-      const r = best(
-        RESOURCES.filter((x) => !(t.get[x] ?? 0)),
-        (x) => wants[x] - (ask[x] ?? 0) * 0.4 + (theirs[x] > (ask[x] ?? 0) ? 0.5 : -2),
-      );
-      if (!r) break;
-      ask[r] = (ask[r] ?? 0) + 1;
-      value += wants[r];
-    }
-    if (value - cost <= pr.counterGain || total(ask) === 0) return null;
-    return { type: 'proposeTrade', player: p, give: { ...t.get }, get: ask, to: [t.from], replyTo: t.id };
-  }
-  const n = total(t.give);
-  if (n === 0) return null;
-  let value = 0;
-  for (const r of RESOURCES) value += (t.give[r] ?? 0) * wants[r];
-  const pay = best(
-    RESOURCES.filter((r) => !(t.give[r] ?? 0) && mine[r] >= n),
-    (r) => -wants[r] + mine[r] * 0.05,
-  );
-  if (!pay || value - wants[pay] * n <= pr.counterGain) return null;
-  return { type: 'proposeTrade', player: p, give: { [pay]: n }, get: { ...t.give }, to: [t.from], replyTo: t.id };
 }
 
 /** Expected cards of `r` the others hold, from their production (hands are hidden). */
@@ -970,58 +965,41 @@ function wonderCost(s: GameState, p: PlayerId): PartialCounts | null {
 }
 
 /**
- * The active player's trade business: settle its own offer once everyone has
- * answered, and take or turn down counter-offers. `null` means "wait for the
- * answers"; `undefined` means there is nothing to do.
+ * The active player's trade business (src/bots/trading.ts): confirm an offer
+ * someone took, take a counter-offer worth taking, withdraw what nobody
+ * wanted. `null` means "wait for the answers"; `undefined` means there is
+ * nothing to do.
  */
 function actorTrades(s: GameState, p: PlayerId, acts: Action[], pr: Profile, x: () => Expansion): Action | null | undefined {
-  for (const t of s.turn.trades) {
-    if (t.from !== p) continue;
-    if (t.accepted.length > 0) {
-      const partner = best(t.accepted, (q) => -publicVP(s, q))!;
-      return { type: 'confirmTrade', player: p, tradeId: t.id, partner };
-    }
-    if (t.to.some((q) => !t.rejected.includes(q))) return null;
-    return { type: 'cancelTrade', player: p, tradeId: t.id };
-  }
-  for (const t of s.turn.trades) {
-    if (t.from === p || !t.to.includes(p)) continue;
-    const plan = choosePlan(s, p, x(), pr);
-    const wants = resourceWants(s, p, plan?.cost ?? null);
-    let gain = 0;
-    for (const r of RESOURCES) gain += (t.give[r] ?? 0) * wants[r] - (t.get[r] ?? 0) * wants[r];
-    const accept = acts.find((a) => a.type === 'acceptTrade' && a.tradeId === t.id);
-    if (accept && gain > pr.acceptGain && !nearWin(s, t.from, pr) && tradeOk(s, p, t.get, t.give, x())) return accept;
-    return { type: 'rejectTrade', player: p, tradeId: t.id };
-  }
-  return undefined;
+  if (s.turn.trades.length === 0) return undefined;
+  return settleTrades(tradeView(s, p, pr, x), acts);
 }
 
 /**
- * Offers another player a card for the one or two it is missing for its goal:
- * one spare card for one needed card, and on a second try (hard) two for one.
+ * An offer to the other players toward the plan (src/bots/trading.ts): what
+ * it lacks for it, for cards the plan doesn't need. Urgent when one card is
+ * all a settlement or city lacks (hard: or a 7 would cost half its hand).
  */
 function offerToPlayers(s: GameState, p: PlayerId, plan: Plan, pr: Profile, x: Expansion): Action | null {
-  const made = s.turn.offers ?? 0;
-  if (made >= pr.offersPerTurn || s.turn.role !== 'active') return null;
-  if (s.options.tradeBuildMode === 'separate' && s.turn.buildingStarted) return null;
+  if ((s.turn.offers ?? 0) >= pr.offersPerTurn || s.turn.role !== 'active') return null;
   const have = s.players[p].resources;
-  const need = missing(have, plan.cost);
-  if (total(need) < 1 || total(need) > 2) return null;
-  const want = RESOURCES.find((r) => (need[r] ?? 0) > 0)!;
-  const spare = minus(have, plan.cost);
-  const wants = resourceWants(s, p, plan.cost);
-  const pool = RESOURCES.filter((r) => r !== want && spare[r] >= 1).sort((a, b) => wants[a] - wants[b] || spare[b] - spare[a]);
-  if (pool.length === 0) return null;
-  const give: PartialCounts = { [pool[0]]: 1 };
-  if (made >= 1) {
-    const second = pool.find((r) => spare[r] >= (r === pool[0] ? 2 : 1));
-    if (!second) return null;
-    give[second] = (give[second] ?? 0) + 1;
-  }
-  const to = s.players.map((y) => y.id).filter((q) => q !== p && !nearWin(s, q, pr));
-  if (to.length === 0 || !tradeOk(s, p, give, { [want]: 1 }, x)) return null;
-  return { type: 'proposeTrade', player: p, give, get: { [want]: 1 }, to };
+  const lacking = total(missing(have, plan.cost));
+  const vp = hasAtLeast(full(plan.cost), COSTS.city) || hasAtLeast(full(plan.cost), COSTS.settlement);
+  const urgent = (vp && lacking === 1) || (pr.handGuard && total(have) > s.options.discardLimit);
+  const offer = ownOffer(tradeView(s, p, pr, () => x, plan), { cost: plan.cost, keep: plan.cost, urgent });
+  return offer && applyAction(s, offer).ok ? offer : null;
+}
+
+const full = (c: PartialCounts): ResourceCounts => ({ brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0, ...c });
+
+/** Easy: now and then (two turns in five) one card for the one card a settlement or city it can build lacks. */
+function easyOffer(s: GameState, p: PlayerId, pr: Profile): Action | null {
+  if (pr.trade.offers !== 'simple' || wobble({ ...s, log: [] }, p, `offer:${s.turn.number}`) >= 0.4) return null;
+  const pl = s.players[p];
+  const cost = pl.supply.settlements > 0 && legalSettlements(s, p).length > 0 ? COSTS.settlement : legalCities(s, p).length > 0 ? COSTS.city : null;
+  if (!cost) return null;
+  const action: Action = cost === COSTS.city ? { type: 'buildCity', player: p, vertex: legalCities(s, p)[0] } : { type: 'buildSettlement', player: p, vertex: legalSettlements(s, p)[0] };
+  return offerToPlayers(s, p, { cost, action }, pr, expansionOf(s, p, pr));
 }
 
 // ---------------------------------------------------------------------------
@@ -1183,6 +1161,8 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
   if (settle.length > 0) return pickBest(s, p, pr, settle, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   const scen = scenarioMainAction(s, p, acts);
   if (scen) return scen;
+  const simple = easyOffer(s, p, pr);
+  if (simple) return simple;
 
   if (plan) {
     if (applyAction(s, plan.action).ok) return plan.action;
@@ -1314,7 +1294,11 @@ function robberAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): A
  * Deterministic for a given state.
  */
 export function heuristicAction(s: GameState, p: PlayerId, level: BotLevel = 'medium'): Action | null {
-  const pr = botProfile(level);
+  return profileAction(s, p, botProfile(level));
+}
+
+/** The bot's move with a profile of its own (the audit's scripted player uses one). */
+export function profileAction(s: GameState, p: PlayerId, pr: Readonly<Profile>): Action | null {
   const acts = legalActions(s, p);
   if (acts.length === 0) return null;
   // Cities & Knights has a strategy of its own (src/bots/ckBot.ts)

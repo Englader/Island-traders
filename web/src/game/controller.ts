@@ -9,7 +9,7 @@ import {
   type PlayerId,
 } from 'engine';
 import { isRunning, newClock, observe, pause, restoreClock, resume, stop, summarize, type ClockFeed, type GameClock } from './clock';
-import { botDelay, mustAct, type BotLevel, type BotSpeed, type Seat } from './seats';
+import { answerDelay, botDelay, mustAct, type BotLevel, type BotSpeed, type Seat } from './seats';
 import { removeKey, saveJson } from './storage';
 
 export type GameMode = 'local' | 'host';
@@ -261,7 +261,8 @@ export class GameController {
     const answering = s.phase.kind === 'main' ? need.filter((p) => p !== s.turn.actor) : [];
     const bot = (answering.length > 0 ? answering : need).find((p) => this.seats[p].kind === 'bot');
     if (bot === undefined || this.state.phase.kind === 'gameOver') return;
-    this.timer = setTimeout(() => this.botStep(bot), botDelay(this.record.botSpeed, this.last?.action ?? null));
+    const delay = answering.includes(bot) ? answerDelay(this.record.botSpeed) : botDelay(this.record.botSpeed, this.last?.action ?? null);
+    this.timer = setTimeout(() => this.botStep(bot), delay);
   }
 
   private botStep(p: PlayerId): void {
