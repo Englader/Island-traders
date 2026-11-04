@@ -102,6 +102,8 @@ describe('Cities & Knights computer players: progress cards', () => {
   it('does not waste the Alchemist on a roll that gives it little, and uses it on its best number (never a 7)', () => {
     const s = bare();
     setHex(s, 0, 0, 'fields', 2);
+    // (somewhere to build toward: the corners by the 2 are sand, no target for its roads)
+    setHex(s, -1, 0, 'hills', 6);
     put(s, C(0, 0, 0), 0);
     hand(s, 0, 'alchemist');
     s.phase = { kind: 'preRoll' };

@@ -150,10 +150,21 @@ close behind. Nothing is remembered between moves, so a spot that is taken
 or cut off is dropped at once: a computer player never builds a road into
 the city that just blocked it.
 
+A spot is worth what it pays: desert, sea and fog count for nothing, and a
+desert is no second resource. A spot on sand (mostly desert, two pips or
+fewer) is never a target and is settled only within two VP of winning,
+unless island chits or a harbor make up for it; the chits count as VP in
+the turn planner. In Seafarers a computer player also moves a ship (one a
+turn, the open end of a route, never one built this turn or next to the
+pirate: the engine decides what may move) when a ship where it could go
+would bring a spot or goal closer than where it stands, so a dead-end ship
+heads somewhere useful and a move saves building a new ship. It keeps a
+ship that its Longest Trade Route needs.
+
 | | Easy | Medium | Hard |
 |---|---|---|---|
-| Building spots | often not the best | sometimes not the best | the best it sees; plans its two opening settlements together |
-| Roads and ships | toward the spot or goal it likes, a bit at random | the same, and a spot an opponent will reach first counts for less; Longest Road when it is in reach | the same, and a much better spot one road away comes before a settlement now |
+| Building spots | often not the best, never on sand | sometimes not the best, never on sand | the best it sees; plans its two opening settlements together |
+| Roads and ships | toward the spot or goal it likes, a bit at random; moves a ship on half its turns | the same, and a spot an opponent will reach first counts for less; Longest Road when it is in reach; moves a ship when that brings a target closer | the same, and a much better spot one road away comes before a settlement now |
 | Goals | builds whatever it can afford | the best settlements and cities it can complete this turn, bank and harbor trades included; otherwise saves for a city, settlement, road, ship or card; spends a hand over 7 on something useful | same |
 | Bank and harbor trades | none | for the build it is after, when they complete it or bring it closer | same, and trades a big hand down before a 7 can cost it |
 | Robber and pirate | anyone, a bit at random | whoever it hurts most, leaning to the leader; the pirate when the ships next to it (and a sea route it blocks) matter more than the robber's best hex | the leader; plays knights to keep it there and to win Largest Army |
@@ -295,6 +306,41 @@ error is about ±4 points at 120 games). Every game finished. A decision
 takes 0.7 ms at the median and 7 ms at the 99th percentile (at most 27 ms
 in 4-player games); answers to an offer in the browser come after half the
 usual pause.
+
+#### Sand and ships
+
+Measured with `npm run bots:audit` (10 games per setting, every seat at one
+level) in 13 Seafarers settings: scenarios 1-6, 8 and 9 on the printed maps
+with 3 players, Through the Desert on a random map with 4, and Cities &
+Knights with New Shores, Through the Desert (both layouts) and Cloth for
+Catan; before (commit a7de1dd) → after, per game. A sand blunder is a
+settlement on sand (no chits, no 2:1 harbor) more than two VP from winning,
+or one where another legal spot paid four pips more; an idle ship is a turn
+ended with a ship that leads nowhere while a legal move of it would bring
+its best target closer; a missed move is a turn ended with any such move
+left unmade (by the audit's own yardstick: a spot's pips and harbor, less a
+quarter per piece still needed).
+
+| Level | Sand blunders | Idle ships | Ship moves | Missed moves |
+|---|---|---|---|---|
+| Easy | 0.02 → 0 | 0.32 → 0 | 0 → 2.2 | 4.9 → 1.1 |
+| Medium | 0.12 → 0 | 0.18 → 0 | 0 → 1.0 | 1.8 → 0.4 |
+| Hard | 0.05 → 0 | 0.13 → 0 | 0 → 1.4 | 1.8 → 0.4 |
+
+Most settlements still next to a desert are justified now (73% for medium
+in Through the Desert, from 6%): island chits or a 2:1 harbor. Head to head
+against the players of a7de1dd at the same level (`npm run bots:match`, 4
+players, two seats each, printed maps), share of the wins:
+
+| | Base | New Shores | Four Islands | Fog Islands | Through the Desert | New World | C&K + New Shores | C&K + Through the Desert |
+|---|---|---|---|---|---|---|---|---|
+| Hard (240 games) | 50% | 61% | 46% | 48% | 53% | 52% | 55% | |
+| Medium (160 games) | 53% | 51% | 56% | | 56% | | | 56% |
+
+Four Islands and Fog Islands are level: on 400 more games each the new
+players won 46% and 48%, where with every change switched off they score
+47% in both on the same seeds. Every game finished. A decision still takes
+about 1 ms at the median (at most 16 ms in 4-player games).
 
 #### In Cities & Knights
 

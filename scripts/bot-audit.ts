@@ -15,10 +15,23 @@
 // two computer players and with the human, the human's offers and the share a
 // computer player took (or countered and the human took), cards toward a
 // settlement or city handed to the leader and the trades that let it build
-// one, and offers repeated after nobody took them.
+// one, and offers repeated after nobody took them. A third counts, per game,
+// settlements and cities placed, those on sand (and the share island chits
+// or a 2:1 harbor justify), ship moves, those that brought the best target
+// closer, and turns that ended with such a move left unmade.
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { auditGame, BLUNDER_KINDS, emptyTally, type Blunder, type BlunderKind, type BotFn, type TradeTally } from '../src/bots/audit.js';
+import {
+  auditGame,
+  BLUNDER_KINDS,
+  emptyShipTally,
+  emptyTally,
+  type Blunder,
+  type BlunderKind,
+  type BotFn,
+  type ShipTally,
+  type TradeTally,
+} from '../src/bots/audit.js';
 import { BOT_LEVELS, createGame, heuristicAction, type BotLevel, type MapLayout } from '../src/index.js';
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -55,6 +68,8 @@ const short: Record<BlunderKind, string> = {
   barbarianNeglect: 'barb',
   wastedCard: 'card',
   stuck: 'stuck',
+  sandSpot: 'sand',
+  idleShip: 'idleShip',
 };
 
 console.log(
@@ -63,6 +78,7 @@ console.log(
 const shown: Partial<Record<BlunderKind, number>> = {};
 const shownList: Blunder[] = [];
 const tradeLines: string[] = [];
+const shipLines: string[] = [];
 for (const mode of modes) {
   const ck = mode === 'ck' || mode.startsWith('ck:');
   const scenario = mode.startsWith('ck:') ? mode.slice(3) : ck ? 'base' : mode;
@@ -71,6 +87,7 @@ for (const mode of modes) {
     const times: number[] = [];
     const pirate = { options: 0, used: 0 };
     const tally = emptyTally();
+    const ships = emptyShipTally();
     let unfinished = 0;
     for (let g = 0; g < games; g++) {
       const start = createGame({
@@ -92,6 +109,7 @@ for (const mode of modes) {
       times.push(...r.times[level]);
       pirate.options += r.pirate[level].options;
       pirate.used += r.pirate[level].used;
+      for (const k of Object.keys(ships) as Array<keyof ShipTally>) ships[k] += r.ships[level][k];
     }
     times.sort((a, b) => a - b);
     const q = (x: number) => times[Math.min(times.length - 1, Math.floor(x * times.length))] ?? 0;
@@ -105,6 +123,9 @@ for (const mode of modes) {
     tradeLines.push(
       `${mode.padEnd(26)} ${level.padEnd(6)} ${per(t.offers)}${per(t.open)}${per(t.counters)}${pct(t.taken, t.offers + t.counters)}${per(t.botBot)}${per(t.botHuman)}${per(t.humanOffers)}${pct(t.humanTaken, t.humanOffers)}${per(t.leaderCards)}${per(t.leaderBuilds)}${per(t.repeats)}`,
     );
+    shipLines.push(
+      `${mode.padEnd(26)} ${level.padEnd(6)} ${per(ships.built)}${per(ships.sand)}${pct(ships.sandJustified, ships.sand)}${per(ships.moves)}${pct(ships.helpful, ships.moves)}${per(ships.missed)}`,
+    );
   }
 }
 console.log('');
@@ -112,6 +133,9 @@ console.log(
   `${'trades per game'.padEnd(26)} ${'level'.padEnd(6)} ${['offers', 'open', 'counter', 'taken', 'bot-bot', 'bot-hum', 'humOffer', 'humTaken', 'ldrCards', 'ldrBuild', 'repeats'].map((x) => x.padStart(9)).join('')}`,
 );
 for (const l of tradeLines) console.log(l);
+console.log('');
+console.log(`${'sand and ships per game'.padEnd(26)} ${'level'.padEnd(6)} ${['built', 'onSand', 'justif.', 'moves', 'helpful', 'missed'].map((x) => x.padStart(9)).join('')}`);
+for (const l of shipLines) console.log(l);
 if (shownList.length > 0) {
   console.log('');
   for (const b of shownList) console.log(`${b.kind} [${b.level}, turn ${b.turn}] ${b.detail}`);

@@ -305,7 +305,7 @@ describe('Cities & Knights blunders', () => {
 describe('the blunder audit', () => {
   const quiet = (kinds: BlunderKind[]) => (b: { kind: BlunderKind }) => kinds.includes(b.kind);
   // what even the easy level never does
-  const absurd: BlunderKind[] = ['deadEndRoad', 'roadOverBuild', 'missedBuild', 'robberOwnHex', 'robberEmptyHex', 'badDiscard', 'stuck'];
+  const absurd: BlunderKind[] = ['deadEndRoad', 'roadOverBuild', 'missedBuild', 'robberOwnHex', 'robberEmptyHex', 'badDiscard', 'stuck', 'sandSpot'];
   const modes = ['base', 'seafarers-1-new-shores', 'seafarers-4-through-the-desert', 'ck', 'ck:seafarers-1-new-shores'];
   for (const mode of modes) {
     it(`finds no blunders by medium and hard players in ${mode}, and none of the absurd ones by easy players`, () => {
