@@ -1,4 +1,5 @@
-import type { EdgeId, GameState, PlayerId, VertexId } from '../core/types.js';
+import { TERRAIN_RESOURCE, pips } from '../core/constants.js';
+import type { EdgeId, GameState, HexId, PlayerId, VertexId } from '../core/types.js';
 import { legalRoads, legalShips } from '../engine/placements.js';
 import { longestRouteLength } from '../rules/longestRoute.js';
 import {
@@ -7,6 +8,8 @@ import {
   edgeAllowsShip,
   isBlockedVertex,
   topo,
+  totalVP,
+  vertexLandHexes,
   vertexTouchesLand,
   vertexZones,
 } from '../rules/queries.js';
@@ -28,6 +31,10 @@ import { scenarioOf } from '../scenarios/registry.js';
  *
  * Nothing is remembered between decisions, so a plan whose spot is taken
  * or cut off is dropped at once.
+ *
+ * Spots on sand (sandSpot) are worth nothing to plan toward. With
+ * Seafarers, a ship that the engine lets move goes where a new ship would
+ * do more for these targets than it does where it stands (planShipMove).
  */
 
 export type EdgeKind = 'road' | 'ship';
@@ -191,6 +198,48 @@ function networkSources(b: Board, p: PlayerId): number[] {
 
 const minDist = (d: Int32Array, v: number) => Math.min(d[v << 1], d[(v << 1) | 1]);
 
+/** The pips a hex pays out (resources and gold; desert, sea, fog and unnumbered land pay nothing). */
+export function hexPips(s: GameState, h: HexId): number {
+  const hex = s.board.hexes[h];
+  if (!hex || !(TERRAIN_RESOURCE[hex.terrain] || hex.terrain === 'gold')) return 0;
+  return pips(hex.token);
+}
+
+/** The Seafarers island chits (VP) a settlement of `p` at `v` would earn: its first in a new area. */
+export function islandChitsAt(s: GameState, p: PlayerId, v: VertexId): number {
+  const bonus = scenarioOf(s).rules.islandBonus;
+  if (!bonus || s.phase.kind === 'setup') return 0;
+  const pl = s.players[p];
+  const home = bonus.home === 'setup' ? pl.homeZones : bonus.home;
+  return vertexZones(s, v).filter((z) => !home.includes(z) && !pl.bonusZones.includes(z)).length * bonus.vp;
+}
+
+/**
+ * A spot on sand: its land is mostly or wholly desert (or other land that
+ * pays nothing), it pays two pips or fewer, and neither a harbor nor island
+ * chits make up for that. A settlement there is a VP for four cards and a
+ * piece, and nothing more; the computer players build one only within two
+ * VP of winning, and never plan roads or ships toward one.
+ */
+export function sandSpot(s: GameState, p: PlayerId, v: VertexId): boolean {
+  const land = vertexLandHexes(s, v);
+  let paying = 0;
+  let n = 0;
+  for (const h of land) {
+    const x = hexPips(s, h);
+    if (x > 0) paying++;
+    n += x;
+  }
+  if (land.length - paying < Math.max(1, paying) || n > 2) return false;
+  if (s.board.harbors.some((hb) => topo(s).edgeVertices[hb.edge].includes(v))) return false;
+  return islandChitsAt(s, p, v) === 0;
+}
+
+/** Close enough to winning (two VP or less) that any settlement's VP is worth it. */
+export function closeToWin(s: GameState, p: PlayerId): boolean {
+  return totalVP(s, p) >= s.victoryTarget - 2;
+}
+
 /** Could a settlement of `p` ever stand at `v` (ignoring the road connection)? */
 export function openSpot(s: GameState, p: PlayerId, v: VertexId): boolean {
   if (!vertexTouchesLand(s, v) || isBlockedVertex(s, v) || !distanceRuleOk(s, v)) return false;
@@ -249,6 +298,11 @@ export interface Expansion {
   dist: Int32Array;
   /** Option lookup by `${kind}:${edge}`. */
   byEdge: Map<string, EdgeOption>;
+  /** What a target at each intersection is worth (computed on demand), and the nearest rival's distance to it. */
+  valueAt: (v: number) => { value: number; spot: boolean };
+  rivalAt: (v: number) => number;
+  decay: number;
+  maxDist: number;
 }
 
 /**
@@ -275,9 +329,10 @@ export function planExpansion(s: GameState, p: PlayerId, o: ExpansionOptions): E
   const maxDist = o.maxDist ?? 8;
   const dist = search(board, p, networkSources(board, p), maxDist);
   const hasSettlement = s.players[p].supply.settlements > 0;
-  const raw: Array<{ v: number; value: number; spot: boolean }> = [];
-  for (let v = 0; v < g.vertices.length; v++) {
-    if (minDist(dist, v) > maxDist) continue;
+  const cache = new Map<number, { value: number; spot: boolean }>();
+  const valueAt = (v: number) => {
+    let out = cache.get(v);
+    if (out) return out;
     const id = g.vertices[v];
     let value = 0;
     let spot = false;
@@ -290,7 +345,15 @@ export function planExpansion(s: GameState, p: PlayerId, o: ExpansionOptions): E
       value = goal;
       spot = false;
     }
-    if (value > 0) raw.push({ v, value, spot });
+    out = { value, spot };
+    cache.set(v, out);
+    return out;
+  };
+  const raw: Array<{ v: number; value: number; spot: boolean }> = [];
+  for (let v = 0; v < g.vertices.length; v++) {
+    if (minDist(dist, v) > maxDist) continue;
+    const t = valueAt(v);
+    if (t.value > 0) raw.push({ v, ...t });
   }
   // the race: how soon the others reach each target
   const rivals: Int32Array[] = [];
@@ -300,9 +363,10 @@ export function planExpansion(s: GameState, p: PlayerId, o: ExpansionOptions): E
       rivals.push(search(board, pl.id, networkSources(board, pl.id), maxDist));
     }
   }
+  const rivalAt = (v: number) => Math.min(INF, ...rivals.map((r) => minDist(r, v)));
   const targets: Target[] = raw.map(({ v, value, spot }) => {
     const d = minDist(dist, v);
-    const rival = spot ? Math.min(INF, ...rivals.map((r) => minDist(r, v))) : INF;
+    const rival = spot ? rivalAt(v) : INF;
     return { vertex: g.vertices[v], value, dist: d, rival, score: value * raceFactor(d, rival) * decay ** d, spot };
   });
   targets.sort((a, b) => b.score - a.score);
@@ -343,7 +407,99 @@ export function planExpansion(s: GameState, p: PlayerId, o: ExpansionOptions): E
   }
   options.sort((a, b) => b.gain - a.gain || (a.kind === 'road' ? -1 : 1));
   const best = options.length > 0 && options[0].gain > 0 ? options[0] : null;
-  return { board, targets, options, best, dist, byEdge: new Map(options.map((x) => [`${x.kind}:${x.edge}`, x])) };
+  return { board, targets, options, best, dist, byEdge: new Map(options.map((x) => [`${x.kind}:${x.edge}`, x])), valueAt, rivalAt, decay, maxDist };
+}
+
+export interface ShipMove {
+  from: EdgeId;
+  to: EdgeId;
+  /** What a ship at `to` would do for the player's targets, less what it does at `from` (planner gains). */
+  gain: number;
+}
+
+/**
+ * What a road or ship (`mode`) on edge `e` would gain, as planExpansion
+ * scores an option: the best target it brings closer, plus a tenth of the
+ * next, on the board `b` with the player's distances `dist`.
+ */
+function edgeGain(x: Expansion, b: Board, p: PlayerId, dist: Int32Array, e: number, mode: number): number {
+  const g = b.g;
+  const far = [g.ea[e], g.eb[e]].filter((v) => dist[(v << 1) | mode] !== 0 && !blocked(b, p, v));
+  if (far.length === 0) return 0;
+  const from = search(b, p, far.map((v) => (v << 1) | mode), x.maxDist);
+  let top = 0;
+  let second = 0;
+  for (let v = 0; v < g.vertices.length; v++) {
+    const now = minDist(dist, v);
+    const after = minDist(from, v);
+    if (after >= now) continue;
+    const t = x.valueAt(v);
+    if (t.value <= 0) continue;
+    const sc = t.value * raceFactor(after, t.spot ? x.rivalAt(v) : INF) * x.decay ** after;
+    if (sc > top) {
+      second = top;
+      top = sc;
+    } else if (sc > second) second = sc;
+  }
+  return top > 0 ? top + 0.1 * second : 0;
+}
+
+/**
+ * The ship move that does most for the player's plans (Seafarers: one ship a
+ * turn, the open end of a route, see src/rules/ships.ts). With the ship
+ * lifted, a ship where it stood and a ship where it could go are scored as
+ * the planner scores a new one: the move is worth the difference, and it
+ * costs no cards (a dead-end ship, which brings nothing closer, is worth
+ * moving wherever a new ship would be worth building). `moves` are the
+ * legal moves: the engine decides what may move where. Null when no move
+ * gains at least `min`, or when the only ones that do would cost the player
+ * Longest Trade Route (held, or within two ships of it).
+ */
+export function planShipMove(s: GameState, p: PlayerId, x: Expansion, moves: Array<{ from: EdgeId; to: EdgeId }>, min = 0.5): ShipMove | null {
+  if (moves.length === 0) return null;
+  const b = x.board;
+  const g = b.g;
+  // where a new ship would lead somewhere, best first (a ship moved anywhere else leads nowhere)
+  const good = new Map<EdgeId, number>();
+  for (const op of x.options) if (op.kind === 'ship' && op.gain > 0) good.set(op.edge, op.gain);
+  const byFrom = new Map<EdgeId, EdgeId[]>();
+  for (const m of moves) if (good.has(m.to)) byFrom.set(m.from, [...(byFrom.get(m.from) ?? []), m.to]);
+  const found: ShipMove[] = [];
+  for (const [from, tos] of byFrom) {
+    const fi = g.eIndex.get(from)!;
+    const owner = b.owner.slice();
+    const kind = b.kind.slice();
+    owner[fi] = -1;
+    kind[fi] = -1;
+    const lifted: Board = { ...b, owner, kind };
+    const dist = search(lifted, p, networkSources(lifted, p), x.maxDist);
+    const here = edgeGain(x, lifted, p, dist, fi, SHIP);
+    for (const to of tos.sort((a, c) => good.get(c)! - good.get(a)!).slice(0, 8)) {
+      const gain = edgeGain(x, lifted, p, dist, g.eIndex.get(to)!, SHIP) - here;
+      if (gain >= min) found.push({ from, to, gain });
+    }
+  }
+  found.sort((a, c) => c.gain - a.gain);
+  return found.find((m) => !costsRoute(s, p, m)) ?? null;
+}
+
+/**
+ * Would the move cost the player Longest Trade Route: shorten its route while
+ * it holds the card with a rival within two of it, or while it is within two
+ * pieces of taking it?
+ */
+function costsRoute(s: GameState, p: PlayerId, m: ShipMove): boolean {
+  if (!scenarioOf(s).rules.longestRoute) return false;
+  const before = longestRouteLength(s, p);
+  const pieces = { ...s.board.pieces, [m.to]: s.board.pieces[m.from] };
+  delete pieces[m.from];
+  const after = longestRouteLength({ ...s, board: { ...s.board, pieces } }, p);
+  if (after >= before) return false;
+  const holder = s.longestRoute.holder;
+  const others = Math.max(0, ...s.players.filter((q) => q.id !== p).map((q) => longestRouteLength(s, q.id)));
+  if (holder === p) return after <= others + 2;
+  const need = Math.max(5, (holder === null ? others : longestRouteLength(s, holder)) + 1);
+  return before >= need - 2;
 }
 
 /** Route lengths before any new piece, per state (they are asked for every legal edge). */

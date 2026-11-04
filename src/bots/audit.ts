@@ -2,11 +2,11 @@ import { bankOf, cardRates, handOf } from '../ck/cards.js';
 import { BARBARIAN_TRACK, CK_COSTS, TRACKS } from '../ck/constants.js';
 import { barbarianStrength, improvementError, improvementPrice, pillageableCities } from '../ck/engine.js';
 import { activeStrength, knightsInSupply } from '../ck/knights.js';
-import { CARDS, COSTS, RESOURCES } from '../core/constants.js';
+import { CARDS, COSTS, RESOURCES, TERRAIN_RESOURCE, pips } from '../core/constants.js';
 import type { Action, Card, CardCounts, EdgeId, GameState, PlayerId, TradeOffer, VertexId } from '../core/types.js';
 import { applyAction } from '../engine/apply.js';
 import { legalActions, playersToAct } from '../engine/legal.js';
-import { legalCities, legalRoads, legalSettlements, legalShips } from '../engine/placements.js';
+import { legalCities, legalRoads, legalSettlements, legalSetupSettlements, legalShips } from '../engine/placements.js';
 import { longestRouteLength } from '../rules/longestRoute.js';
 import {
   distanceRuleOk,
@@ -16,6 +16,8 @@ import {
   ownsBuildingAt,
   publicVP,
   topo,
+  totalVP,
+  vertexLandHexes,
   vertexTouchesLand,
   vertexZones,
 } from '../rules/queries.js';
@@ -55,6 +57,17 @@ import { botProfile, profileAction, type BotLevel, type Profile } from './heuris
  * - wastedCard: a Road Building card (development or progress) that placed
  *   no road, or a Merchant Fleet with no 2:1 trade made with it.
  * - stuck: the 60-move safety valve had to end its turn.
+ * - sandSpot: a settlement (set-up included) on sand, its land mostly or
+ *   wholly desert or other land that pays nothing, with no island chits and
+ *   no 2:1 harbor to make up for it, more than two VP from winning, when it
+ *   pays two pips or fewer (and no harbor), or another legal spot was worth
+ *   four pips more (a harbor counts 2, a 2:1 harbor 3); or a city on sand
+ *   while another legal city paid four pips more.
+ * - idleShip (Seafarers): the turn ended with a ship it could move that
+ *   leads nowhere (no spot or goal is reachable past it) while a legal move
+ *   would bring its best target closer (see ShipTally), a settlement still
+ *   in supply, Longest Trade Route not at stake.
+ *   A ship moved where it leads nowhere counts as a deadEndRoad.
  *
  * It also counts, per level, how often a player moved the pirate when it
  * could have moved the robber or the pirate (Seafarers), and how the
@@ -62,7 +75,12 @@ import { botProfile, profileAction, type BotLevel, type Profile } from './heuris
  * offers, how many ended in a trade, trades between two computer players and
  * with a scripted "human" (scriptedHuman: it takes fair trades and makes the
  * offers a person typically makes), what went to the leader, and offers
- * repeated after nobody took them.
+ * repeated after nobody took them. Per level it also counts settlements and
+ * cities on sand, the ones island chits or a 2:1 harbor justify, ship moves,
+ * how many brought the player's best target closer (by the audit's own
+ * yardstick: a spot's pips and harbor, a goal's fixed worth, less a quarter
+ * per piece still needed), and the turns that ended with such a move left
+ * unmade (ShipTally).
  */
 export type BlunderKind =
   | 'deadEndRoad'
@@ -75,7 +93,9 @@ export type BlunderKind =
   | 'robberEmptyHex'
   | 'barbarianNeglect'
   | 'wastedCard'
-  | 'stuck';
+  | 'stuck'
+  | 'sandSpot'
+  | 'idleShip';
 
 export const BLUNDER_KINDS: BlunderKind[] = [
   'deadEndRoad',
@@ -89,6 +109,8 @@ export const BLUNDER_KINDS: BlunderKind[] = [
   'barbarianNeglect',
   'wastedCard',
   'stuck',
+  'sandSpot',
+  'idleShip',
 ];
 
 export interface Blunder {
@@ -137,6 +159,24 @@ export interface AuditResult {
   times: Record<BotLevel, number[]>;
   /** Robber moves where the pirate could have been moved instead, and how often it was, per level (not blunders). */
   pirate: Record<BotLevel, { options: number; used: number }>;
+  /** Building on sand and moving ships, per level (not blunders). */
+  ships: Record<BotLevel, ShipTally>;
+}
+
+/** Sand and ships for one level (see the header). */
+export interface ShipTally {
+  /** Settlements and cities placed, those on sand, and those on sand that island chits or a 2:1 harbor justify. */
+  built: number;
+  sand: number;
+  sandJustified: number;
+  /** Ship moves, those that brought its best target closer, and turns ended with such a move left unmade. */
+  moves: number;
+  helpful: number;
+  missed: number;
+}
+
+export function emptyShipTally(): ShipTally {
+  return { built: 0, sand: 0, sandJustified: 0, moves: 0, helpful: 0, missed: 0 };
 }
 
 type Hand = Record<Card, number>;
@@ -184,7 +224,163 @@ function settlementInReach(s: GameState, p: PlayerId): boolean {
 function canVPBuild(s: GameState, p: PlayerId): boolean {
   const have = handOf(s, p);
   if (covers(have, COSTS.city) && legalCities(s, p).length > 0) return true;
-  return covers(have, COSTS.settlement) && legalSettlements(s, p).length > 0;
+  // (a settlement on worthless sand is no build it missed: building it would be a sandSpot)
+  return covers(have, COSTS.settlement) && legalSettlements(s, p).some((v) => !worthlessSand(s, p, v));
+}
+
+// ---------------------------------------------------------------------------
+// Sand (the audit's own yardstick)
+// ---------------------------------------------------------------------------
+
+/** Pips a hex pays (resources and gold). */
+function pays(s: GameState, h: string): number {
+  const hex = s.board.hexes[h];
+  return hex && (TERRAIN_RESOURCE[hex.terrain] || hex.terrain === 'gold') ? pips(hex.token) : 0;
+}
+
+/** The land around `v`: how much of it pays nothing, and the pips the rest pays. */
+function landAt(s: GameState, v: VertexId): { sand: boolean; pips: number } {
+  const land = vertexLandHexes(s, v);
+  const paying = land.filter((h) => pays(s, h) > 0);
+  const idle = land.length - paying.length;
+  return { sand: idle >= 1 && idle >= paying.length, pips: paying.reduce((n, h) => n + pays(s, h), 0) };
+}
+
+/** The best harbor at `v`: 0 none, 2 a 3:1, 3 a 2:1. */
+function harborAt(s: GameState, v: VertexId): number {
+  let out = 0;
+  for (const hb of s.board.harbors) if (topo(s).edgeVertices[hb.edge].includes(v)) out = Math.max(out, hb.type === 'generic' ? 2 : 3);
+  return out;
+}
+
+/** A spot's worth by the yardstick: its pips, and its harbor. */
+const yardstick = (s: GameState, v: VertexId) => landAt(s, v).pips + harborAt(s, v);
+
+/** Island chits (VP) a settlement of `p` at `v` would earn. */
+function chitsAt(s: GameState, p: PlayerId, v: VertexId): number {
+  const bonus = scenarioOf(s).rules.islandBonus;
+  if (!bonus || s.phase.kind === 'setup') return 0;
+  const pl = s.players[p];
+  const home = bonus.home === 'setup' ? pl.homeZones : bonus.home;
+  return vertexZones(s, v).filter((z) => !home.includes(z) && !pl.bonusZones.includes(z)).length * bonus.vp;
+}
+
+/** Sand worth nothing: two pips or fewer, no harbor, no island chits, more than two VP from winning. */
+function worthlessSand(s: GameState, p: PlayerId, v: VertexId): boolean {
+  const l = landAt(s, v);
+  return l.sand && l.pips <= 2 && harborAt(s, v) === 0 && chitsAt(s, p, v) === 0 && totalVP(s, p) < s.victoryTarget - 2;
+}
+
+function checkSand(w: Watch, s: GameState, n: GameState, a: Extract<Action, { type: 'placeSettlement' | 'buildSettlement' | 'buildCity' }>): void {
+  const p = a.player;
+  const tally = w.ships[w.levels[p]];
+  if (w.humans.has(p)) return;
+  tally.built++;
+  const l = landAt(s, a.vertex);
+  if (!l.sand) return;
+  tally.sand++;
+  if (a.type === 'buildCity') {
+    const better = legalCities(s, p).find((v) => landAt(s, v).pips >= l.pips + 4);
+    if (better) note(w, s, p, 'sandSpot', `city on sand at ${a.vertex} (${l.pips} pips) while ${better} paid ${landAt(s, better).pips}`);
+    return;
+  }
+  if (chitsAt(s, p, a.vertex) > 0 || harborAt(s, a.vertex) === 3) {
+    tally.sandJustified++;
+    return;
+  }
+  if (totalVP(s, p) >= s.victoryTarget - 2 || n.phase.kind === 'gameOver') return;
+  const mine = yardstick(s, a.vertex);
+  const alts = a.type === 'placeSettlement' ? legalSetupSettlements(s, p) : legalSettlements(s, p);
+  const better = alts.find((v) => yardstick(s, v) >= mine + 4);
+  if (better) note(w, s, p, 'sandSpot', `settlement on sand at ${a.vertex} (worth ${mine}) while ${better} was worth ${yardstick(s, better)}`);
+  else if (worthlessSand(s, p, a.vertex)) note(w, s, p, 'sandSpot', `settlement on sand at ${a.vertex} paying ${l.pips} pips`);
+}
+
+// ---------------------------------------------------------------------------
+// Ships (the audit's own yardstick)
+// ---------------------------------------------------------------------------
+
+/**
+ * How near the player's best target is: the best of its targets' worth
+ * (an open spot's pips and harbor, 5 more per island chit VP; a scenario
+ * goal 6) times 0.75 per piece still needed to reach it (up to six).
+ */
+function nearestTarget(s: GameState, p: PlayerId): number {
+  const t = topo(s);
+  const ships = scenarioOf(s).rules.ships;
+  const goals = scenarioGoals(s, p);
+  const goalAt = new Set(goals.vertices);
+  for (const e of goals.edges) for (const v of t.edgeVertices[e]) goalAt.add(v);
+  const spots = s.players[p].supply.settlements > 0;
+  // pieces needed per intersection and kind (0 road, 1 ship), a breadth-first search by cost
+  const dist = new Map<string, number>();
+  let layer: Array<[VertexId, number]> = [];
+  const reach = (v: VertexId, m: number, d: number, into: Array<[VertexId, number]>) => {
+    const k = `${m}${v}`;
+    if ((dist.get(k) ?? 99) <= d) return;
+    dist.set(k, d);
+    into.push([v, m]);
+  };
+  for (const v of t.vertexIds) {
+    if (ownsBuildingAt(s, p, v)) {
+      reach(v, 0, 0, layer);
+      if (ships) reach(v, 1, 0, layer);
+    } else if (!blockedFor(s, p, v)) {
+      for (const e of t.vertexEdges[v]) {
+        const x = s.board.pieces[e];
+        if (x?.owner === p) reach(v, x.type === 'ship' ? 1 : 0, 0, layer);
+      }
+    }
+  }
+  let top = 0;
+  for (let d = 0; d <= 6 && layer.length > 0; d++) {
+    const next: Array<[VertexId, number]> = [];
+    for (let i = 0; i < layer.length; i++) {
+      const [v, m] = layer[i];
+      if (dist.get(`${m}${v}`) !== d) continue;
+      const worth = Math.max(goalAt.has(v) ? 6 : 0, spots && openSpot(s, p, v) ? yardstick(s, v) + 5 * chitsAt(s, p, v) : 0);
+      top = Math.max(top, worth * 0.75 ** d);
+      if (ships && ownsBuildingAt(s, p, v)) reach(v, 1 - m, d, layer);
+      for (const e of t.vertexEdges[v]) {
+        if (!(m === 0 ? edgeAllowsRoad(s, e) : ships && edgeAllowsShip(s, e))) continue;
+        const x = s.board.pieces[e];
+        if (x && (x.owner !== p || (x.type === 'ship' ? 1 : 0) !== m)) continue;
+        const [a, b] = t.edgeVertices[e];
+        const u = a === v ? b : a;
+        if (blockedFor(s, p, u)) continue;
+        if (x) reach(u, m, d, layer);
+        else reach(u, m, d + 1, next);
+      }
+    }
+    layer = next;
+  }
+  return top;
+}
+
+/** The board with the ship on `from` lifted. */
+function without(s: GameState, from: EdgeId): GameState {
+  const pieces = { ...s.board.pieces };
+  delete pieces[from];
+  return { ...s, board: { ...s.board, pieces } };
+}
+
+/** The end of the player's turn: a ship it could have moved for good (idleShip), or toward its best target (missed). */
+function checkShipsAtEnd(w: Watch, s: GameState, p: PlayerId): void {
+  if (!scenarioOf(s).rules.shipMoves || s.turn.shipMoved || w.humans.has(p)) return;
+  const moves = legalActions(s, p).filter((x): x is Extract<Action, { type: 'moveShip' }> => x.type === 'moveShip');
+  if (moves.length === 0) return;
+  // the moves that bring its best target closer (one that costs Longest Trade Route is no chance missed)
+  const now = nearestTarget(s, p);
+  const better = moves.filter((m) => {
+    const r = applyAction(s, m);
+    return r.ok && !routeLoss(s, r.state, p) && nearestTarget(r.state, p) > now + 1e-9;
+  });
+  if (better.length === 0) return;
+  w.ships[w.levels[p]].missed++;
+  if (s.players[p].supply.settlements > 0) {
+    const idle = better.find((m) => !edgeLeadsSomewhere(without(s, m.from), p, m.from, 'ship'));
+    if (idle) note(w, s, p, 'idleShip', `ended the turn with the ship on ${idle.from} leading nowhere; it could move to ${idle.to}`);
+  }
 }
 
 /** Could a settlement ever stand at `v` (ignoring the road connection and knights)? */
@@ -272,6 +468,23 @@ function routeMatters(before: GameState, after: GameState, p: PlayerId): boolean
   return l1 >= need - 2;
 }
 
+/**
+ * Does a move (`before` to `after`) shorten the player's route while Longest
+ * Road (or Trade Route) is at stake: held with a rival within two, or within
+ * two pieces of it?
+ */
+function routeLoss(before: GameState, after: GameState, p: PlayerId): boolean {
+  if (!scenarioOf(before).rules.longestRoute) return false;
+  const l0 = longestRouteLength(before, p);
+  const l1 = longestRouteLength(after, p);
+  if (l1 >= l0) return false;
+  const holder = before.longestRoute.holder;
+  const others = Math.max(0, ...before.players.filter((x) => x.id !== p).map((x) => longestRouteLength(before, x.id)));
+  if (holder === p) return l1 <= others + 2;
+  const need = Math.max(5, (holder === null ? others : longestRouteLength(before, holder)) + 1);
+  return l0 >= need - 2;
+}
+
 const SPENDS = new Set<Action['type']>([
   'buildRoad',
   'buildShip',
@@ -340,6 +553,7 @@ interface Watch {
   said: Map<PlayerId, Array<{ turn: number; key: string; id: number; traded: boolean }>>;
   /** The last turn each player rolled in. */
   ownTurns: Map<PlayerId, number[]>;
+  ships: Record<BotLevel, ShipTally>;
 }
 
 function note(w: Watch, s: GameState, p: PlayerId, kind: BlunderKind, detail: string): void {
@@ -406,10 +620,27 @@ function inspect(w: Watch, s: GameState, n: GameState, a: Action, forced: boolea
       if (a.type === 'buildRoad' || a.type === 'buildShip') checkOverBuild(w, s, n, a);
       break;
     }
+    case 'moveShip': {
+      const tally = w.ships[w.levels[p]];
+      if (!w.humans.has(p)) {
+        tally.moves++;
+        if (nearestTarget(n, p) > nearestTarget(s, p) + 1e-9) tally.helpful++;
+      }
+      if (!edgeLeadsSomewhere(without(s, a.from), p, a.to, 'ship') && !routeMatters(s, n, p)) {
+        note(w, s, p, 'deadEndRoad', `ship moved from ${a.from} to ${a.to} leads nowhere`);
+      }
+      break;
+    }
+    case 'placeSettlement':
+    case 'buildSettlement':
+    case 'buildCity':
+      checkSand(w, s, n, a);
+      break;
     case 'buyDevCard':
       checkOverBuild(w, s, n, a);
       break;
     case 'endTurn':
+      if (!forced && s.phase.kind === 'main' && s.turn.actor === p && s.turn.role === 'active') checkShipsAtEnd(w, s, p);
       if (!forced && (s.phase.kind === 'main' || s.phase.kind === 'specialBuild') && canVPBuild(s, p)) {
         note(w, s, p, 'missedBuild', `ended the turn holding ${fmt(handOf(s, p))} with a settlement or city to build`);
       }
@@ -651,7 +882,9 @@ export function auditGame(
   humans: PlayerId[] = [],
 ): AuditResult {
   const pirate = { easy: { options: 0, used: 0 }, medium: { options: 0, used: 0 }, hard: { options: 0, used: 0 } };
+  const ships = { easy: emptyShipTally(), medium: emptyShipTally(), hard: emptyShipTally() };
   const w: Watch = {
+    ships,
     levels,
     pirate,
     out: [],
@@ -699,7 +932,7 @@ export function auditGame(
     if (!acted) throw new Error(`deadlock in phase ${s.phase.kind}`);
     steps++;
   }
-  return { state: s, steps, blunders: w.out, trades: w.trades, times, pirate };
+  return { state: s, steps, blunders: w.out, trades: w.trades, times, pirate, ships };
 }
 
 // ---------------------------------------------------------------------------

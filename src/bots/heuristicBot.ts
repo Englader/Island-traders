@@ -18,7 +18,19 @@ import { handSize, publicVP, topo, totalVP, tradeRates, vertexLandHexes, vertexZ
 import { scenarioOf } from '../scenarios/registry.js';
 import { ckHeuristicAction, type CkProfile } from './ckBot.js';
 import { HARD_CK_WEIGHTS } from './ckWeights.js';
-import { edgeKinds, openSpot, planExpansion, routeValue, type EdgeOption, type Expansion } from './expansion.js';
+import {
+  closeToWin,
+  edgeKinds,
+  hexPips,
+  islandChitsAt,
+  openSpot,
+  planExpansion,
+  planShipMove,
+  routeValue,
+  sandSpot,
+  type EdgeOption,
+  type Expansion,
+} from './expansion.js';
 import { emptyHand } from './tracker.js';
 import { answerOffer, ownOffer, settleTrades, type TradeView } from './trading.js';
 
@@ -28,10 +40,13 @@ import { answerOffer, ownOffer, settleTrades, type TradeView } from './trading.j
  * state and its own hand.
  *
  * - Settlement spots are scored by pips, resources it lacks, harbors and
- *   island bonuses (and, in the Pirate Islands, the pirate fleet's reach). Roads and ships are planned toward spots and scenario
+ *   island bonuses (and, in the Pirate Islands, the pirate fleet's reach);
+ *   desert, sea and fog pay nothing, and a spot on sand is settled only near
+ *   the end of the game. Roads and ships are planned toward spots and scenario
  *   goals that are still legal and reachable, re-checked at every decision
  *   (src/bots/expansion.ts): a road that leads nowhere is never built, and a
- *   spot an opponent will reach first counts for less.
+ *   spot an opponent will reach first counts for less. A ship is moved when
+ *   it does more for those targets elsewhere.
  * - Each turn it picks a target (city, settlement, road/ship toward a spot,
  *   wonder level, development card), builds it if it can and otherwise
  *   trades with the bank only when that completes the target right away.
@@ -219,10 +234,10 @@ export function production(s: GameState, p: PlayerId): Record<Resource, number> 
   return out;
 }
 
+/** What a hex pays a building next to it is worth (desert, fog and sea: nothing). */
 function hexValue(s: GameState, h: HexId, prod: Record<Resource, number>): number {
   const hex = s.board.hexes[h];
-  if (hex.terrain === 'fog') return 1.5;
-  const n = pips(hex.token);
+  const n = hexPips(s, h);
   if (n === 0) return 0;
   const r = TERRAIN_RESOURCE[hex.terrain];
   if (!r) return hex.terrain === 'gold' ? n * 1.25 : 0;
@@ -237,7 +252,8 @@ export function spotValue(s: GameState, p: PlayerId, v: VertexId, prod = product
   const kinds = new Set<string>();
   for (const h of hexes) {
     value += hexValue(s, h, prod);
-    kinds.add(s.board.hexes[h].terrain);
+    // (variety counts only land that pays: a desert is no second resource)
+    if (hexPips(s, h) > 0) kinds.add(s.board.hexes[h].terrain);
   }
   value += kinds.size * 0.6;
   const t = topo(s);
@@ -300,10 +316,17 @@ export function scenarioTargets(s: GameState, p: PlayerId): Map<VertexId, number
   return out;
 }
 
+/** Can the player settle `v` with profit: not a spot on sand (src/bots/expansion.ts, sandSpot), unless the VP is all that counts now. */
+export function settleable(s: GameState, p: PlayerId): (v: VertexId) => boolean {
+  const late = closeToWin(s, p);
+  return (v) => late || !sandSpot(s, p, v);
+}
+
 /** The player's expansion as it stands (see src/bots/expansion.ts). */
 export function expansionOf(s: GameState, p: PlayerId, pr: Profile, prod = production(s, p)): Expansion {
+  const ok = settleable(s, p);
   return planExpansion(s, p, {
-    value: (v) => spotValue(s, p, v, prod),
+    value: (v) => (ok(v) ? spotValue(s, p, v, prod) : 0),
     goals: scenarioTargets(s, p),
     race: pr.race,
     kinds: edgeKinds(s),
@@ -611,7 +634,7 @@ function choosePlan(s: GameState, p: PlayerId, x: Expansion, pr: Profile = PROFI
   const wc = wonderCost(s, p);
   if (wc) return { cost: wc, action: { type: 'scenario', player: p, name: 'buildWonder' } };
   const prod = production(s, p);
-  const spots = legalSettlements(s, p);
+  const spots = legalSettlements(s, p).filter(settleable(s, p));
   if (spots.length > 0) {
     const v = best(spots, (y) => spotValue(s, p, y, prod))!;
     const far = x.best && x.best.toward && x.targets.find((t) => t.vertex === x.best!.toward && t.spot);
@@ -655,7 +678,10 @@ const edgeCost = (o: EdgeOption): PartialCounts => (o.kind === 'ship' ? COSTS.sh
 const edgeAction = (p: PlayerId, o: EdgeOption): Action => ({ type: o.kind === 'ship' ? 'buildShip' : 'buildRoad', player: p, edge: o.edge });
 
 function setupAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Action | null {
-  const settle = byType(acts, 'placeSettlement');
+  const all = byType(acts, 'placeSettlement');
+  const ok = settleable(s, p);
+  const fine = all.filter((a) => ok(a.vertex));
+  const settle = fine.length > 0 ? fine : all;
   if (settle.length > 0) {
     const prod = production(s, p);
     if (pr.lookahead) {
@@ -1009,6 +1035,15 @@ function easyOffer(s: GameState, p: PlayerId, pr: Profile): Action | null {
 
 /** What a VP is worth against the cards in hand, in cards (the turn planner's unit). */
 const VP_WORTH = 6;
+
+/**
+ * A settlement at `v` in the turn planner's unit: its VP and island chits,
+ * and its spot value (`value`, which counts each chit VP as 4) a third over.
+ */
+function settlementWorth(s: GameState, p: PlayerId, v: VertexId, value: number): number {
+  const chits = islandChitsAt(s, p, v);
+  return VP_WORTH * (1 + chits) + (value - 4 * chits) * 0.35;
+}
 /** A card kept in hand. */
 const CARD_WORTH = 0.75;
 
@@ -1049,11 +1084,12 @@ function bestPackage(s: GameState, p: PlayerId, x: Expansion): Package | null {
     items.push({ action: { type: 'buildCity', player: p, vertex: c.v }, cost: COSTS.city, value: VP_WORTH + c.gain * 0.35 });
   }
   const spots = legalSettlements(s, p)
+    .filter(settleable(s, p))
     .map((v) => ({ v, value: spotValue(s, p, v, prod) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 3);
   for (const sp of spots) {
-    items.push({ action: { type: 'buildSettlement', player: p, vertex: sp.v }, cost: COSTS.settlement, value: VP_WORTH + sp.value * 0.35, vertex: sp.v });
+    items.push({ action: { type: 'buildSettlement', player: p, vertex: sp.v }, cost: COSTS.settlement, value: settlementWorth(s, p, sp.v, sp.value), vertex: sp.v });
   }
   // a spot one road (or ship) away
   if (pl.supply.settlements > 0) {
@@ -1064,7 +1100,7 @@ function bestPackage(s: GameState, p: PlayerId, x: Expansion): Package | null {
       items.push({
         action: edgeAction(p, o),
         cost: addCost(edgeCost(o), COSTS.settlement),
-        value: VP_WORTH + t.value * 0.35 - 0.3,
+        value: settlementWorth(s, p, t.vertex, t.value) - 0.3,
         vertex: t.vertex,
         road: true,
       });
@@ -1140,6 +1176,11 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
   if (deal !== undefined) return deal;
 
   const x = exp();
+  // Seafarers: a ship moved to where it brings a target closer, for free, before anything is built
+  // (with trading and building kept apart, once building has begun or at the end of the turn)
+  const move = shipMoveAction(s, p, acts, pr, x);
+  const tradesLater = s.options.tradeBuildMode === 'separate' && !s.turn.buildingStarted;
+  if (move && !tradesLater) return move;
   const plan = pr.plans ? choosePlan(s, p, x, pr) : null;
 
   const dev = devCardAction(s, p, acts, plan, pr, x);
@@ -1158,7 +1199,8 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
   const prod = production(s, p);
   const city = byType(acts, 'buildCity');
   if (city.length > 0) return pickBest(s, p, pr, city, (a) => cityGain(s, a.vertex, prod), (a) => a.vertex);
-  const settle = byType(acts, 'buildSettlement');
+  const ok = settleable(s, p);
+  const settle = byType(acts, 'buildSettlement').filter((a) => ok(a.vertex));
   if (settle.length > 0) return pickBest(s, p, pr, settle, (a) => spotValue(s, p, a.vertex, prod), (a) => a.vertex);
   const scen = scenarioMainAction(s, p, acts);
   if (scen) return scen;
@@ -1195,7 +1237,20 @@ function mainAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile): Act
     const down = pr.handGuard ? tradeDown(s, p, acts, plan, x) : null;
     if (down) return down;
   }
-  return acts.find((a) => a.type === 'endTurn') ?? null;
+  return move ?? acts.find((a) => a.type === 'endTurn') ?? null;
+}
+
+/**
+ * The ship move worth making now (src/bots/expansion.ts, planShipMove): one
+ * that brings its spots and goals closer than the ship does where it is,
+ * which often saves building a new ship. Easy sees it on half its turns.
+ */
+export function shipMoveAction(s: GameState, p: PlayerId, acts: Action[], pr: Profile, x: Expansion): Action | null {
+  const moves = byType(acts, 'moveShip');
+  if (moves.length === 0) return null;
+  if (!pr.plans && wobble({ ...s, log: [] }, p, `move:${s.turn.number}`) >= 0.5) return null;
+  const m = planShipMove(s, p, x, moves);
+  return m ? (moves.find((a) => a.from === m.from && a.to === m.to) ?? null) : null;
 }
 
 /**
@@ -1351,7 +1406,11 @@ export function profileAction(s: GameState, p: PlayerId, pr: Readonly<Profile>):
       const prod = production(s, p);
       const city = best(byType(acts, 'buildCity'), (a) => cityGain(s, a.vertex, prod));
       if (city) return city;
-      const settle = best(byType(acts, 'buildSettlement'), (a) => spotValue(s, p, a.vertex, prod));
+      const ok = settleable(s, p);
+      const settle = best(
+        byType(acts, 'buildSettlement').filter((a) => ok(a.vertex)),
+        (a) => spotValue(s, p, a.vertex, prod),
+      );
       if (settle) return settle;
       return acts.find((a) => a.type === 'endTurn') ?? acts[0];
     }

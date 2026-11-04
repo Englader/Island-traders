@@ -56,7 +56,7 @@ import { WONDERS, WONDER_LEVELS } from '../scenarios/seafarers/wonders.js';
 import { drawGain, remainingRolls } from './ckPlan.js';
 import { HARD_CK_WEIGHTS, type CkWeights } from './ckWeights.js';
 import { handEstimates } from './tracker.js';
-import { planExpansion, routeValue, type EdgeKind, type Expansion } from './expansion.js';
+import { islandChitsAt, planExpansion, routeValue, type EdgeKind, type Expansion } from './expansion.js';
 import { answerOffer, ownOffer, settleTrades, type TradeView } from './trading.js';
 import {
   best,
@@ -66,7 +66,9 @@ import {
   robberScore,
   scenarioTargets,
   sensibleRobberMoves,
+  settleable,
   setupLookahead,
+  shipMoveAction,
   wobble,
   type Profile,
 } from './heuristicBot.js';
@@ -391,12 +393,14 @@ function lazy<T>(c: Ctx, key: string, f: () => T): T {
 }
 
 const pot = (c: Ctx) => lazy(c, 'pot', () => potentialField(c.s, c.p));
+/** Spots worth a settlement: not on sand (src/bots/expansion.ts, sandSpot) unless the VP is all that counts now. */
+const ok = (c: Ctx) => lazy(c, 'settleable', () => settleable(c.s, c.p));
 
 /** Roads (and with Seafarers ships) toward spots and goals still in reach (src/bots/expansion.ts). */
 const expansion = (c: Ctx): Expansion =>
   lazy(c, 'expansion', () =>
     planExpansion(c.s, c.p, {
-      value: (v) => ckSpotValue(c.s, c.p, v, c.ck.commodities, 'future', c.prod),
+      value: (v) => (ok(c)(v) ? ckSpotValue(c.s, c.p, v, c.ck.commodities, 'future', c.prod) : 0),
       goals: scenarioTargets(c.s, c.p),
       race: c.pr.race,
       kinds: c.sea ? ['road', 'ship'] : ['road'],
@@ -544,7 +548,9 @@ function sameCounts(a: CardCounts, b: CardCounts): boolean {
 
 function setupAction(c: Ctx, acts: Action[]): Action | null {
   const { s, p, pr } = c;
-  const settle = byType(acts, 'placeSettlement');
+  const all = byType(acts, 'placeSettlement');
+  const fine = all.filter((a) => ok(c)(a.vertex));
+  const settle = fine.length > 0 ? fine : all;
   if (settle.length > 0) {
     const ph = s.phase;
     const city = ph.kind === 'setup' && setupPlacesCity(s, ph.round);
@@ -1004,7 +1010,7 @@ function resourceGoal(c: Ctx): Goal | null {
       const v = best(cities, (x) => cityGain(s, p, x, c.ck.commodities, c.prod))!;
       options.push({ cost: COSTS.city, action: { type: 'buildCity', player: p, vertex: v }, rank: -0.2 - endgame, label: 'city' });
     }
-    const spots = legalSettlements(s, p);
+    const spots = legalSettlements(s, p).filter(ok(c));
     if (spots.length > 0) {
       const v = best(spots, (x) => ckSpotValue(s, p, x, c.ck.commodities, 'future', c.prod))!;
       options.push({ cost: COSTS.settlement, action: { type: 'buildSettlement', player: p, vertex: v }, rank: 0 - endgame, label: 'settlement' });
@@ -1857,6 +1863,10 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
   const deal = actorTrades(c, acts);
   if (deal !== undefined) return deal;
 
+  // Seafarers: a ship moved to where it brings a target closer, for free (the engine never lets one strand a knight)
+  const move = c.sea ? shipMoveAction(s, p, acts, pr, expansion(c)) : null;
+  if (move && (s.options.tradeBuildMode !== 'separate' || s.turn.buildingStarted)) return move;
+
   const knight = knightPlay(c, acts);
   if (knight) return knight;
   const card = cardPlay(c, acts);
@@ -1907,7 +1917,7 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
 
   const city = byType(acts, 'buildCity');
   if (city.length > 0) return pickBest(s, p, pr, city, (a) => cityGain(s, p, a.vertex, c.ck.commodities, c.prod), (a) => a.vertex);
-  const settle = byType(acts, 'buildSettlement');
+  const settle = byType(acts, 'buildSettlement').filter((a) => ok(c)(a.vertex));
   if (settle.length > 0) return pickBest(s, p, pr, settle, (a) => ckSpotValue(s, p, a.vertex, c.ck.commodities, 'future', c.prod), (a) => a.vertex);
 
   const goal = resourceGoal(c);
@@ -1977,7 +1987,7 @@ function mainTurn(c: Ctx, acts: Action[]): Action | null {
   }
   const discard = progressDiscard(c, acts);
   if (discard) return discard;
-  return acts.find((a) => a.type === 'endTurn') ?? null;
+  return move ?? acts.find((a) => a.type === 'endTurn') ?? null;
 }
 
 /**
@@ -2054,12 +2064,14 @@ function packageStep(c: Ctx, acts: Action[]): Action | null {
     .sort((a, b) => b.gain - a.gain)
     .slice(0, 2);
   for (const x of cities) items.push({ action: { type: 'buildCity', player: p, vertex: x.v }, cost: COSTS.city, value: VP + x.gain * 0.35 });
-  const spots = legalSettlements(s, p);
+  const spots = legalSettlements(s, p).filter(ok(c));
   for (const v of spots
     .map((y) => ({ y, value: ckSpotValue(s, p, y, c.ck.commodities, 'future', c.prod) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 3)) {
-    items.push({ action: { type: 'buildSettlement', player: p, vertex: v.y }, cost: COSTS.settlement, value: VP + v.value * 0.35, vertex: v.y });
+    // (island chits count as VP too; ckSpotValue counts each chit VP as 4)
+    const chits = islandChitsAt(s, p, v.y);
+    items.push({ action: { type: 'buildSettlement', player: p, vertex: v.y }, cost: COSTS.settlement, value: VP * (1 + chits) + (v.value - 4 * chits) * 0.35, vertex: v.y });
   }
   const x = expansion(c);
   if (pl.supply.settlements > 0) {
@@ -2068,7 +2080,14 @@ function packageStep(c: Ctx, acts: Action[]): Action | null {
       const t = x.targets.find((y) => y.vertex === o.toward && y.spot);
       if (!t) continue;
       const cost = addCards(o.kind === 'ship' ? COSTS.ship : COSTS.road, COSTS.settlement);
-      items.push({ action: { type: o.kind === 'ship' ? 'buildShip' : 'buildRoad', player: p, edge: o.edge }, cost, value: VP + t.value * 0.35 - 0.3, vertex: t.vertex, road: true });
+      const chits = islandChitsAt(s, p, t.vertex);
+      items.push({
+        action: { type: o.kind === 'ship' ? 'buildShip' : 'buildRoad', player: p, edge: o.edge },
+        cost,
+        value: VP * (1 + chits) + (t.value - 4 * chits) * 0.35 - 0.3,
+        vertex: t.vertex,
+        road: true,
+      });
     }
   }
   if (items.length === 0) return null;
