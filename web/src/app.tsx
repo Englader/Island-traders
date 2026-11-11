@@ -20,7 +20,7 @@ type Route =
   | { name: 'game' }
   | { name: 'lobby' }
   | { name: 'join'; code: string }
-  | { name: 'guest'; code: string; playerName: string };
+  | { name: 'guest'; code: string; playerName: string; watch: boolean };
 
 function initialRoute(): Route {
   const m = ONLINE ? /join=([A-Za-z0-9]+)/.exec(location.hash) : null;
@@ -134,11 +134,11 @@ export function App() {
       <JoinScreen
         initialCode={route.code}
         onBack={goHome}
-        onJoin={(code, playerName) => setRoute({ name: 'guest', code, playerName })}
+        onJoin={(code, playerName, watch) => setRoute({ name: 'guest', code, playerName, watch })}
       />
     );
   } else if (route.name === 'guest') {
-    body = <GuestScreen code={route.code} playerName={route.playerName} onHome={goHome} onRules={() => setRules(true)} />;
+    body = <GuestScreen code={route.code} playerName={route.playerName} watch={route.watch} onHome={goHome} onRules={() => setRules(true)} />;
   } else if (route.name === 'lobby' && ctrl) {
     body = (
       <HostLobby
@@ -212,6 +212,7 @@ export function App() {
               : undefined
           }
           note={ctrl.record.mode === 'host' ? host.status : undefined}
+          watching={ctrl.record.mode === 'host' ? host.watching : undefined}
           clock={ctrl.clockFeed()}
           chat={
             ctrl.record.mode === 'host' && ctrl.record.room ? (

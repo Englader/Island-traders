@@ -113,7 +113,8 @@ GitHub Actions)
   a computer) mutes everything; the menu has the volume. On phones your
   turn also comes with a short buzz
 - Online play with friends: the host opens a room and friends join with a
-  5-letter code or an invite link
+  5-letter code or an invite link; anyone else with the code can watch, also
+  once the game has started
 - Made for phones: tap-friendly board, portrait and sideways layouts, and
   "Add to Home Screen" for full-screen play
 - Plays offline: after one visit with a connection, games on the device
@@ -636,6 +637,20 @@ A friend's phone reaches the host in one of two ways:
 Guests send a heartbeat, so a dropped link is noticed within seconds and the
 guest reconnects on its own. A host whose phone paused the page gets the same
 room code back when it returns.
+
+Anyone with the code can **watch**: on the join screen, Watch joins as a
+spectator, and Join does too once the game has started and every seat is
+taken (a player who rejoins still gets their own seat back). Spectators get
+the spectator view (`viewFor(state, null)`: no hands, no development or
+progress cards, no scenario secrets, no legal moves) after every move, with
+the board, log, scores, timer and end-game screen, and a Spectating badge
+where the action buttons would be. They can chat; their messages are marked
+"(watching)". Players see how many are watching (👁 in the top bar, names in
+the players sheet and the lobby). At most 8 people watch a room; coming and
+going doesn't touch the game or its clock. The latest move a guest receives
+leaves out cards only its player knows (a progress card put back, cards
+handed over for a progress card). `test/spectator.test.ts` checks that
+changing every hidden detail of a game changes nothing a spectator receives.
 
 Online games have a chat: the 💬 button over the board opens a small window
 with quick phrases and emoji. The host stamps who sent each message (plain

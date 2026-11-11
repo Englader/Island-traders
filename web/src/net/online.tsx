@@ -14,6 +14,7 @@ import { GameScreen } from '../ui/GameScreen';
 import { Logo } from '../ui/screens';
 import { ChatHub, mergeChat, type ChatMessage, type ChatPostResult } from './chat';
 import { GuestConnector, type Via } from './guest';
+import { MAX_WATCHERS, messageFor } from './hostView';
 import { PROTOCOL, brokerOptions, hostPeerId, normalizeCode, randomRoomCode, roomToken, rtcConfig, type GuestMessage, type HostMessage, type LobbySeat } from './protocol';
 import { RelayHost } from './relay';
 
@@ -25,6 +26,7 @@ interface Guest {
   readonly open: boolean;
   send(msg: HostMessage): void;
   close(): void;
+  /** Set once the guest said hello. A guest with a client and no seat is watching. */
   client: string | null;
   seat: number | null;
   /** The name from the guest's hello. */
@@ -32,6 +34,8 @@ interface Guest {
   /** When the guest was last heard from. */
   seen: number;
 }
+
+const isWatcher = (g: Guest) => g.client !== null && g.seat === null;
 
 /** Friends ping every 10 s; one silent for this long has gone. */
 const GUEST_SILENCE_LIMIT = 40000;
@@ -41,6 +45,8 @@ export interface HostNet {
   ready: boolean;
   /** Seats with a connected friend. */
   online: Set<number>;
+  /** Names of the people watching (spectators), in the order they came. */
+  watching: string[];
   newRoomCode(): string;
   broadcast(): void;
   /** The room's chat, oldest first. */
@@ -51,11 +57,6 @@ export interface HostNet {
 
 /** The host keeps the room's chat in this browser, so a reload doesn't lose it. */
 const CHAT_KEY = 'chat';
-
-function lobbySeats(ctrl: GameController, online: Set<number>): LobbySeat[] {
-  const claimed = new Set(Object.values(ctrl.record.claims ?? {}));
-  return ctrl.seats.map((s, i) => ({ name: s.name, kind: s.kind, color: s.color, taken: claimed.has(i), online: s.kind !== 'remote' || online.has(i) }));
-}
 
 /**
  * Runs the host side of an online game: opens the room on the PeerJS room
@@ -71,6 +72,9 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
   const guests = useRef(new Set<Guest>());
   const onlineRef = useRef(online);
   onlineRef.current = online;
+  const [watching, setWatching] = useState<string[]>([]);
+  const watchingRef = useRef(watching);
+  watchingRef.current = watching;
   const hub = useRef<ChatHub | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
 
@@ -93,16 +97,9 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
     return r?.ok === true;
   };
 
+  /** The guest's own view (the spectator view when watching): see hostView.ts. */
   const sendState = (g: Guest) => {
-    if (!ctrl) return;
-    const seats = lobbySeats(ctrl, onlineRef.current);
-    if (!ctrl.record.started) {
-      g.send({ t: 'lobby', scenario: ctrl.state.scenario, seats, started: false, host: ctrl.seats.find((s) => s.kind === 'human')?.name ?? 'Host' });
-      return;
-    }
-    const snap: SeatSnapshot = ctrl.snapshot(g.seat);
-    const clock = ctrl.clockFeed()?.sum;
-    g.send({ t: 'state', snap, seats, last: ctrl.last ? { action: ctrl.last.action, at: ctrl.last.at } : null, ...(clock ? { clock } : {}) });
+    if (ctrl) g.send(messageFor(ctrl, g.seat, onlineRef.current, watchingRef.current));
   };
 
   const broadcast = () => {
@@ -124,12 +121,48 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       const s = new Set<number>();
       for (const g of guests.current) if (g.seat !== null && g.open) s.add(g.seat);
       setOnline(s);
+      // who is watching: one name per browser
+      const seen = new Set<string>();
+      const names: string[] = [];
+      for (const g of guests.current) {
+        if (!isWatcher(g) || !g.open || seen.has(g.client!)) continue;
+        seen.add(g.client!);
+        names.push(g.name);
+      }
+      if (names.join('\n') !== watchingRef.current.join('\n')) {
+        watchingRef.current = names;
+        setWatching(names);
+      }
     };
 
     const drop = (g: Guest) => {
       if (!guests.current.delete(g)) return;
       g.close();
       refreshOnline();
+    };
+
+    /**
+     * Seats `g` as a spectator. They get the spectator view only and can't
+     * move; coming and going doesn't touch the game or its clock.
+     */
+    const watch = (g: Guest, client: string, name: string, reason?: string) => {
+      // counted per browser: one coming back (its old link not yet timed out) still fits
+      const others = new Set([...guests.current].filter((o) => o !== g && isWatcher(o) && o.client !== client).map((o) => o.client));
+      if (others.size >= MAX_WATCHERS) {
+        g.client = null;
+        g.seat = null;
+        g.send({ t: 'welcome', seat: null, reason: `This game already has ${MAX_WATCHERS} people watching. Try again later.`, closed: true });
+        // let the message out before the link closes
+        setTimeout(() => drop(g), 1000);
+        return;
+      }
+      g.client = client;
+      g.name = name;
+      g.seat = null;
+      g.send(reason ? { t: 'welcome', seat: null, reason } : { t: 'welcome', seat: null });
+      g.send(hub.current?.joinMessage() ?? { t: 'chatHistory', msgs: [] });
+      refreshOnline();
+      sendState(g);
     };
 
     const handle = (g: Guest, msg: GuestMessage) => {
@@ -150,22 +183,25 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
         }
         const client = String(msg.client).slice(0, 40);
         const name = String(msg.name || 'Friend').slice(0, 16);
-        g.client = client;
-        g.name = name;
-        const history = () => g.send(hub.current?.joinMessage() ?? { t: 'chatHistory', msgs: [] });
+        // asked to watch: a spectator, even with a free seat (or their own) waiting
+        if (msg.watch === true) {
+          watch(g, client, name);
+          return;
+        }
         const claims = ctrl.record.claims ?? {};
         let seat = claims[client];
         if (seat === undefined || ctrl.seats[seat]?.kind !== 'remote') {
+          // a new face takes a free friend seat; with none left they watch
           const taken = new Set(Object.values(claims));
           seat = ctrl.seats.findIndex((s, i) => s.kind === 'remote' && !taken.has(i));
           if (seat < 0) {
-            g.send({ t: 'welcome', seat: null, reason: 'All seats are taken. You are watching.' });
-            g.seat = null;
-            history();
-            sendState(g);
+            watch(g, client, name, ctrl.record.started ? 'The game has already started and every seat is taken: you are watching.' : 'All seats are taken. You are watching.');
             return;
           }
         }
+        g.client = client;
+        g.name = name;
+        const history = () => g.send(hub.current?.joinMessage() ?? { t: 'chatHistory', msgs: [] });
         // one link per seat: drop an older one from the same seat
         for (const other of [...guests.current]) if (other !== g && other.seat === seat) drop(other);
         g.seat = seat;
@@ -179,7 +215,7 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       if (msg.t === 'action') {
         const a = msg.action as Action;
         if (g.seat === null || !a || typeof a !== 'object' || a.player !== g.seat) {
-          g.send({ t: 'error', message: 'That is not your seat.' });
+          g.send({ t: 'error', message: g.seat === null ? 'You are watching this game: you can not make moves.' : 'That is not your seat.' });
           return;
         }
         if (!ctrl.record.started) {
@@ -333,6 +369,8 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       peer?.destroy();
       hub.current = null;
       setChat([]);
+      watchingRef.current = [];
+      setWatching([]);
       setDirectReady(false);
       setRelayReady(false);
       setStatus('');
@@ -340,9 +378,9 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
   }, [ctrl, room]);
 
   useEffect(() => {
-    // online flags changed: tell everyone
+    // online flags or who is watching changed: tell everyone
     broadcast();
-  }, [online]);
+  }, [online, watching]);
 
   const ready = directReady || relayReady;
   return useMemo(
@@ -350,12 +388,13 @@ export function useHostNetwork(ctrl: GameController | null): HostNet {
       status: ready ? `Room ${room} · ${online.size} friend${online.size === 1 ? '' : 's'} online` : status,
       ready,
       online,
+      watching,
       newRoomCode: randomRoomCode,
       broadcast,
       chat,
       sendChat,
     }),
-    [status, ready, online, room, ctrl, chat],
+    [status, ready, online, watching, room, ctrl, chat],
   );
 }
 
@@ -418,6 +457,7 @@ export function HostLobby({ ctrl, net, onPlay, onHome }: { ctrl: GameController;
         </div>
         <p class={net.ready ? 'hint ok' : 'hint'}>{net.status || 'Opening the room…'}</p>
         <p class="hint">After sending the code, come back to this screen: friends can only join while it is open.</p>
+        <p class="hint">Anyone else with the code can watch, also once the game has started.</p>
       </section>
       <section class="setup-section">
         <h2>Seats</h2>
@@ -443,6 +483,7 @@ export function HostLobby({ ctrl, net, onPlay, onHome }: { ctrl: GameController;
           ))}
         </div>
       </section>
+      {net.watching.length > 0 && <Watchers names={net.watching} />}
       <div class="setup-foot">
         {ctrl.record.started ? (
           <button type="button" class="primary big wide" onClick={onPlay}>
@@ -459,9 +500,31 @@ export function HostLobby({ ctrl, net, onPlay, onHome }: { ctrl: GameController;
   );
 }
 
+/** Who is watching, in the lobby. */
+function Watchers({ names }: { names: string[] }) {
+  return (
+    <section class="setup-section watchers">
+      <h2>Watching ({names.length})</h2>
+      <p>
+        <span aria-hidden="true">👁 </span>
+        {names.join(', ')}
+      </p>
+    </section>
+  );
+}
+
 // --- guest ----------------------------------------------------------------------------------
 
-export function JoinScreen({ initialCode, onJoin, onBack }: { initialCode: string; onJoin(code: string, name: string): void; onBack(): void }) {
+export function JoinScreen({
+  initialCode,
+  onJoin,
+  onBack,
+}: {
+  initialCode: string;
+  /** `watch`: join as a spectator only. */
+  onJoin(code: string, name: string, watch: boolean): void;
+  onBack(): void;
+}) {
   const [code, setCode] = useState(initialCode || loadJson<string>('lastRoom') || '');
   const [name, setName] = useState(loadJson<string>('playerName') || '');
   const ok = normalizeCode(code).length >= 4 && name.trim().length > 0;
@@ -478,9 +541,11 @@ export function JoinScreen({ initialCode, onJoin, onBack }: { initialCode: strin
         onSubmit={(e) => {
           e.preventDefault();
           if (!ok) return;
+          // the Watch button submits too
+          const watch = (e as SubmitEvent).submitter?.getAttribute('data-watch') === '1';
           saveJson('playerName', name.trim());
           saveJson('lastRoom', normalizeCode(code));
-          onJoin(normalizeCode(code), name.trim());
+          onJoin(normalizeCode(code), name.trim(), watch);
         }}
       >
         <label>
@@ -501,6 +566,13 @@ export function JoinScreen({ initialCode, onJoin, onBack }: { initialCode: strin
         <button type="submit" class="primary big wide" disabled={!ok}>
           Join
         </button>
+        <button type="submit" class="big wide" data-watch="1" disabled={!ok}>
+          👁 Watch
+        </button>
+        <p class="hint">
+          Join takes a free seat, or your own seat back. Once a game has started and every seat is taken, you watch. Watch only looks on: you see the
+          board, the scores and the chat, but no one's cards.
+        </p>
       </form>
     </main>
   );
@@ -508,7 +580,9 @@ export function JoinScreen({ initialCode, onJoin, onBack }: { initialCode: strin
 
 type GuestState =
   | { kind: 'connecting'; msg: string }
-  | { kind: 'lobby'; seats: LobbySeat[]; host: string; seat: number | null; note?: string }
+  /** The host turned this link away for good (e.g. too many watching). */
+  | { kind: 'closed'; msg: string }
+  | { kind: 'lobby'; seats: LobbySeat[]; host: string; seat: number | null; note?: string; watching: string[] }
   | {
       kind: 'game';
       snap: SeatSnapshot;
@@ -516,11 +590,28 @@ type GuestState =
       last: { action: Action; at: number } | null;
       seat: number | null;
       note?: string;
+      /** Names of the people watching. */
+      watching: string[];
       /** The host's game clock, and when it arrived here (null: the game is not timed). */
       clock: ClockFeed | null;
     };
 
-export function GuestScreen({ code, playerName, onHome, onRules }: { code: string; playerName: string; onHome(): void; onRules(): void }) {
+const names = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === 'string').slice(0, 20) : []);
+
+export function GuestScreen({
+  code,
+  playerName,
+  watch = false,
+  onHome,
+  onRules,
+}: {
+  code: string;
+  playerName: string;
+  /** Join as a spectator only. */
+  watch?: boolean;
+  onHome(): void;
+  onRules(): void;
+}) {
   const [st, setSt] = useState<GuestState>({ kind: 'connecting', msg: 'Looking for the room…' });
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
@@ -531,15 +622,16 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
   const [chat, setChat] = useState<ChatMessage[] | null>(null);
 
   useEffect(() => {
-    const say = (msg: string) => setSt((cur) => (cur.kind === 'connecting' ? { kind: 'connecting', msg } : { ...cur, note: msg }));
+    const say = (msg: string) =>
+      setSt((cur) => (cur.kind === 'connecting' ? { kind: 'connecting', msg } : cur.kind === 'closed' ? cur : { ...cur, note: msg }));
     const g = new GuestConnector(
       code,
-      { t: 'hello', v: PROTOCOL, name: playerName, client: clientId() },
+      { t: 'hello', v: PROTOCOL, name: playerName, client: clientId(), ...(watch ? { watch: true } : {}) },
       {
         status: say,
         online: (via) => {
           setOnline(via);
-          if (via) setSt((cur) => (cur.kind === 'connecting' ? cur : { ...cur, note: undefined }));
+          if (via) setSt((cur) => (cur.kind === 'connecting' || cur.kind === 'closed' ? cur : { ...cur, note: undefined }));
           // cut off from the host: its clock can't be followed, so the reading stops where it was
           else
             setSt((cur) => {
@@ -550,14 +642,28 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         },
         message: (msg) => {
           if (msg.t === 'welcome') {
+            if (msg.closed) {
+              // turned away (e.g. too many watching): stop trying
+              g.close();
+              setSt({ kind: 'closed', msg: msg.reason || 'The host turned the connection away.' });
+              return;
+            }
             seatRef.current = msg.seat;
             if (msg.reason) setError(msg.reason);
           } else if (msg.t === 'lobby') {
-            setSt({ kind: 'lobby', seats: msg.seats, host: msg.host, seat: seatRef.current });
+            setSt({ kind: 'lobby', seats: msg.seats, host: msg.host, seat: seatRef.current, watching: names(msg.watching) });
           } else if (msg.t === 'state') {
             // the host's elapsed times as of now; a running clock goes on from here
             const sum = readSummary(msg.clock, msg.snap.view.players.length);
-            setSt({ kind: 'game', snap: msg.snap, seats: msg.seats, last: msg.last, seat: msg.snap.seat, clock: sum && { sum, at: Date.now() } });
+            setSt({
+              kind: 'game',
+              snap: msg.snap,
+              seats: msg.seats,
+              last: msg.last,
+              seat: msg.snap.seat,
+              clock: sum && { sum, at: Date.now() },
+              watching: names(msg.watching),
+            });
           } else if (msg.t === 'error') {
             setError(msg.message);
           } else if (msg.t === 'chatHistory') {
@@ -582,23 +688,23 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
       g.close();
       conn.current = null;
     };
-  }, [code, playerName]);
+  }, [code, playerName, watch]);
 
   const send = (a: Action) => {
     if (!conn.current?.send({ t: 'action', action: a })) setError('Not connected to the host right now.');
   };
   const sendChat = (text: string) => conn.current?.send({ t: 'chat', text }) ?? false;
 
-  if (st.kind === 'connecting') {
+  if (st.kind === 'connecting' || st.kind === 'closed') {
     return (
       <main class="join">
         <div class="home-card">
           <Logo />
           <h1>Room {code}</h1>
           <p class="hint">{st.msg}</p>
-          <span class="spinner big" />
+          {st.kind === 'connecting' && <span class="spinner big" />}
           <button type="button" onClick={onHome}>
-            Cancel
+            {st.kind === 'closed' ? 'Back' : 'Cancel'}
           </button>
         </div>
       </main>
@@ -633,6 +739,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
           {error && <p class="hint">{error}</p>}
           <span class="spinner" />
         </section>
+        {st.watching.length > 0 && <Watchers names={st.watching} />}
       </main>
     );
   }
@@ -654,7 +761,9 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
         onHome={onHome}
         note={online ? `Room ${code}${online === 'relay' ? ' · via relay' : ''}` : st.note ?? 'Offline'}
         clock={st.clock}
-        chat={chat && <ChatWindow messages={chat} seat={st.seat} colors={colors} room={code} onSend={sendChat} />}
+        watching={st.watching}
+        spectating={st.seat === null}
+        chat={chat && <ChatWindow messages={chat} seat={st.seat} colors={colors} room={code} onSend={sendChat} self={`${playerName} (watching)`} />}
       />
       {menu && (
         <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && setMenu(false)}>
@@ -689,7 +798,7 @@ export function GuestScreen({ code, playerName, onHome, onRules }: { code: strin
                 How to play
               </button>
               <button type="button" class="wide danger-outline" onClick={onHome}>
-                Leave (you can rejoin with the same code)
+                {st.seat === null ? 'Stop watching' : 'Leave (you can rejoin with the same code)'}
               </button>
             </div>
           </section>

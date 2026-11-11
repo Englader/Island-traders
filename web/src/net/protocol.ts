@@ -92,7 +92,8 @@ export interface BrokerOptions {
  */
 export function brokerOptions(): BrokerOptions {
   const fromUrl = new URLSearchParams(location.search).get('peer');
-  const env = import.meta.env;
+  // (typed here too so the tests, built without Vite's types, can import this file)
+  const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
   const spec = fromUrl ?? (env.VITE_PEER_HOST ? `${env.VITE_PEER_HOST}:${env.VITE_PEER_PORT ?? 443}${env.VITE_PEER_PATH ?? '/'}` : null);
   if (!spec) return {};
   const m = /^([^:/]+)(?::(\d+))?(\/.*)?$/.exec(spec);
@@ -113,7 +114,11 @@ export interface LobbySeat {
 }
 
 export type GuestMessage =
-  | { t: 'hello'; v: number; name: string; client: string }
+  /**
+   * `watch`: the guest only wants to watch, even if a seat is free. Hosts
+   * from before spectators ignore it (and seat the guest if they can).
+   */
+  | { t: 'hello'; v: number; name: string; client: string; watch?: boolean }
   | { t: 'action'; action: Action }
   /** heartbeat; the host answers with a pong */
   | { t: 'ping' }
@@ -121,14 +126,28 @@ export type GuestMessage =
   /** A chat line. The host decides who sent it; anything else here is ignored. */
   | { t: 'chat'; text: string };
 
+/*
+ * Spectators: a guest who says hello with `watch` (or finds every seat taken)
+ * gets seat null and from then on the spectator view (viewFor(state, null):
+ * no hands, no cards, no legal moves). Hosts list who is watching in
+ * `watching` on lobby and state messages; older guests ignore it. All of it
+ * is optional, so PROTOCOL stays 3.
+ */
+
 export type HostMessage =
-  | { t: 'welcome'; seat: PlayerId | null; reason?: string }
-  | { t: 'lobby'; scenario: string; seats: LobbySeat[]; started: boolean; host: string }
+  /**
+   * seat null: watching. `closed`: the host turns this link away for good
+   * (e.g. too many watching); the guest should stop trying.
+   */
+  | { t: 'welcome'; seat: PlayerId | null; reason?: string; closed?: boolean }
+  | { t: 'lobby'; scenario: string; seats: LobbySeat[]; started: boolean; host: string; watching?: string[] }
   | {
       t: 'state';
       snap: SeatSnapshot;
       seats: LobbySeat[];
       last: { action: Action; at: number } | null;
+      /** Names of the people watching (missing from older hosts). */
+      watching?: string[];
       /**
        * The game clock as the host had it when sending: elapsed times (never
        * the host's timestamps, the guest's clock may differ) and whether it is

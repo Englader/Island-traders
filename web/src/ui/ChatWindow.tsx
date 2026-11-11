@@ -8,6 +8,8 @@ export interface ChatWindowProps {
   messages: ChatMessage[];
   /** This device's seat (own messages sit on the right); null when watching. */
   seat: number | null;
+  /** Watching: the name the host gives this device's messages, to find our own. */
+  self?: string;
   /** Player colours by seat. */
   colors: PlayerColor[];
   /** The room, so unread counts survive the screen being left and reopened. */
@@ -31,7 +33,7 @@ function isEmojiOnly(text: string): boolean {
  * small chat window that opens from it. A new message while the window is
  * closed shows briefly next to the button. Everything is plain text.
  */
-export function ChatWindow({ messages, seat, colors, room, onSend }: ChatWindowProps) {
+export function ChatWindow({ messages, seat, self, colors, room, onSend }: ChatWindowProps) {
   const lastId = messages.length > 0 ? messages[messages.length - 1].id : 0;
   const [open, setOpen] = useState(false);
   // what was already there when the chat first appeared (e.g. the history after a reload) counts as read
@@ -50,7 +52,7 @@ export function ChatWindow({ messages, seat, colors, room, onSend }: ChatWindowP
   const win = useRef<HTMLElement>(null);
   const fab = useRef<HTMLButtonElement>(null);
 
-  const mine = (m: ChatMessage) => seat !== null && m.seat === seat;
+  const mine = (m: ChatMessage) => (seat !== null ? m.seat === seat : self !== undefined && m.seat === null && m.name === self);
   const unread = open ? 0 : messages.filter((m) => m.id > seenId && !mine(m)).length;
 
   useEffect(() => {

@@ -78,6 +78,10 @@ export interface GameScreenProps {
   chat?: ComponentChildren;
   /** The game clock (null: this game is not timed). */
   clock?: ClockFeed | null;
+  /** Online games: the names of the people watching. */
+  watching?: string[];
+  /** Online: this device only watches (no seat, no moves). */
+  spectating?: boolean;
 }
 
 type Mode =
@@ -514,6 +518,7 @@ export function statusText(view: GameView, seat: PlayerId | null, legal: Action[
 
 export function GameScreen(props: GameScreenProps) {
   const { view, legal, seat, colors, kinds, send } = props;
+  const watching = props.watching ?? [];
   const [mode, setMode] = useState<Mode>(null);
   const [sheet, setSheet] = useState<SheetName>(null);
   const [diceFor, setDiceFor] = useState<PlayerId | null>(null);
@@ -1297,6 +1302,12 @@ export function GameScreen(props: GameScreenProps) {
                 <LiveTime feed={live} pick={(c) => c.playedMs} />
               </span>
             )}
+            {watching.length > 0 && (
+              <span class="sub-watch" title={`Watching: ${watching.join(', ')}`} aria-label={`${watching.length} watching: ${watching.join(', ')}`}>
+                {' · 👁 '}
+                {watching.length}
+              </span>
+            )}
             {props.note && <span class="sub-note">{` · ${props.note}`}</span>}
           </div>
         </div>
@@ -1550,7 +1561,16 @@ export function GameScreen(props: GameScreenProps) {
           <>
             {me?.resources && <Hand view={view} seat={seat!} desk={false} onCards={() => setSheet('cards')} />}
             {ck && <TurnChips view={view} seat={seat} onHarbor={() => setSheet('harbor')} />}
-            <nav class={bar.length >= 6 ? 'action-bar six' : 'action-bar'}>{bar}</nav>
+            {props.spectating && seat === null ? (
+              <div class="spectating" role="status">
+                <span class="spectating-badge">
+                  <span aria-hidden="true">👁 </span>Spectating
+                </span>
+                <span class="spectating-note">You see what everyone sees: the board, the scores and the chat, but no one's cards.</span>
+              </div>
+            ) : (
+              <nav class={bar.length >= 6 ? 'action-bar six' : 'action-bar'}>{bar}</nav>
+            )}
           </>
         )}
       </div>
@@ -1609,6 +1629,7 @@ export function GameScreen(props: GameScreenProps) {
           kinds={kinds}
           seat={seat}
           clock={live}
+          watching={watching}
           close={() => setSheet(null)}
           onDice={(p) => {
             setDiceFor(p);
@@ -1847,6 +1868,7 @@ function ScoresSheet({
   kinds,
   seat,
   clock,
+  watching,
   close,
   onDice,
 }: {
@@ -1856,6 +1878,8 @@ function ScoresSheet({
   seat: PlayerId | null;
   /** The live timer (null: hidden, or not timed). */
   clock: ClockFeed | null;
+  /** Online: who is watching. */
+  watching: string[];
   close(): void;
   /** Opens the dice statistics, for one player or (null) everyone. */
   onDice(p: PlayerId | null): void;
@@ -1910,6 +1934,12 @@ function ScoresSheet({
           </div>
         ))}
       </div>
+      {watching.length > 0 && (
+        <p class="watching-list">
+          <span aria-hidden="true">👁 </span>
+          Watching: {watching.join(', ')}
+        </p>
+      )}
     </Sheet>
   );
 }
