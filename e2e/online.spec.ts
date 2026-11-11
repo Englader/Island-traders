@@ -467,3 +467,111 @@ test('the chat keeps clear of the board tools, the log and the panels, on a comp
   await hostCtx.close();
   await guestCtx.close();
 });
+
+// --- spectators ------------------------------------------------------------------------------------
+
+/** Opens the join screen with the code and presses Join or Watch. */
+async function enter(page: Page, code: string, name: string, button: 'Join' | 'Watch') {
+  await page.goto(`${BASE}#join=${code}`);
+  await expect(page.locator('.code-input')).toHaveValue(code);
+  await page.getByLabel('Your name').fill(name);
+  await page.getByRole('button', { name: button === 'Join' ? 'Join' : /Watch/ }).click();
+}
+
+test('someone with the code watches a game already under way: the board and every move, no controls, no cards', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  await join(guest, code, 'Guesty');
+  await startWithFriend(host, guest);
+
+  // the game has started and every seat is taken: the code lets a third person in to watch
+  const fanCtx = await browser.newContext();
+  const fan = await fanCtx.newPage();
+  await enter(fan, code, 'Wanda', 'Join');
+  await expect(fan.locator('svg.board')).toBeVisible();
+  await expect(fan.locator('.spectating')).toContainText('Spectating');
+  await expect(fan.locator('.toast')).toContainText('already started');
+  expect(await tiles(fan.locator('.board-area svg.board'))).toEqual(await tiles(host.locator('.board-area svg.board')));
+  // the players see who is watching
+  await expect(host.locator('.sub-watch')).toHaveAttribute('title', 'Watching: Wanda');
+  await expect(guest.locator('.sub-watch')).toContainText('1');
+
+  // the setup, played on the other two phones, shows up move by move
+  const deadline = Date.now() + 90_000;
+  let seen = 0;
+  while (Date.now() < deadline) {
+    const a = await place(host);
+    const b = await place(guest);
+    seen = Math.max(seen, await fan.locator('g.building').count());
+    if (/Turn [1-9]/.test((await host.locator('.hud .sub').textContent()) ?? '')) break;
+    if (!a && !b) await host.waitForTimeout(250);
+  }
+  expect(seen).toBeGreaterThan(0);
+  await expect(fan.locator('g.building')).toHaveCount(6);
+  await expect(fan.locator('.hud .sub')).toContainText(/Turn [1-9]/);
+
+  // the first roll reaches the watcher too
+  const dice = fan.locator('.hud .dice');
+  await expect
+    .poll(
+      async () => {
+        for (const p of [host, guest]) {
+          const roll = p.locator('.action-bar button', { hasText: 'Roll' });
+          if (await roll.isVisible()) await roll.click({ timeout: 2000 }).catch(() => {});
+        }
+        return dice.getAttribute('aria-label');
+      },
+      { timeout: 60_000 },
+    )
+    .not.toBe('no roll yet');
+  await expect(dice).toHaveAttribute('aria-label', (await host.locator('.hud .dice').getAttribute('aria-label'))!);
+
+  // nothing to act with and no cards: no action buttons, no hand, nothing to pick on the board
+  await expect(fan.locator('.action-bar')).toHaveCount(0);
+  await expect(fan.locator('.hand-block, .tray, .hand')).toHaveCount(0);
+  await expect(fan.locator('[data-pick]')).toHaveCount(0);
+  await expect(fan.locator('.player .you')).toHaveCount(0);
+  await expect(fan.locator('.player')).toHaveCount(3);
+
+  // the watcher can chat, marked as watching
+  await say(fan, 'Nice start!');
+  const hostWin = await openChat(host);
+  await expect(hostWin.locator('.chat-msg').last()).toContainText('Wanda (watching)');
+  await expect(hostWin.locator('.chat-text').last()).toHaveText('Nice start!');
+
+  // and leaves without stopping anything
+  await fan.getByRole('button', { name: 'Menu' }).click();
+  await fan.getByRole('button', { name: 'Stop watching' }).click();
+  await expect(host.locator('.sub-watch')).toHaveCount(0);
+  await expect(guest.locator('.sub-watch')).toHaveCount(0);
+  await expect(host.locator('.hud .sub')).toContainText(/Turn [1-9]/);
+  await fanCtx.close();
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test('Watch in the lobby leaves the friend seat free; the players see who is watching', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  const fanCtx = await browser.newContext();
+  const fan = await fanCtx.newPage();
+  await enter(fan, code, 'Wanda', 'Watch');
+  await expect(fan.locator('main')).toContainText('You are watching.');
+  await expect(host.locator('.watchers')).toContainText('Wanda');
+  await expect(host.locator('.lobby-seat').nth(1)).toContainText('waiting');
+
+  // a friend still gets the seat
+  await join(guest, code, 'Guesty');
+  await expect(guest.locator('main')).toContainText('You are seated as Guesty');
+  await expect(guest.locator('.watchers')).toContainText('Wanda');
+  await host.getByRole('button', { name: /Start/ }).click();
+  await expect(fan.locator('svg.board')).toBeVisible();
+  await expect(fan.locator('.spectating')).toContainText('Spectating');
+  await expect(fan.locator('.toast')).toHaveCount(0);
+  // the players sheet names who is watching
+  await host.locator('.player').first().click();
+  await expect(host.locator('.watching-list')).toContainText('Watching: Wanda');
+  await fanCtx.close();
+  await hostCtx.close();
+  await guestCtx.close();
+});
