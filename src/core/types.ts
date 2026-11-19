@@ -222,6 +222,8 @@ export interface LogEntry {
   msg: string;
   /** When set, only these players (and omniscient viewers) see the entry. */
   visibleTo?: PlayerId[];
+  /** Board hexes the line is about, for the screen to point at (the Inventor's two swapped numbers). */
+  hexes?: HexId[];
 }
 
 export interface RngState {

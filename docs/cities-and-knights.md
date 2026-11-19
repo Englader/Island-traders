@@ -353,7 +353,7 @@ Names are the 2020 booklet's; the 2025 name follows where it differs.
 | Alchemist | `{ dice: [yellow, red] }` (1–6 each, 36 options) | the event die is rolled and resolved, then production, as after `rollDice`; the roll is recorded with `chosen: true` | after the roll |
 | Crane | – | the next `improveCity` this turn costs one commodity less | a Crane is already waiting; no track can be improved (no city, all at 5, or beyond 3 without a metropolis site) |
 | Engineer | `{ vertex }`: your city without a wall | – | 3 walls, or no city without one |
-| Inventor | `{ hexes: [a, b] }` | – | fewer than two tokens other than 2, 12, 6, 8; equal numbers are not offered |
+| Inventor | `{ hexes: [a, b] }` | the public log line names both numbers and tiles ("Ada swaps the 9 on the hills ↔ the 5 in the fields") and carries `hexes: [a, b]` for the screen | fewer than two tokens other than 2, 12, 6, 8; equal numbers are not offered |
 | Irrigation, Mining | – | – | no fields (mountains) hex next to your buildings, or none of that resource in the bank |
 | Medicine | `{ vertex }`: a settlement you may upgrade | pays 2 ore, 1 grain | not those cards, or no settlement to upgrade (a pillaged city on its side first, as `buildCity`) |
 | Road Building | – | `roadBuilding` phase, 2 free roads (or ships) | nowhere to build |

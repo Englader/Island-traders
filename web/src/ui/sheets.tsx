@@ -11,6 +11,7 @@ import {
   type DevCardType,
   type GameState,
   type GameView,
+  type HexId,
   type PlayerId,
   type Resource,
   type TradeOffer,
@@ -1034,7 +1035,18 @@ export function ScenarioSheet({ view, legal, seat, colors, send, close, placeHar
 
 // --- log & end ----------------------------------------------------------------------------
 
-export function LogSheet({ view, colors, close }: { view: GameView; colors: PlayerColor[]; close(): void }) {
+export function LogSheet({
+  view,
+  colors,
+  close,
+  onShow,
+}: {
+  view: GameView;
+  colors: PlayerColor[];
+  close(): void;
+  /** Tapping a line about board hexes (the Inventor's swap) shows them on the board. */
+  onShow?(hexes: [HexId, HexId], who: PlayerId | null): void;
+}) {
   const items = logItems(view, 200);
   return (
     <Sheet title="Game log" onClose={close}>
@@ -1046,7 +1058,7 @@ export function LogSheet({ view, colors, close }: { view: GameView; colors: Play
       >
         <ol class="glog-list">
           {items.map((it) => (
-            <LogLine key={it.key} item={it} view={view} colors={colors} />
+            <LogLine key={it.key} item={it} view={view} colors={colors} onShow={onShow} />
           ))}
         </ol>
       </div>

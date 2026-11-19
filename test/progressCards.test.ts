@@ -274,6 +274,10 @@ describe('Progress cards: science', () => {
     expect(s.board.hexes[H(0, 0)]).toMatchObject({ terrain: 'forest', token: 9 });
     expect(s.board.hexes[H(0, 1)]).toMatchObject({ terrain: 'fields', token: 3 });
     expect(s.board.robber).toBe(H(0, 0)); // FAQ 107: the robber now blocks the 9
+    // the swap is public: the line names both numbers and where they lie, and carries the two hexes
+    const line = s.log[s.log.length - 1];
+    expect(line).toEqual({ turn: s.turn.number, msg: `${s.players[0].name} swaps the 9 in the fields ↔ the 3 in the forest`, hexes: [H(0, 1), H(0, 0)] });
+    for (const viewer of [0, 1, 2, null]) expect(viewFor(s, viewer).log.at(-1)).toEqual(line);
     // two equal numbers would change nothing
     const t = bare();
     setHex(t, 0, 0, 'forest', 4);

@@ -29,6 +29,7 @@ export type Cue =
   | 'tradeDeclined'
   | 'cardDraw'
   | 'cardPlay'
+  | 'swap'
   | 'robber'
   | 'stolen'
   | 'barbarianShip'
@@ -522,6 +523,7 @@ const LEVEL: Partial<Record<Cue, number>> = {
   tradeDeclined: 1.8,
   cardDraw: 1.8,
   cardPlay: 1.3,
+  swap: 1.5,
   attack: 0.8,
   chat: 1.6,
 };
@@ -613,6 +615,13 @@ const RECIPES: Record<Cue, Recipe> = {
     [72, 76, 79].forEach((n, i) => bell(k, t + i * 0.08, midi(n), 0.08, 0.5));
     bell(k, t + 0.26, midi(79), 0.07, 1.4);
     return bell(k, t + 0.26, midi(84), 0.1, 1.6);
+  },
+  /** Two number tokens swapped (the Inventor): two light wooden slides crossing, one up, one down. */
+  swap(k, t) {
+    noise(k, { t, g: 0.05, a: 0.02, d: 0.16, type: 'bandpass', f: 900, f2: 2200, q: 1.1 });
+    noise(k, { t: t + 0.02, g: 0.05, a: 0.02, d: 0.16, type: 'bandpass', f: 2200, f2: 900, q: 1.1 });
+    knock(k, t + 0.2, 640, 0.09, 0.06);
+    return knock(k, t + 0.27, 540, 0.08, 0.06);
   },
   /** A trade offer for you: a light two-note ping. */
   tradeOffer(k, t) {

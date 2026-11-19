@@ -41,6 +41,30 @@ function recorded(commit: string): Record<string, Action[]> {
 const RECORDED: Record<string, Action[]> = {};
 for (const commit of ['7fc781f', 'd3b32c1', '4d6b857', 'a7de1dd']) for (const [key, actions] of Object.entries(recorded(commit))) RECORDED[`${commit}/${key}`] = actions;
 
+/**
+ * The log is part of the state, so rewording a log line changes every
+ * fingerprint of a game that has the line, although the game plays the same.
+ * Lines reworded since the fingerprints were recorded are hashed in their old
+ * words, so the fingerprints keep pinning down the rules (the new wording has
+ * its own tests):
+ * - the Inventor's swap names where both numbers lie and carries the two hexes
+ *   ("Ada swaps the 9 on the hills ↔ the 5 in the fields", was "Ada swaps the
+ *   9 and the 5"; test/progressCards.test.ts).
+ */
+const INVENTOR_LINE = /^(.*) swaps the (\d+) (?:on|in) the [a-z ]+ ↔ the (\d+) (?:on|in) the [a-z ]+$/;
+
+function legacyLog<T extends { log: GameState['log'] }>(s: T): T {
+  return {
+    ...s,
+    log: s.log.map((e) => {
+      const m = e.hexes ? INVENTOR_LINE.exec(e.msg) : null;
+      if (!m) return e;
+      const { hexes: _hexes, ...rest } = e;
+      return { ...rest, msg: `${m[1]} swaps the ${m[2]} and the ${m[3]}` };
+    }),
+  };
+}
+
 function fingerprint(config: GameConfig, mode: Mode, steps: number, levels?: BotLevel[], recording?: string): string {
   const h = createHash('sha256');
   const start = createGame(config);
@@ -59,9 +83,9 @@ function fingerprint(config: GameConfig, mode: Mode, steps: number, levels?: Bot
   }
   // (computer player games, recorded or not, hash their moves through the final state's log)
   h.update(JSON.stringify(actions));
-  h.update(JSON.stringify(final));
-  h.update(JSON.stringify(viewFor(final, 0)));
-  h.update(JSON.stringify(viewFor(final, null)));
+  h.update(JSON.stringify(legacyLog(final)));
+  h.update(JSON.stringify(legacyLog(viewFor(final, 0))));
+  h.update(JSON.stringify(legacyLog(viewFor(final, null))));
   for (const p of playersToAct(final)) h.update(JSON.stringify(legalActions(final, p)));
   return h.digest('hex').slice(0, 16);
 }

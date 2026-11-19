@@ -353,14 +353,17 @@ test('online: a friend sees their own commodities, and only card counts for the 
   await expect(tile('coin')).toHaveText('0');
   await expect(guest.locator('.ck-track')).toBeVisible();
   await expect(guest.locator('.hud .sub')).toContainText('Cities & Knights');
-  // Björn's three coins are only a count: his chip shows his hand size, never what is in it
+  // Björn's three coins are only counts: his chip shows how many resource and commodity cards he holds, never which
   const bjorn = s.players[2].resources;
-  const bjornCards = bjorn.brick + bjorn.lumber + bjorn.wool + bjorn.grain + bjorn.ore + 3;
-  await expect(guest.locator('.player', { hasText: 'Björn' })).toContainText(String(bjornCards));
-  await expect(guest.locator('.player', { hasText: 'Björn' })).toHaveAttribute('aria-label', new RegExp(`${bjornCards} cards, 0 progress cards`));
-  // the host sees the friend's hand as a count too
-  const friendCards = s.players[1].resources.brick + s.players[1].resources.lumber + s.players[1].resources.wool + s.players[1].resources.grain + s.players[1].resources.ore + 3;
-  await expect(host.locator('.player', { hasText: 'Friend' })).toHaveAttribute('aria-label', new RegExp(`${friendCards} cards`));
+  const bjornRes = bjorn.brick + bjorn.lumber + bjorn.wool + bjorn.grain + bjorn.ore;
+  const bjornChip = guest.locator('.player', { hasText: 'Björn' });
+  await expect(bjornChip.locator('[data-count="resources"]')).toHaveText(String(bjornRes));
+  await expect(bjornChip.locator('[data-count="commodities"]')).toHaveText('3');
+  await expect(bjornChip).toHaveAttribute('aria-label', new RegExp(`${bjornRes} resource cards, 3 commodity cards, 0 progress cards`));
+  await expect(bjornChip).not.toContainText(/coin/i);
+  // the host sees the friend's hand as counts too
+  const friendRes = s.players[1].resources.brick + s.players[1].resources.lumber + s.players[1].resources.wool + s.players[1].resources.grain + s.players[1].resources.ore;
+  await expect(host.locator('.player', { hasText: 'Friend' })).toHaveAttribute('aria-label', new RegExp(`${friendRes} resource cards, 3 commodity cards`));
   await hostCtx.close();
   await guestCtx.close();
 });

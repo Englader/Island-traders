@@ -43,6 +43,16 @@ export function ckAfterSetup(seed = 'ck-ui'): GameState {
   return playUntil(s, (x) => x.phase.kind === 'preRoll' && x.turn.actor === 0);
 }
 
+/**
+ * Any Cities & Knights game (another scenario, 5-6 players) after the set-up:
+ * Sam (seat 0) is about to roll. Names past the third are Cleo, Dev, Edda.
+ */
+export function ckGameAfterSetup(opts: { scenario?: string; players?: number; seed?: string } = {}): GameState {
+  const names = [...NAMES, 'Cleo', 'Dev', 'Edda'].slice(0, opts.players ?? 3);
+  const s = createGame({ scenario: opts.scenario ?? 'base', players: names, seed: opts.seed ?? 'ck-any', options: { firstPlayer: 0, citiesAndKnights: true } });
+  return playUntil(s, (x) => x.phase.kind === 'preRoll' && x.turn.actor === 0);
+}
+
 /** Moves cards from the bank into a hand (resources and commodities). */
 export function giveCards(s: GameState, p: PlayerId, c: CardCounts): void {
   for (const [k, n] of Object.entries(c) as Array<[Card, number]>) {

@@ -147,6 +147,42 @@ export function improvementPriceOf(view: GameView, p: PlayerId, level: number): 
   return Math.max(0, improvementCost(level) - (hasCrane(view, p) ? 1 : 0));
 }
 
+/** Where a player stands on one improvement track: public levels, and for their own seat what the next level costs them. */
+export interface TrackStatus {
+  track: ImprovementTrack;
+  level: number;
+  /** The level-3 ability (Trading House, Fortress, Aqueduct) is theirs. */
+  ability: boolean;
+  /** They hold the track's metropolis. */
+  metropolis: boolean;
+  /** The next level, or null once all five are built. */
+  next: {
+    level: number;
+    name: string;
+    /** In the track's commodity, a Crane played this turn included. */
+    cost: number;
+    /** Commodities of that kind in hand: own seat only (null: hidden). */
+    have: number | null;
+    /** How many more they need (0: they can pay for it); null when hidden. */
+    short: number | null;
+  } | null;
+}
+
+export function trackStatus(view: GameView, p: PlayerId, track: ImprovementTrack): TrackStatus {
+  const ck = view.ck;
+  const level = ck?.players[p]?.improvements[track] ?? 0;
+  const com = ck?.players[p]?.commodities;
+  const next =
+    level >= MAX_IMPROVEMENT
+      ? null
+      : (() => {
+          const cost = improvementPriceOf(view, p, level + 1);
+          const have = com ? com[TRACK_INFO[track].commodity] : null;
+          return { level: level + 1, name: improvementName(track, level + 1), cost, have, short: have === null ? null : Math.max(0, cost - have) };
+        })();
+  return { track, level, ability: level >= ABILITY_LEVEL, metropolis: ck?.metropolises[track]?.owner === p, next };
+}
+
 /** Opponents with at least your points and cards to lose: what the Saboteur makes each discard. */
 export function saboteurVictims(view: GameView, seat: PlayerId): Array<{ p: PlayerId; n: number }> {
   const mine = view.players[seat]?.publicVP ?? 0;
@@ -709,8 +745,8 @@ export function playedFx(a: PlayAction, before: GameView, seat: PlayerId | null 
     }
     case 'inventor': {
       const hs = (args.hexes as HexId[] | undefined) ?? [];
-      const nums = hs.map((h) => before.board.hexes[h]?.token);
-      return { detail: nums.length === 2 ? `Swaps the ${nums[0]} and the ${nums[1]}` : 'Swaps two numbers' };
+      const [x, y] = hs.map((h) => before.board.hexes[h]);
+      return { detail: x && y ? `Swaps the ${terrainWord(x.terrain)} ${x.token} ↔ the ${terrainWord(y.terrain)} ${y.token}` : 'Swaps two numbers' };
     }
     case 'merchant': {
       const hex = before.board.hexes[args.hex as HexId];

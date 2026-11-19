@@ -1,11 +1,11 @@
-import { PROGRESS_CARDS, getScenario, type Action, type GameView, type ImprovementTrack, type PlayerId, type ProgressCardName, type VertexId } from 'engine';
+import { PROGRESS_CARDS, getScenario, type Action, type GameView, type HexId, type ImprovementTrack, type PlayerId, type ProgressCardName, type VertexId } from 'engine';
 import type { ComponentChildren, JSX } from 'preact';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { Board, NO_TARGETS, type Ghost, type PickKind, type Targets } from '../board/Board';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { Board, NO_TARGETS, type Ghost, type PickKind, type SwapLight, type Targets } from '../board/Board';
 import { askFor, progressAsk } from '../game/ask';
 import { PICK_PROMPT, PICK_STATUS, PLAY_KIND, playsOf, smithSeconds, type PlayAction } from '../game/progress';
 import { CARD_INFO, COMMODITY_LIST, RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel, progressTitle } from '../game/names';
-import { KNIGHT_LABEL, PROGRESS_TEXT, TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, namesList, progressDeck, sevenLimitOf } from '../game/ck';
+import { KNIGHT_LABEL, PROGRESS_TEXT, TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, handSplit, namesList, newestSwap, progressDeck, sevenLimitOf } from '../game/ck';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
 import { rollLight } from '../game/rollLight';
@@ -37,6 +37,8 @@ import {
   HarborAnswerSheet,
   ImprovementsSheet,
   KnightBar,
+  LevelTracks,
+  levelsText,
   ProgressDiscardSheet,
   ProgressSheet,
 } from './CkPanels';
@@ -101,6 +103,9 @@ type Mode =
 type SheetName = null | 'build' | 'trade' | 'cards' | 'scenario' | 'log' | 'scores' | 'dice' | 'improve' | 'barbarians' | 'harbor';
 
 /** How long a moment is shown: the barbarians' attack has three beats, drawn cards turn over. */
+/** How long the Inventor's swap stays lit on the board (it fades over the last second). */
+const SWAP_MS = 6000;
+
 function fxTime(kind: string, base: number): number {
   if (kind === 'attack') return Math.max(3600, base * 2.4);
   if (kind === 'draw') return Math.max(2000, base * 1.4);
@@ -936,9 +941,9 @@ export function GameScreen(props: GameScreenProps) {
           </button>,
         );
         bar.push(
-          <button type="button" key="improve" class={canImprove ? 'action glow' : 'action'} onClick={() => setSheet('improve')}>
-            <span class="ai ai-gate">
-              <GateGlyph track="science" />
+          <button type="button" key="improve" class={canImprove ? 'action glow' : 'action'} onClick={() => setSheet('improve')} title={`City improvements: ${levelsText(view, seat!)}`}>
+            <span class="ai ai-tracks">
+              <LevelTracks view={view} p={seat!} />
             </span>
             <span class="al">Improve</span>
           </button>,
@@ -976,6 +981,16 @@ export function GameScreen(props: GameScreenProps) {
         );
     }
   }
+  // Cities & Knights: your improvements can be looked at any time, not only when you can build one
+  if (ck && seat !== null && !bar.some((b) => b.key === 'improve'))
+    bar.push(
+      <button type="button" key="improve" class="action levels" onClick={() => setSheet('improve')} title={`Your city improvements: ${levelsText(view, seat)}`}>
+        <span class="ai ai-tracks">
+          <LevelTracks view={view} p={seat} />
+        </span>
+        <span class="al">Improvements</span>
+      </button>,
+    );
   // Default the robber phase to the first piece so both kinds aren't mixed.
   useEffect(() => {
     if (ph.kind === 'robber' && isActor && robberPieces.length > 1 && mode?.kind !== 'robber') setMode({ kind: 'robber', piece: robberPieces[0] });
@@ -1074,10 +1089,10 @@ export function GameScreen(props: GameScreenProps) {
       secondary.push({
         key: 'improve',
         label: 'Improve',
-        icon: <GateGlyph track="trade" />,
+        icon: <LevelTracks view={view} p={seat} />,
         kbd: 'I',
         glow: canImprove,
-        title: 'City improvements: trade, politics and science',
+        title: `City improvements (any time; built on your turn): ${levelsText(view, seat)}`,
         onClick: () => setSheet('improve'),
       });
     } else
@@ -1176,7 +1191,7 @@ export function GameScreen(props: GameScreenProps) {
       else if (k === 't' && seat !== null && tradeWhy === null) setSheet('trade');
       else if (k === 'c' && seat !== null && (devCount > 0 || (ck?.players[seat]?.vpCards.length ?? 0) > 0)) setSheet('cards');
       else if (k === 'k' && ck && seat !== null && (knightModeOn || (later === null && knightMoves))) toggleKnights();
-      else if (k === 'i' && ck && seat !== null) setSheet('improve');
+      else if (k === 'i' && ck) setSheet('improve');
       else if (k === 'b' && seat !== null) {
         // the build tiles are the build menu here: move the keyboard focus to them
         const tile = document.querySelector<HTMLElement>('.bgrid .btile.ready') ?? document.querySelector<HTMLElement>('.bgrid .btile');
@@ -1237,6 +1252,39 @@ export function GameScreen(props: GameScreenProps) {
     }
     prevView.current = view;
   }, [view]);
+  // Cities & Knights, the Inventor: two numbers swapped are shown to everyone on the board for a few
+  // seconds (after the card shown in the middle), and again when the line is tapped in the log.
+  const [swapLight, setSwapLight] = useState<(SwapLight & { ms: number }) | null>(null);
+  const swapKey = useRef(0);
+  const showSwap = useCallback((hexes: [HexId, HexId], by: PlayerId | null, delay = 0) => {
+    swapKey.current += 1;
+    setSwapLight({ a: hexes[0], b: hexes[1], by, key: swapKey.current, delay, ms: delay + SWAP_MS });
+  }, []);
+  const seenLog = useRef(view.log.length);
+  const seenSwapMove = useRef(props.last?.at ?? 0);
+  useEffect(() => {
+    const from = seenLog.current;
+    seenLog.current = view.log.length;
+    const l = props.last;
+    const moved = !!l && l.at !== seenSwapMove.current;
+    if (l) seenSwapMove.current = l.at;
+    if (view.log.length <= from) return;
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // the played card is shown in the middle first: the swap follows it
+    const delay = moved && l!.action.type === 'playProgress' && !reduced ? fxTime('progPlay', FX_TIME[props.speed ?? 'normal']) : 0;
+    const found = newestSwap(view, from);
+    if (found) showSwap(found.hexes, found.by, delay);
+    else if (moved && l!.action.type === 'playProgress' && l!.action.card === 'inventor') {
+      // a host from before the log carried the hexes: the move itself names them
+      const hs = l!.action.args?.hexes;
+      if (Array.isArray(hs) && hs.length === 2 && typeof hs[0] === 'string' && typeof hs[1] === 'string') showSwap([hs[0], hs[1]], l!.action.player, delay);
+    }
+  }, [view.log.length]);
+  useEffect(() => {
+    if (!swapLight) return;
+    const t = setTimeout(() => setSwapLight(null), swapLight.ms);
+    return () => clearTimeout(t);
+  }, [swapLight?.key]);
   // Cities & Knights: what the event die did (shown under the rolling dice, or for a moment over the board)
   const [eventNote, setEventNote] = useState<{ key: number; title: string; sub: string; tone: string } | null>(null);
   useEffect(() => {
@@ -1267,7 +1315,7 @@ export function GameScreen(props: GameScreenProps) {
   const feed = dock
     ? []
     : view.log
-        .map((e, i) => ({ msg: e.msg, i }))
+        .map((e, i) => ({ msg: e.msg, i, swap: !!e.hexes }))
         .filter((e) => !e.msg.startsWith('---'))
         .slice(-3)
         .map((e) => {
@@ -1375,6 +1423,7 @@ export function GameScreen(props: GameScreenProps) {
           selected={mode?.kind === 'knight' ? mode.at : mode?.kind === 'knightTo' ? mode.from : mode?.kind === 'card' && mode.card === 'smith' ? (mode.first ?? null) : null}
           selectedHex={mode?.kind === 'card' && mode.card === 'inventor' ? (mode.first ?? null) : null}
           focusTokens={mode?.kind === 'card' && mode.card === 'inventor'}
+          swap={swapLight}
           flash={boardFlash}
           onPick={onPick}
           tools={
@@ -1417,7 +1466,7 @@ export function GameScreen(props: GameScreenProps) {
         {feed.length > 0 && (
           <div class={rolling || eventNote ? 'feed hushed' : 'feed'} aria-live="polite">
             {feed.map((e, k) => (
-              <span key={e.i} class={`feed-line age-${feed.length - 1 - k}`}>
+              <span key={e.i} class={`feed-line age-${feed.length - 1 - k}${e.swap ? ' swap' : ''}`}>
                 <span class="feed-dot" style={{ background: e.color ?? 'transparent' }} />
                 <span class="feed-text">
                   <RichText msg={e.msg} view={view} colors={colors} />
@@ -1426,7 +1475,7 @@ export function GameScreen(props: GameScreenProps) {
             ))}
           </div>
         )}
-        {dock && <DockedLog view={view} colors={colors} prefs={logPrefs} onPrefs={setLogPrefs} />}
+        {dock && <DockedLog view={view} colors={colors} prefs={logPrefs} onPrefs={setLogPrefs} onShow={showSwap} />}
         {pending && !ask && (
           <div class="confirm-bar">
             <span>{pending.actions.length === 1 ? describeAction(pending.actions[0], view) : 'Choose:'}</span>
@@ -1567,6 +1616,16 @@ export function GameScreen(props: GameScreenProps) {
                   <span aria-hidden="true">👁 </span>Spectating
                 </span>
                 <span class="spectating-note">You see what everyone sees: the board, the scores and the chat, but no one's cards.</span>
+                {ck && (
+                  <button type="button" class="levels-btn" onClick={() => setSheet('improve')}>
+                    <span class="ltracks-row" aria-hidden="true">
+                      {view.players.map((p) => (
+                        <LevelTracks key={p.id} view={view} p={p.id} />
+                      ))}
+                    </span>
+                    Everyone's improvements
+                  </button>
+                )}
               </div>
             ) : (
               <nav class={bar.length >= 6 ? 'action-bar six' : 'action-bar'}>{bar}</nav>
@@ -1621,7 +1680,17 @@ export function GameScreen(props: GameScreenProps) {
           placeHarbor={() => setMode({ kind: 'harbor' })}
         />
       )}
-      {sheet === 'log' && <LogSheet view={view} colors={colors} close={() => setSheet(null)} />}
+      {sheet === 'log' && (
+        <LogSheet
+          view={view}
+          colors={colors}
+          close={() => setSheet(null)}
+          onShow={(hexes, by) => {
+            setSheet(null);
+            showSwap(hexes, by);
+          }}
+        />
+      )}
       {sheet === 'scores' && (
         <ScoresSheet
           view={view}
@@ -1716,7 +1785,11 @@ function Players({
             class={active ? 'player active' : 'player'}
             style={{ '--pc': colors[p.id].fill, '--pcs': colors[p.id].stroke } as Record<string, string>}
             onClick={onOpen}
-            aria-label={`${p.name}: ${vp} victory points, ${p.resourceCount} cards${view.ck ? `, ${view.ck.players[p.id]?.progressCount ?? 0} progress cards` : ''}`}
+            aria-label={`${p.name}: ${vp} victory points, ${
+              view.ck
+                ? `${handSplit(view, p.id)?.resources ?? 0} resource cards, ${handSplit(view, p.id)?.commodities ?? 0} commodity cards, ${view.ck.players[p.id]?.progressCount ?? 0} progress cards, improvements ${levelsText(view, p.id)}`
+                : `${p.resourceCount} cards`
+            }`}
           >
             <span class="avatar">{kinds[p.id] === 'bot' ? '🤖' : kinds[p.id] === 'remote' ? '🌐' : p.name.slice(0, 1).toUpperCase()}</span>
             <span class="pinfo">
@@ -1830,31 +1903,33 @@ function CkMeta({ view, p, desk, turnTime, colors }: { view: GameView; p: Player
   );
   if (!desk)
     return (
-      <span class="pmeta ck-meta">
-        <span class="pm" title="Cards in hand">
-          🎴{view.players[p].resourceCount}
+      <>
+        <span class="pmeta ck-meta">
+          <CkCards view={view} p={p} />
+          <span class="pm" title="Progress cards">
+            <span class="pm-prog" aria-hidden="true" />
+            {cp.progressCount}
+          </span>
+          {knights}
+          {turnTime}
         </span>
-        <span class="pm" title="Progress cards">
-          <span class="pm-prog" aria-hidden="true" />
-          {cp.progressCount}
+        <span class="pmeta ck-awards">
+          {levels}
+          {awards}
         </span>
-        {knights}
-        {turnTime}
-      </span>
+      </>
     );
   return (
     <>
       <span class="pmeta ck-meta">
-        <span class="pm" title="Cards in hand (resources and commodities)">
-          <CardsIcon /> {view.players[p].resourceCount}
-        </span>
+        <CkCards view={view} p={p} />
         <span class="pm" title="Progress cards (hidden)">
           <span class="pm-prog" aria-hidden="true" />
           {cp.progressCount}
         </span>
-        {knights}
       </span>
       <span class="pmeta ck-awards">
+        {knights}
         {levels}
         {awards}
       </span>
@@ -1907,7 +1982,18 @@ function ScoresSheet({
             </div>
             {view.ck && <CkScore view={view} p={p.id} colors={colors} />}
             <div class="score-stats">
-              <span>🎴 {p.resourceCount} cards</span>
+              {view.ck ? (
+                (() => {
+                  const sp = handSplit(view, p.id)!;
+                  return (
+                    <span class="score-split" data-split={`${sp.resources}/${sp.commodities}`}>
+                      <CardsIcon /> {sp.resources} resource{sp.resources === 1 ? '' : 's'} · <CardsIcon com /> {sp.commodities} commodit{sp.commodities === 1 ? 'y' : 'ies'}
+                    </span>
+                  );
+                })()
+              ) : (
+                <span>🎴 {p.resourceCount} cards</span>
+              )}
               {!view.ck && <span>🃏 {p.devCardCount} development</span>}
               {sc.rules.largestArmy && !view.ck && <span>⚔️ {p.playedKnights} knights</span>}
               {sc.rules.longestRoute && <span>🛣️ route {view.longestRoute.lengths[p.id] ?? 0}</span>}
@@ -2123,13 +2209,42 @@ function CkHand({ view, seat, desk, onCards }: { view: GameView; seat: PlayerId;
   );
 }
 
-/** A small stack of cards (hand size in the players list). */
-function CardsIcon({ dev }: { dev?: boolean }) {
+/**
+ * Cities & Knights: a player's hand as two public counts, resource cards and
+ * commodity cards (which cards they are stays hidden from everyone else).
+ */
+function CkCards({ view, p }: { view: GameView; p: PlayerId }) {
+  const sp = handSplit(view, p);
+  if (!sp) return null;
+  return (
+    <span class="pm-split" title={`${sp.resources} resource card${sp.resources === 1 ? '' : 's'} and ${sp.commodities} commodit${sp.commodities === 1 ? 'y' : 'ies'} in hand`}>
+      <span class="pm" data-count="resources" aria-label={`${sp.resources} resource cards`}>
+        <CardsIcon /> {sp.resources}
+      </span>
+      <span class="pm pm-com" data-count="commodities" aria-label={`${sp.commodities} commodity cards`}>
+        <CardsIcon com /> {sp.commodities}
+      </span>
+    </span>
+  );
+}
+
+/** A small stack of cards (hand size in the players list): resources, commodities (Cities & Knights) or development cards. */
+function CardsIcon({ dev, com }: { dev?: boolean; com?: boolean }) {
+  const back = dev ? '#4a2f94' : com ? '#8a3d84' : '#e2c98f';
+  const face = dev ? '#7b58d4' : com ? '#f6e7f3' : '#fbf0d0';
+  const line = dev ? '#2b1a5c' : com ? '#4f1f4b' : '#7a5a2e';
   return (
     <svg viewBox="0 0 16 16" class="pm-icon" aria-hidden="true">
-      <rect x="5.2" y="1.6" width="8.4" height="11.4" rx="1.6" transform="rotate(12 9.4 7.3)" fill={dev ? '#4a2f94' : '#e2c98f'} stroke={dev ? '#2b1a5c' : '#7a5a2e'} stroke-width="1" />
-      <rect x="2.4" y="3" width="8.4" height="11.4" rx="1.6" fill={dev ? '#7b58d4' : '#fbf0d0'} stroke={dev ? '#2b1a5c' : '#7a5a2e'} stroke-width="1" />
+      <rect x="5.2" y="1.6" width="8.4" height="11.4" rx="1.6" transform="rotate(12 9.4 7.3)" fill={back} stroke={line} stroke-width="1" />
+      <rect x="2.4" y="3" width="8.4" height="11.4" rx="1.6" fill={face} stroke={line} stroke-width="1" />
       {dev && <circle cx="6.6" cy="8.7" r="2" fill="#f1c140" />}
+      {com && (
+        // a coin on a bolt of cloth: the commodities' look
+        <>
+          <rect x="3.6" y="9.4" width="6" height="3" rx="1" fill="#a24f9a" />
+          <circle cx="6.6" cy="7" r="2" fill="#f1c140" stroke="#a87a10" stroke-width="0.7" />
+        </>
+      )}
     </svg>
   );
 }

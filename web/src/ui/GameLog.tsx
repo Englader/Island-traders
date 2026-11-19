@@ -1,6 +1,7 @@
-import { PROGRESS_CARDS, PROGRESS_CARD_NAMES, type Card, type GameView, type PlayerId, type ProgressCardName } from 'engine';
+import { PROGRESS_CARDS, PROGRESS_CARD_NAMES, type Card, type GameView, type HexId, type PlayerId, type ProgressCardName } from 'engine';
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { swapOf } from '../game/ck';
 import type { PlayerColor } from '../game/seats';
 import { Die } from './common';
 import { ResGlyph } from './icons';
@@ -16,6 +17,8 @@ export interface LogItem {
   turn?: { n: number | null; label: string };
   /** Seen only by some players (a stolen or drawn card). */
   secret: boolean;
+  /** Cities & Knights: the two hexes whose numbers the line swapped (tap it to see them on the board). */
+  hexes?: [HexId, HexId];
 }
 
 const TURN = /^---\s*(?:Turn (\d+):\s*)?(.*?)\s*---$/;
@@ -32,7 +35,8 @@ export function logItems(view: GameView, limit = 300): LogItem[] {
       continue;
     }
     const who = view.players.find((p) => e.msg.startsWith(p.name + ' ') || e.msg.startsWith('(' + p.name + ' '));
-    out.push({ key: i, msg: e.msg, who: who?.id ?? null, secret: !!e.visibleTo });
+    const hexes = swapOf(e);
+    out.push({ key: i, msg: e.msg, who: who?.id ?? null, secret: !!e.visibleTo, ...(hexes ? { hexes } : {}) });
   }
   return out;
 }
@@ -43,13 +47,17 @@ type Tok =
   | { t: 'roll'; n: number; a: number; b: number; verb: string }
   | { t: 'res'; n: number | null; r: Card }
   /** Cities & Knights: a progress card's name, in its deck's colour. */
-  | { t: 'card'; s: string; card: ProgressCardName };
+  | { t: 'card'; s: string; card: ProgressCardName }
+  /** Cities & Knights: a number token and where it lies (the Inventor's swap). */
+  | { t: 'token'; n: number; where: string };
 
 /** Resources, and the Cities & Knights commodities. */
 const RES = '(brick|lumber|wool|grain|ore|paper|cloth|coin)';
 /** Progress card names, longest first ("Merchant Fleet" before "Merchant"). */
 const CARD_TITLES = PROGRESS_CARD_NAMES.map((c) => PROGRESS_CARDS[c].title).sort((a, b) => b.length - a.length);
 const CARD_BY_TITLE = new Map(PROGRESS_CARD_NAMES.map((c) => [PROGRESS_CARDS[c].title, c]));
+/** "the 9 on the hills": a number token on a tile (the engine's Inventor line). */
+const TOKEN_AT = 'the (\\d+) ((?:on|in) the (?:hills|forest|pasture|fields|mountains|gold field|desert))';
 const WORDISH = /[\p{L}\p{N}]/u;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -62,7 +70,7 @@ function pattern(view: GameView) {
     const names = view.players.filter((p) => p.name).sort((a, b) => b.name.length - a.name.length);
     const alt = names.length > 0 ? names.map((p) => escape(p.name)).join('|') : '[^\\s\\S]';
     const cards = CARD_TITLES.map(escape).join('|');
-    const re = new RegExp(`(${alt})|(rolls|sets the dice to) (\\d+) \\((\\d)\\+(\\d)\\)|(\\d+) ${RES}\\b|\\b${RES}\\b|\\b(${cards})\\b`, 'g');
+    const re = new RegExp(`(${alt})|(rolls|sets the dice to) (\\d+) \\((\\d)\\+(\\d)\\)|(\\d+) ${RES}\\b|\\b${RES}\\b|\\b(${cards})\\b|${TOKEN_AT}`, 'g');
     cached = { key, re, names: names.map((p) => ({ id: p.id, name: p.name })) };
   }
   return cached;
@@ -92,7 +100,8 @@ function tokenize(msg: string, view: GameView): Tok[] {
       out.push({ t: 'roll', n: Number(m[3]), a: Number(m[4]), b: Number(m[5]), verb: m[2] });
     } else if (m[6] !== undefined) out.push({ t: 'res', n: Number(m[6]), r: m[7] as Card });
     else if (m[8] !== undefined) out.push({ t: 'res', n: null, r: m[8] as Card });
-    else out.push({ t: 'card', s: m[9], card: CARD_BY_TITLE.get(m[9])! });
+    else if (m[9] !== undefined) out.push({ t: 'card', s: m[9], card: CARD_BY_TITLE.get(m[9])! });
+    else out.push({ t: 'token', n: Number(m[10]), where: m[11] });
     last = m.index + m[0].length;
   }
   if (last < msg.length) out.push({ t: 'text', s: msg.slice(last) });
@@ -123,6 +132,13 @@ export function RichText({ msg, view, colors }: { msg: string; view: GameView; c
                 </span>
               </span>
             );
+          case 'token':
+            return (
+              <span key={i} class="lg-tokat">
+                the{' '}
+                <span class={k.n === 6 || k.n === 8 ? 'lg-token hot' : 'lg-token'}>{k.n}</span> {k.where}
+              </span>
+            );
           case 'card':
             return (
               <b key={i} class={`lg-card deck-${PROGRESS_CARDS[k.card]?.deck ?? 'science'}`}>
@@ -147,8 +163,21 @@ export function RichText({ msg, view, colors }: { msg: string; view: GameView; c
   );
 }
 
-/** One log line or turn divider. */
-export function LogLine({ item, view, colors }: { item: LogItem; view: GameView; colors: PlayerColor[] }) {
+/** One log line or turn divider. A line about board hexes (the Inventor's swap) shows them again when tapped or hovered (`onShow`). */
+export function LogLine({
+  item,
+  view,
+  colors,
+  onShow,
+  hover,
+}: {
+  item: LogItem;
+  view: GameView;
+  colors: PlayerColor[];
+  onShow?(hexes: [HexId, HexId], who: PlayerId | null): void;
+  /** Hovering shows them too (the docked log: the board stays in view). */
+  hover?: boolean;
+}) {
   const pc = item.who !== null ? colors[item.who]?.fill : undefined;
   const style = pc ? ({ '--pc': pc } as Record<string, string>) : undefined;
   if (item.turn) {
@@ -162,8 +191,23 @@ export function LogLine({ item, view, colors }: { item: LogItem; view: GameView;
     );
   }
   const roll = / (rolls|sets the dice to) \d+ \(/.test(item.msg);
+  const hexes = item.hexes;
+  if (hexes && onShow) {
+    const show = () => onShow(hexes, item.who);
+    return (
+      <li class={`lg-e is-swap${pc ? '' : ' system'}`} style={style}>
+        <span class="lg-dot" aria-hidden="true" />
+        <button type="button" class="lg-msg lg-show" onClick={show} onMouseEnter={hover ? show : undefined} title="Show the two numbers on the board" data-swap={hexes.join(' ')}>
+          <RichText msg={item.msg} view={view} colors={colors} />
+          <span class="lg-eye" aria-hidden="true">
+            ⤺
+          </span>
+        </button>
+      </li>
+    );
+  }
   return (
-    <li class={`lg-e${item.secret ? ' secret' : ''}${roll ? ' is-roll' : ''}${pc ? '' : ' system'}`} style={style}>
+    <li class={`lg-e${item.secret ? ' secret' : ''}${roll ? ' is-roll' : ''}${hexes ? ' is-swap' : ''}${pc ? '' : ' system'}`} style={style}>
       <span class="lg-dot" aria-hidden="true" />
       <span class="lg-msg">
         <RichText msg={item.msg} view={view} colors={colors} />
@@ -191,11 +235,14 @@ export function DockedLog({
   colors,
   prefs,
   onPrefs,
+  onShow,
 }: {
   view: GameView;
   colors: PlayerColor[];
   prefs: LogPrefs;
   onPrefs(p: LogPrefs): void;
+  /** Shows a line's hexes on the board again (the Inventor's swap). */
+  onShow?(hexes: [HexId, HexId], who: PlayerId | null): void;
 }) {
   const len = view.log.length;
   const colorKey = colors.map((c) => c.id).join();
@@ -205,11 +252,11 @@ export function DockedLog({
     () => (
       <ol class="glog-list">
         {items.map((it) => (
-          <LogLine key={it.key} item={it} view={view} colors={colors} />
+          <LogLine key={it.key} item={it} view={view} colors={colors} onShow={onShow} hover />
         ))}
       </ol>
     ),
-    [items],
+    [items, onShow],
   );
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLElement>(null);
