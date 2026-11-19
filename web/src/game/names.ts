@@ -129,7 +129,7 @@ export function describeAction(a: Action, view: GameView): string {
       if (stage === 'desert') return 'Remove this knight?';
       if (stage === 'promote') return 'Promote this knight for free?';
       if (stage === 'place') return 'Place your knight here?';
-      if (stage === 'rebuild') return 'Place your road here again?';
+      if (stage === 'rebuild') return `Place your ${diplomatPiece(ph)} here again?`;
       return 'Choose this?';
     }
     default:
@@ -140,4 +140,9 @@ export function describeAction(a: Action, view: GameView): string {
 /** Progress card names (Cities & Knights) for the log and the cards. */
 export function progressTitle(card: string): string {
   return (PROGRESS_CARDS as Record<string, { title: string }>)[card]?.title ?? card;
+}
+
+/** The Diplomat: whether the piece taken up (to place again) is a road or, with Seafarers, a ship. */
+export function diplomatPiece(ph: GameView['phase']): 'road' | 'ship' {
+  return ph.kind === 'ck' && ph.step === 'card' && (ph.data as { kind?: string } | undefined)?.kind === 'ship' ? 'ship' : 'road';
 }

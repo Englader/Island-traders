@@ -42,7 +42,7 @@ export function GameStatsSheet({
     <Sheet title="Game stats" onClose={close} wide>
       <div class="gstats">
         <p class="gs-sub">
-          {view.ck ? 'Cities & Knights' : sc.name} · {view.turn.number} turns · {view.players.length} players{time ? ` · ${formatRough(time.playedMs)}` : ''}
+          {view.ck ? (sc.expansion === 'base' ? 'Cities & Knights' : `${sc.name} + C&K`) : sc.name} · {view.turn.number} turns · {view.players.length} players{time ? ` · ${formatRough(time.playedMs)}` : ''}
         </p>
 
         <Section title="Final scores">

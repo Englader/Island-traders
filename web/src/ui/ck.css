@@ -791,6 +791,56 @@
 .bgrid.five .btile:nth-child(5) {
   grid-column: 1 / -1;
 }
+/*
+ * A side panel that is short even with the players two by two (Cities &
+ * Knights with Seafarers: six build tiles, and five or six buttons with Move
+ * ship or Special): smaller tiles, and the buttons three in a row, the icon
+ * above the label, so that the main button stays on screen.
+ */
+.panel.desk.snug {
+  gap: 8px;
+  padding-top: 10px;
+}
+.panel.desk.snug .tray {
+  gap: 8px;
+  padding-block: 8px;
+}
+.panel.desk.snug .deck {
+  gap: 8px;
+}
+.panel.desk.snug .bgrid {
+  gap: 6px;
+}
+.panel.desk.snug .btile {
+  min-height: 50px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  row-gap: 2px;
+}
+.panel.desk.snug .deck-row.many {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.panel.desk.snug .deck-row.many .dbtn {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 44px;
+  padding: 3px 6px;
+  font-size: 0.82rem;
+}
+.panel.desk.snug .deck-row.many .dbtn.badged .db-icon {
+  margin-right: 0;
+}
+.panel.desk.snug .deck-row.many .dbtn .key {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  transform: scale(0.85);
+  transform-origin: top right;
+}
+.panel.desk.snug .dmain {
+  min-height: 54px;
+}
 .db-icon .gcard.prog {
   width: 16px;
   margin: auto;

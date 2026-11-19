@@ -9,6 +9,7 @@ import {
   TERRAIN_RESOURCE,
   cardRates,
   drawsOn,
+  getScenario,
   getTopologyFor,
   improvementCost,
   type Action,
@@ -548,13 +549,15 @@ export function playAsk(view: GameView, seat: PlayerId, a: PlayAction, second?: 
     }
     case 'diplomat': {
       const piece = view.board.pieces[args.edge as string];
+      // Seafarers: an open ship can be removed too
+      const kind = piece?.type === 'ship' ? 'ship' : 'road';
       if (piece && piece.owner === seat) {
         notes.push('You may place it again somewhere else at once, for free');
-        return play('Take up your road?', 'Yes, take it up');
+        return play(`Take up your ${kind}?`, 'Yes, take it up');
       }
       if (piece) notes.push(`It goes back to ${name(piece.owner)}'s supply`);
-      if (piece && view.longestRoute.holder === piece.owner) notes.push(`${name(piece.owner)} holds the longest road: it may change hands`);
-      return play(piece ? `Remove ${name(piece.owner)}'s road?` : 'Remove this road?', 'Yes, remove');
+      if (piece && view.longestRoute.holder === piece.owner) notes.push(`${name(piece.owner)} holds the ${getScenario(view.scenario).rules.ships ? 'longest trade route' : 'longest road'}: it may change hands`);
+      return play(piece ? `Remove ${name(piece.owner)}'s ${kind}?` : `Remove this ${kind}?`, 'Yes, remove');
     }
     case 'intrigue': {
       const k = ck.knights[args.vertex as VertexId];
@@ -740,8 +743,9 @@ export function playedFx(a: PlayAction, before: GameView, seat: PlayerId | null 
     }
     case 'diplomat': {
       const piece = before.board.pieces[args.edge as string];
-      if (piece && piece.owner !== a.player) return { target: piece.owner, detail: `Removes ${piece.owner === seat ? 'one of your roads' : `a road of ${name(piece.owner)}`}` };
-      return { detail: 'Takes up one of their own roads' };
+      const kind = piece?.type === 'ship' ? 'ship' : 'road';
+      if (piece && piece.owner !== a.player) return { target: piece.owner, detail: `Removes ${piece.owner === seat ? `one of your ${kind}s` : `a ${kind} of ${name(piece.owner)}`}` };
+      return { detail: `Takes up one of their own ${kind}s` };
     }
     case 'inventor': {
       const hs = (args.hexes as HexId[] | undefined) ?? [];
