@@ -26,7 +26,12 @@ import {
  * No drawing here, so it can be tested without a browser.
  */
 
-export const TRACK_LIST: ImprovementTrack[] = ['trade', 'politics', 'science'];
+/**
+ * The three tracks in display order, matching the commodities' order in the
+ * hand (paper, cloth, coin): science, trade, politics. The engine's `TRACKS`
+ * keeps its own order (legal actions, deck shuffles, bots depend on it).
+ */
+export const TRACK_LIST: ImprovementTrack[] = ['science', 'trade', 'politics'];
 
 export interface TrackInfo {
   label: string;

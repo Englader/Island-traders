@@ -142,7 +142,7 @@ describe('the Alchemist', () => {
     expect(pv.draws.politics).toEqual([]);
     expect(rollPreview(v, [1, 4]).draws.science).toEqual([2]);
     const lines = rollPreviewLines(v, 0, pv);
-    expect(lines.draws).toEqual(['Yellow gate: Björn draws a trade card', 'Blue gate: nobody draws', 'Green gate: you and Björn draw a science card']);
+    expect(lines.draws).toEqual(['Green gate: you and Björn draw a science card', 'Yellow gate: Björn draws a trade card', 'Blue gate: nobody draws']);
   });
 });
 

@@ -6,9 +6,9 @@ import { EventDie } from './ckArt';
 
 const EVENT_FACES: Array<{ face: EventFace; label: string; ways: number }> = [
   { face: 'ship', label: 'Ship', ways: 3 },
+  { face: 'science', label: 'Green gate', ways: 1 },
   { face: 'trade', label: 'Yellow gate', ways: 1 },
   { face: 'politics', label: 'Blue gate', ways: 1 },
-  { face: 'science', label: 'Green gate', ways: 1 },
 ];
 
 /** Ways to roll each total with two dice (out of 36). */

@@ -56,6 +56,9 @@ async function checkChart(page: Page, s: GameState): Promise<void> {
   await expect(ada.locator('td[data-track="politics"] b')).toHaveText('4');
   await expect(ada.locator('td[data-track="politics"] .ft-tower')).toHaveCount(1);
   await expect(sheet.locator('.flip-table tbody tr')).toHaveCount(s.players.length);
+  // the tracks in the hand's commodity order: science (paper), trade (cloth), politics (coin)
+  await expect(sheet.locator('.flip-table thead th[scope="col"]')).toHaveText([/Player/, /Science/, /Trade/, /Politics/]);
+  for (const [i, t] of ['science', 'trade', 'politics'].entries()) await expect(sheet.locator('.flip > .flip-col').nth(i)).toHaveClass(new RegExp(`tr-${t}`));
   // never anyone else's commodities
   await expect(sheet).not.toContainText('paper 2');
 }
@@ -68,8 +71,10 @@ async function checkCounts(page: Page, s: GameState): Promise<void> {
     const card = page.locator('.players .player').nth(p.id);
     await expect(card.locator('[data-count="resources"]')).toHaveText(String(res));
     await expect(card.locator('[data-count="commodities"]')).toHaveText(String(com));
-    // and the improvement levels, on every screen
-    await expect(card.locator('.pm-levels .lvl')).toHaveText([String(s.ck!.players[p.id].improvements.trade), String(s.ck!.players[p.id].improvements.politics), String(s.ck!.players[p.id].improvements.science)]);
+    // and the improvement levels, on every screen, in the commodities' order (paper, cloth, coin): science, trade, politics
+    const imp = s.ck!.players[p.id].improvements;
+    await expect(card.locator('.pm-levels .lvl')).toHaveText([String(imp.science), String(imp.trade), String(imp.politics)]);
+    await expect(card.locator('.pm-levels .lvl').first()).toHaveClass(/tr-science/);
   }
 }
 
@@ -82,7 +87,9 @@ test('phone: out of turn, the Improvements button opens your city improvements t
   const button = page.locator('.action-bar').getByRole('button', { name: 'Improvements' });
   await expect(button).toBeVisible();
   await expect(button.locator('.ltracks .lpips')).toHaveCount(3);
-  // trade 2, politics 0, science 3: the pips filled
+  // science, trade, politics, like paper, cloth, coin in the hand
+  for (const [i, t] of ['science', 'trade', 'politics'].entries()) await expect(button.locator('.ltracks .lpips').nth(i)).toHaveClass(new RegExp(`tr-${t}`));
+  // science 3, trade 2, politics 0: the pips filled
   await expect(button.locator('.lpips.tr-trade i.on')).toHaveCount(2);
   await expect(button.locator('.lpips.tr-science i.on')).toHaveCount(3);
   await button.click();

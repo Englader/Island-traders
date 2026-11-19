@@ -1864,7 +1864,7 @@ function CkMeta({ view, p, desk, turnTime, colors }: { view: GameView; p: Player
     </span>
   );
   const levels = (
-    <span class="pm pm-levels" title={`City improvements: trade ${cp.improvements.trade}, politics ${cp.improvements.politics}, science ${cp.improvements.science}`}>
+    <span class="pm pm-levels" title={`City improvements: ${levelsText(view, p)}`}>
       {TRACK_LIST.map((t) => (
         <span key={t} class={`lvl tr-${t}${cp.improvements[t] === 0 ? ' zero' : ''}`}>
           {cp.improvements[t]}

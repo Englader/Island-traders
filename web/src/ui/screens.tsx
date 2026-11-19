@@ -533,8 +533,8 @@ export function RulesSheet({ close }: { close(): void }) {
             can be traded (4:1, 3:1 at a generic harbor) and stolen.
           </li>
           <li>
-            <b>City improvements</b> cost 1–5 of a commodity: <GateGlyph track="trade" /> trade (cloth), <GateGlyph track="politics" /> politics (coin) and{' '}
-            <GateGlyph track="science" /> science (paper). Level 3 gives an ability (2:1 commodities, mighty knights, the Aqueduct); the first to level 4
+            <b>City improvements</b> cost 1–5 of a commodity: <GateGlyph track="science" /> science (paper), <GateGlyph track="trade" /> trade (cloth) and{' '}
+            <GateGlyph track="politics" /> politics (coin). Level 3 gives an ability (the Aqueduct, 2:1 commodities, mighty knights); the first to level 4
             builds the metropolis (+2 VP). Tap <b>Improve</b> (key I) for the three tracks.
           </li>
           <li>
