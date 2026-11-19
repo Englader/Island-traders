@@ -147,7 +147,7 @@ function Gallery() {
           <ShipGlyph />
         </span>
         <span class="dice three" style={{ display: 'flex', gap: '6px' }}>
-          {(['ship', 'trade', 'politics', 'science'] as const).map((f) => (
+          {(['ship', 'science', 'trade', 'politics'] as const).map((f) => (
             <span key={f} style={{ width: '56px', height: '56px', display: 'flex' }}>
               <EventDie face={f} />
             </span>

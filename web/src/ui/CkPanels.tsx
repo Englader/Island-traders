@@ -566,7 +566,7 @@ export function LevelTracks({ view, p }: { view: GameView; p: PlayerId }) {
   );
 }
 
-/** "Trade 2 · Politics 0 · Science 3" for a button's label. */
+/** "Science 3, Trade 2, Politics 0" for a button's label. */
 export function levelsText(view: GameView, p: PlayerId): string {
   const imp = view.ck?.players[p]?.improvements;
   return imp ? TRACK_LIST.map((t) => `${TRACK_INFO[t].label} ${imp[t]}`).join(', ') : '';
