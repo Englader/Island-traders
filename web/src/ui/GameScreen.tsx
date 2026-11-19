@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Board, NO_TARGETS, type Ghost, type PickKind, type SwapLight, type Targets } from '../board/Board';
 import { askFor, progressAsk } from '../game/ask';
 import { PICK_PROMPT, PICK_STATUS, PLAY_KIND, playsOf, smithSeconds, type PlayAction } from '../game/progress';
-import { CARD_INFO, COMMODITY_LIST, RESOURCE_INFO, RESOURCE_LIST, describeAction, harborLabel, progressTitle } from '../game/names';
+import { CARD_INFO, COMMODITY_LIST, RESOURCE_INFO, RESOURCE_LIST, describeAction, diplomatPiece, harborLabel, progressTitle } from '../game/names';
 import { KNIGHT_LABEL, PROGRESS_TEXT, TRACK_INFO, TRACK_LIST, barbarianState, ckPoints, eventText, handSplit, namesList, newestSwap, progressDeck, sevenLimitOf } from '../game/ck';
 import { FX_TIME, mustAct, ROLL_TIMING, SPEED_LABEL, type BotSpeed, type PlayerColor, type SeatKind } from '../game/seats';
 import { loadJson, saveJson } from '../game/storage';
@@ -455,7 +455,7 @@ function ckStatus(view: GameView, seat: PlayerId | null): string {
         }
         if (ph.stage === 'promote') return 'Smith: promote a second knight?';
         if (ph.stage === 'place') return 'Deserter: place your knight?';
-        if (ph.stage === 'rebuild') return 'Diplomat: place your road again?';
+        if (ph.stage === 'rebuild') return `Diplomat: place your ${diplomatPiece(ph)} again?`;
         if (ph.stage === 'take') return ph.card === 'spy' ? 'Spy: take a card, or none' : 'Master Merchant: take your cards';
         return `Finish playing ${title}`;
       }
@@ -803,7 +803,7 @@ export function GameScreen(props: GameScreenProps) {
       const what = `${KNIGHT_LABEL[d?.level ?? 1].toLowerCase()}${d?.active ? ' (active)' : ''}`;
       return { card: ph.card, text: `${tapWord} a spot on your roads for your ${what}`, skip, skipLabel: 'Skip' };
     }
-    if (ph.stage === 'rebuild') return { card: ph.card, text: `${tapWord} where your road goes again, or keep it in your supply`, skip, skipLabel: 'Keep it' };
+    if (ph.stage === 'rebuild') return { card: ph.card, text: `${tapWord} where your ${diplomatPiece(ph)} goes again, or keep it in your supply`, skip, skipLabel: 'Keep it' };
     return { card: ph.card, text: `${tapWord} a highlighted spot`, skip, skipLabel: 'Skip' };
   })();
 
@@ -1126,34 +1126,34 @@ export function GameScreen(props: GameScreenProps) {
       });
   }
 
-  // A short side panel lists the players two by two so the main button stays on screen.
+  // A short side panel lists the players two by two so the main button stays on
+  // screen (tight); if that is not enough (Cities & Knights with Seafarers: six
+  // build tiles and Move ship), the buttons get smaller too (snug).
   const panelRef = useRef<HTMLDivElement>(null);
-  const [tight, setTight] = useState(false);
-  const roomy = useRef(0);
+  const [squeeze, setSqueeze] = useState(0);
+  // how tall the panel was at each roomier level, to go back once there is room
+  const roomy = useRef<number[]>([]);
   useLayoutEffect(() => {
     const el = panelRef.current;
     if (!desk || !el || typeof ResizeObserver === 'undefined') {
-      setTight(false);
+      setSqueeze(0);
       return;
     }
     const check = () => {
-      if (!tight) {
-        if (el.scrollHeight > el.clientHeight + 1) {
-          // remember how tall the roomy layout was, to go back once there is room
-          roomy.current = el.scrollHeight;
-          setTight(true);
-        }
-      } else if (el.clientHeight >= roomy.current) setTight(false);
+      if (squeeze < 2 && el.scrollHeight > el.clientHeight + 1) {
+        roomy.current[squeeze] = el.scrollHeight;
+        setSqueeze(squeeze + 1);
+      } else if (squeeze > 0 && el.clientHeight >= (roomy.current[squeeze - 1] ?? Infinity)) setSqueeze(squeeze - 1);
     };
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [desk, tight, view.players.length, sc.id, primary.length, secondary.length]);
+  }, [desk, squeeze, view.players.length, sc.id, primary.length, secondary.length]);
 
   // Keyboard: Esc closes a sheet or cancels a move; on wide screens R rolls, E ends
   // the turn, T trades, C shows the development cards, B goes to the build tiles,
-  // 1-5 pick one and M turns the sound on or off.
+  // 1-6 pick one and M turns the sound on or off.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
@@ -1584,7 +1584,7 @@ export function GameScreen(props: GameScreenProps) {
         {props.chat}
       </div>
 
-      <div ref={panelRef} class={desk ? (tight ? 'panel desk tight' : 'panel desk') : 'panel'}>
+      <div ref={panelRef} class={desk ? `panel desk${squeeze > 0 ? ' tight' : ''}${squeeze > 1 ? ' snug' : ''}` : 'panel'}>
         <Players view={view} colors={colors} kinds={kinds} seat={seat} desk={desk} clock={live} onOpen={() => setSheet('scores')} />
         {desk && me?.resources ? (
           <div class="tray">
@@ -1875,7 +1875,7 @@ function CkMeta({ view, p, desk, turnTime, colors }: { view: GameView; p: Player
   const awards = (
     <>
       {view.longestRoute.holder === p && (
-        <span class="pm award" title="Longest road">
+        <span class="pm award" title={getScenario(view.scenario).rules.ships ? 'Longest trade route' : 'Longest road'}>
           🛣️
         </span>
       )}
@@ -2044,6 +2044,9 @@ function CkScore({ view, p, colors }: { view: GameView; p: PlayerId; colors: Pla
     else settlements += 1;
   }
   const road = view.longestRoute.holder === p ? 2 : 0;
+  const rules = getScenario(view.scenario).rules;
+  // Seafarers: island chits and the scenario's own points (cloth, wonders)
+  const other = (view.players[p]?.publicVP ?? 0) - settlements - cities - pts.metropolis - pts.defender - pts.cards - pts.merchant - road;
   const parts: Array<[string, number]> = [
     ['Settlements', settlements],
     ['Cities', cities],
@@ -2051,7 +2054,8 @@ function CkScore({ view, p, colors }: { view: GameView; p: PlayerId; colors: Pla
     ['Defender of Catan', pts.defender],
     ['Progress VP cards', pts.cards],
     ['Merchant', pts.merchant],
-    ['Longest road', road],
+    [rules.ships ? 'Longest trade route' : 'Longest road', road],
+    [rules.islandBonus ? 'Islands' : 'Special', other],
   ];
   return (
     <div class="ck-score">

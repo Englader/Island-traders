@@ -171,16 +171,16 @@ export interface DeckProps {
   waiting: boolean;
 }
 
-export const BUILD_KEYS = ['1', '2', '3', '4', '5'];
+export const BUILD_KEYS = ['1', '2', '3', '4', '5', '6'];
 
 /**
  * The build tiles in order, for the grid and the number keys: Seafarers
  * adds the ship; Cities & Knights replaces the development card with the
- * knight and the city wall.
+ * knight and the city wall (both together: six tiles).
  */
 export function buildOrder(view: GameView): Array<BuildPiece | 'dev'> {
-  if (view.ck) return ['road', 'settlement', 'city', 'knight', 'wall'];
-  return getScenario(view.scenario).rules.ships ? ['road', 'ship', 'settlement', 'city', 'dev'] : ['road', 'settlement', 'city', 'dev'];
+  const sea: Array<BuildPiece | 'dev'> = getScenario(view.scenario).rules.ships ? ['road', 'ship'] : ['road'];
+  return [...sea, 'settlement', 'city', ...(view.ck ? (['knight', 'wall'] as const) : (['dev'] as const))];
 }
 
 /** The picture on a build tile. */
@@ -287,7 +287,7 @@ export function ActionDeck(props: DeckProps) {
         })}
       </div>
       {props.secondary.length > 0 && (
-        <div class={props.secondary.length >= 4 ? 'deck-row four' : 'deck-row'}>
+        <div class={props.secondary.length >= 5 ? 'deck-row four many' : props.secondary.length >= 4 ? 'deck-row four' : 'deck-row'}>
           {props.secondary.map((b) => (
             <DeckBtn key={b.key} b={b} cls="dbtn" />
           ))}
