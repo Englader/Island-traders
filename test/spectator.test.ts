@@ -142,6 +142,15 @@ describe('spectators in online games', () => {
         expect(cp).not.toHaveProperty('progress');
         expect(cp).not.toHaveProperty('commodities');
       }
+      // Cities & Knights: how many of a hand are commodities is public (resources = the rest), which ones is not
+      for (const p of msg.snap.view.players) {
+        const cp = msg.snap.view.ck?.players[p.id];
+        if (!cp || !state.ck) continue;
+        const com = Object.values(state.ck.players[p.id].commodities).reduce((a, b) => a + b, 0);
+        const res = Object.values(state.players[p.id].resources).reduce((a, b) => a + b, 0);
+        expect(cp.commodityCount).toBe(com);
+        expect(p.resourceCount - cp.commodityCount).toBe(res);
+      }
       expect(msg.snap.view.log.every((e) => !e.visibleTo)).toBe(true);
       const json = JSON.stringify(msg);
       for (const key of ['"rng"', '"devDeck"', '"devCards"', '"progress"', '"commodities"', '"terrains"', '"visibleTo"']) expect(json).not.toContain(key);

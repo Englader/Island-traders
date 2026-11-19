@@ -1,10 +1,15 @@
 import { RESOURCES } from '../core/constants.js';
 import { formatCounts } from '../core/resources.js';
 import { nextInt } from '../core/rng.js';
-import type { CardCounts, DevCardType, GameState, PartialCounts, PlayerId, Resource } from '../core/types.js';
+import type { CardCounts, DevCardType, GameState, HexId, PartialCounts, PlayerId, Resource } from '../core/types.js';
 
 export function log(state: GameState, msg: string, visibleTo?: PlayerId[]): void {
   state.log.push(visibleTo ? { turn: state.turn.number, msg, visibleTo } : { turn: state.turn.number, msg });
+}
+
+/** A public log line about some board hexes (the screen can point at them). */
+export function logHexes(state: GameState, msg: string, hexes: HexId[]): void {
+  state.log.push({ turn: state.turn.number, msg, hexes: [...hexes] });
 }
 
 export function nameOf(state: GameState, p: PlayerId): string {

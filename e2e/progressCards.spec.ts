@@ -123,13 +123,59 @@ test('the Inventor: pick two numbers on the board, only legal pairs lit, and swa
   for (const h of same) await expect(page.locator(`[data-pick="h:${h}"]`)).toHaveCount(0);
   await page.locator(`[data-pick="h:${b}"]`).click();
   await confirm(page, 'inventor', 'Swap the 3 and the 10?');
-  await expect.poll(() => gameLog(page)).toContain('Sam swaps the 3 and the 10');
+  // the log names both numbers and where they lie
+  const line = `Sam swaps the 3 ${PLACE[s.board.hexes[a].terrain]} ↔ the 10 ${PLACE[s.board.hexes[b].terrain]}`;
+  await expect.poll(() => gameLog(page)).toContain(line);
   await expect(page.locator(`[data-tile="${a}"]`)).toHaveAttribute('data-token', '10');
   await expect(page.locator(`[data-tile="${b}"]`)).toHaveAttribute('data-token', '3');
   const after = await saved(page);
   expect(after.board.hexes[a].token).toBe(10);
   expect(after.board.hexes[b].token).toBe(3);
+  expect(after.log.at(-1)).toMatchObject({ msg: line, hexes: [a, b] });
+  // the board shows the swap for a few seconds: both hexes ringed, the tokens sliding across
+  await expectSwapShown(page, a, b);
+  await expect(page.locator('.swap-light')).toHaveCount(0, { timeout: 12_000 });
+  // tapping the line in the log shows it again
+  await page.getByRole('button', { name: 'Game log' }).click();
+  const show = page.locator(`.sheet .lg-show[data-swap="${a} ${b}"]`);
+  await expect(show).toContainText('Sam swaps the 3');
+  await expect(show.locator('.lg-token')).toHaveText(['3', '10']);
+  await show.click();
+  await expect(page.locator('.sheet')).toHaveCount(0);
+  await expectSwapShown(page, a, b);
 });
+
+test('the Inventor played by a computer player: everyone sees which numbers were swapped', async ({ page }) => {
+  // Ada's turn after her roll, the Inventor her only progress card
+  const s = ckMain(ckAfterSetup('ck-play'));
+  s.turn.actor = 1;
+  giveProgress(s, 1, ['inventor']);
+  await openSave(page, s);
+  await expect.poll(async () => (await gameLog(page)).find((m) => / swaps the /.test(m)) ?? '', { timeout: 60_000 }).toMatch(/^Ada swaps the \d+ (on|in) the [a-z ]+ ↔ the \d+ (on|in) the [a-z ]+$/);
+  const entry = (await saved(page)).log.find((e) => / swaps the /.test(e.msg))!;
+  expect(entry.hexes).toHaveLength(2);
+  await expectSwapShown(page, entry.hexes![0], entry.hexes![1]);
+});
+
+/** Where the engine says a number token lies (src/ck/effects.ts). */
+const PLACE: Record<string, string> = {
+  hills: 'on the hills',
+  forest: 'in the forest',
+  pasture: 'on the pasture',
+  fields: 'in the fields',
+  mountains: 'in the mountains',
+  gold: 'on the gold field',
+};
+
+/** Both swapped hexes are ringed on the board, with an arrow between them and their tokens sliding in. */
+async function expectSwapShown(page: Page, a: string, b: string): Promise<void> {
+  await expect(page.locator(`svg.board .swap-rings[data-swap="${a} ${b}"]`)).toHaveCount(1);
+  await expect(page.locator('svg.board [data-swap-hex]')).toHaveCount(2);
+  await expect(page.locator(`svg.board [data-swap-hex="${a}"]`)).toHaveCount(1);
+  await expect(page.locator(`svg.board [data-swap-hex="${b}"]`)).toHaveCount(1);
+  await expect(page.locator('svg.board .swap-arrow')).toHaveCount(1);
+  await expect(page.locator('svg.board .token.swap-fly')).toHaveCount(2);
+}
 
 test("the Diplomat: an open road is lit; Ada's goes back to her", async ({ page }) => {
   const s = withCards(['diplomat']);

@@ -37,7 +37,7 @@ import { Cost, Die, ResIcon, Sheet, cleanCounts } from './common';
 import { GateGlyph, HelmIcon, KnightGlyph, ProgressCardView, ShipGlyph, TowerGlyph } from './ckArt';
 import { ResGlyph } from './icons';
 import { ForcedSheet, PeekLine, PickCards } from './sheets';
-import { hasCrane, improvementPriceOf, progressWhy } from '../game/progress';
+import { hasCrane, improvementPriceOf, progressWhy, trackStatus } from '../game/progress';
 import './ck.css';
 
 /*
@@ -309,6 +309,9 @@ function TrackColumn({
 }) {
   const ck = view.ck!;
   const info = TRACK_INFO[track];
+  // out of turn (or watching) the chart is for looking: what the next level costs, no button
+  const readOnly = seat === null || later !== null;
+  const status = seat !== null ? trackStatus(view, seat, track) : null;
   const mine = seat !== null ? ck.players[seat].improvements[track] : 0;
   const have = seat !== null ? (handOfView(view, seat)[info.commodity] ?? 0) : 0;
   const metro = ck.metropolises[track];
@@ -321,7 +324,8 @@ function TrackColumn({
     <section
       class={`flip-col tr-${track}`}
       style={{ '--tc': info.fill, '--tcd': info.dark, '--tcl': info.light } as Record<string, string>}
-      aria-label={`${info.label}: your level ${mine}`}
+      aria-label={seat !== null ? `${info.label}: your level ${mine} of ${MAX_IMPROVEMENT}` : info.label}
+      data-level={seat !== null ? mine : undefined}
     >
       <header class="flip-head">
         <span class="flip-gate">
@@ -330,6 +334,11 @@ function TrackColumn({
         <span class="flip-name">
           <b>{info.label}</b>
           <span class="flip-sub">
+            {seat !== null && (
+              <span class="flip-mine" title={`Your ${info.label.toLowerCase()} level`}>
+                {mine}/{MAX_IMPROVEMENT}
+              </span>
+            )}
             <ResGlyph r={info.commodity} /> {info.commodity}
             <span class="flip-color"> · {info.colorName}</span>
           </span>
@@ -359,7 +368,12 @@ function TrackColumn({
                   </span>
                   <Draws level={level} />
                 </span>
-                {level === ABILITY_LEVEL && <span class="fl-ability">{info.ability}</span>}
+                {level === ABILITY_LEVEL && (
+                  <span class={seat !== null && mine >= ABILITY_LEVEL ? 'fl-ability on' : 'fl-ability'}>
+                    {info.ability}
+                    {seat !== null && mine >= ABILITY_LEVEL && <b class="fl-on"> · yours</b>}
+                  </span>
+                )}
                 {level >= METROPOLIS_LEVEL && (
                   <span class="fl-metro">
                     {holder !== null ? (
@@ -392,6 +406,18 @@ function TrackColumn({
       {seat !== null &&
         (mine >= MAX_IMPROVEMENT ? (
           <p class="flip-done">All five built</p>
+        ) : readOnly && status?.next ? (
+          <p class={status.next.short === 0 ? 'flip-next ok' : 'flip-next short'} data-track={track}>
+            <span class="fn-l">
+              Next: <b>{status.next.name}</b>
+            </span>
+            <span class="fn-cost" title={`${status.next.cost} ${info.commodity}`}>
+              {status.next.cost === 0 ? 'free' : <Cost cost={{ [info.commodity]: status.next.cost }} />}
+            </span>
+            <span class="fn-pay">
+              {status.next.short === 0 ? `✓ you have ${status.next.have}` : `you have ${status.next.have} · need ${status.next.short} more`}
+            </span>
+          </p>
         ) : (
           <button type="button" class="primary flip-buy" disabled={!can} title={why ?? undefined} onClick={onBuy} data-track={track}>
             <span class="fb-l">Build {improvementName(track, next)}</span>
@@ -399,7 +425,7 @@ function TrackColumn({
             {crane && improvementPriceOf(view, seat!, next) === 0 ? <span class="fb-free">free</span> : <Cost cost={{ [info.commodity]: crane ? improvementPriceOf(view, seat!, next) : improvementCost(next) }} />}
           </button>
         ))}
-      {seat !== null && why && mine < MAX_IMPROVEMENT && <p class="flip-why">{why}</p>}
+      {seat !== null && !readOnly && why && mine < MAX_IMPROVEMENT && <p class="flip-why">{why}</p>}
     </section>
   );
 }
@@ -428,8 +454,14 @@ export function ImprovementsSheet({
   onBuy(track: ImprovementTrack): void;
   close(): void;
 }) {
+  const readOnly = seat === null || later !== null;
   return (
     <Sheet title="City improvements" onClose={close} wide>
+      {readOnly && (
+        <p class="flip-off" role="status">
+          {seat === null ? 'Watching: everyone’s levels are public, their commodities are not.' : `${later}. You can look any time; improvements are built on your turn.`}
+        </p>
+      )}
       <p class="hint flip-lead">
         Pay commodities to improve your cities. Each level draws progress cards on more red results; level 3 gives an ability; the first to level 4
         builds the metropolis (+2 VP). You need a city to build them.
@@ -449,14 +481,95 @@ export function ImprovementsSheet({
         ))}
       </div>
       <ul class="flip-notes">
-        {TRACK_LIST.map((t) => (
-          <li key={t}>
-            <GateGlyph track={t} /> <b>{improvementName(t, ABILITY_LEVEL)}</b>: {TRACK_INFO[t].abilityText}
-          </li>
-        ))}
+        {TRACK_LIST.map((t) => {
+          const on = seat !== null && (view.ck!.players[seat]?.improvements[t] ?? 0) >= ABILITY_LEVEL;
+          return (
+            <li key={t} class={on ? 'on' : undefined} data-ability={t}>
+              <GateGlyph track={t} /> <b>{improvementName(t, ABILITY_LEVEL)}</b>: {TRACK_INFO[t].abilityText}
+              {seat !== null && <span class={on ? 'fn-state on' : 'fn-state'}>{on ? 'yours' : `at level ${ABILITY_LEVEL}`}</span>}
+            </li>
+          );
+        })}
       </ul>
+      <LevelsTable view={view} seat={seat} colors={colors} />
     </Sheet>
   );
+}
+
+/** Everyone's levels (public) and metropolises, one row per player. */
+function LevelsTable({ view, seat, colors }: { view: GameView; seat: PlayerId | null; colors: PlayerColor[] }) {
+  const ck = view.ck!;
+  return (
+    <table class="flip-table" aria-label="Everyone's city improvements">
+      <thead>
+        <tr>
+          <th scope="col">Player</th>
+          {TRACK_LIST.map((t) => (
+            <th key={t} scope="col" class={`tr-${t}`}>
+              <GateGlyph track={t} /> {TRACK_INFO[t].label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {view.players.map((p) => (
+          <tr key={p.id} data-player={p.id}>
+            <th scope="row">
+              <Dot color={colors[p.id]} /> {p.id === seat ? 'You' : p.name}
+            </th>
+            {TRACK_LIST.map((t) => {
+              const lv = ck.players[p.id]?.improvements[t] ?? 0;
+              const metro = ck.metropolises[t]?.owner === p.id;
+              return (
+                <td key={t} data-track={t} class={lv === 0 ? 'zero' : undefined}>
+                  <LevelPips level={lv} track={t} />
+                  <b>{lv}</b>
+                  {metro && (
+                    <span class="ft-tower" title={`The ${t} metropolis`}>
+                      <TowerGlyph track={t} fill={colors[p.id].fill} stroke={colors[p.id].stroke} />
+                    </span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** One track as five little pips, the built levels filled. */
+function LevelPips({ level, track }: { level: number; track: ImprovementTrack }) {
+  return (
+    <span class={`lpips tr-${track}`} aria-hidden="true">
+      {Array.from({ length: MAX_IMPROVEMENT }, (_, i) => (
+        <i key={i} class={i < level ? 'on' : undefined} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * A player's three improvement tracks in a few pixels (five pips each, in the
+ * tracks' colours): the always-there button that opens the flip chart.
+ */
+export function LevelTracks({ view, p }: { view: GameView; p: PlayerId }) {
+  const imp = view.ck?.players[p]?.improvements;
+  if (!imp) return null;
+  return (
+    <span class="ltracks" aria-hidden="true">
+      {TRACK_LIST.map((t) => (
+        <LevelPips key={t} level={imp[t]} track={t} />
+      ))}
+    </span>
+  );
+}
+
+/** "Trade 2 · Politics 0 · Science 3" for a button's label. */
+export function levelsText(view: GameView, p: PlayerId): string {
+  const imp = view.ck?.players[p]?.improvements;
+  return imp ? TRACK_LIST.map((t) => `${TRACK_INFO[t].label} ${imp[t]}`).join(', ') : '';
 }
 
 // --- progress cards --------------------------------------------------------------------------------

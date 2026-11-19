@@ -2151,3 +2151,314 @@ button.turn-chip {
 .panel:not(.desk) .turn-chip {
   flex: none;
 }
+/* the game log: the Inventor's swap, its numbers as little tokens; tap (or hover) the line to see it on the board */
+.lg-token {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.25em;
+  border-radius: 999px;
+  background: #f6ecd2;
+  border: 1.5px solid #b9a674;
+  color: #1d1a14;
+  font-family: var(--display);
+  font-size: 0.9em;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: 0.05em;
+}
+.lg-token.hot {
+  color: #c62828;
+}
+.lg-tokat {
+  white-space: nowrap;
+}
+.lg-show {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lg-show:hover,
+.lg-show:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.lg-eye {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4em;
+  height: 1.4em;
+  margin-left: 0.35em;
+  border-radius: 999px;
+  background: var(--pc, #e9b726);
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 800;
+  vertical-align: 0.05em;
+}
+/* --- city improvements any time: the read-only chart, everyone's levels, the little tracks ------------- */
+.flip-off {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--chip);
+  border: 1px dashed var(--line);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.flip-mine {
+  flex: none;
+  margin-right: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tc);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.flip-col.tr-trade .flip-mine {
+  color: #2b1d00;
+}
+.flip-next {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 7px;
+  border-radius: 10px;
+  border: 1.5px solid color-mix(in srgb, var(--tc) 60%, var(--line));
+  background: var(--panel);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+.flip-next .fn-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.flip-next .fn-pay {
+  font-weight: 800;
+}
+.flip-next.ok .fn-pay {
+  color: #2e7d32;
+}
+.flip-next.short .fn-pay {
+  color: #b2402a;
+}
+.fl-ability.on {
+  font-weight: 700;
+}
+.fl-on {
+  color: inherit;
+  font-weight: 800;
+}
+.flip-notes li.on {
+  font-weight: 600;
+}
+.fn-state {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fn-state.on {
+  background: #2e7d32;
+  border-color: #1b5e20;
+  color: #fff;
+}
+.flip-table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.flip-table th,
+.flip-table td {
+  padding: 4px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.flip-table thead th {
+  font-size: 0.72rem;
+  color: var(--ink-2);
+}
+.flip-table thead .gate-glyph {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+.flip-table td {
+  font-variant-numeric: tabular-nums;
+}
+.flip-table td b {
+  margin-left: 4px;
+}
+.flip-table td.zero {
+  opacity: 0.55;
+}
+.flip-table .dot {
+  vertical-align: -1px;
+}
+.ft-tower {
+  display: inline-block;
+  width: 9px;
+  height: 16px;
+  margin-left: 3px;
+  vertical-align: -3px;
+}
+.ft-tower svg {
+  width: 100%;
+  height: 100%;
+}
+.lpips {
+  display: inline-flex;
+  gap: 1.5px;
+  vertical-align: middle;
+}
+.lpips i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1.5px;
+  background: color-mix(in srgb, var(--lc) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc) 70%, transparent);
+}
+.lpips i.on {
+  background: var(--lc);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+.lpips.tr-trade {
+  --lc: #e2ad16;
+}
+.lpips.tr-politics {
+  --lc: #3b78c9;
+}
+.lpips.tr-science {
+  --lc: #3f9a4a;
+}
+.ltracks {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 4px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+.ltracks .lpips i {
+  width: 6px;
+  height: 5px;
+}
+/* the button that opens the chart out of turn (phones) and for someone watching */
+.action-bar > .action.levels:only-child {
+  flex-direction: row;
+  gap: 10px;
+  min-height: 46px;
+  font-size: 0.85rem;
+}
+.spectating {
+  flex-wrap: wrap;
+}
+.ltracks-row {
+  display: inline-flex;
+  gap: 4px;
+}
+.action .ai-tracks {
+  display: grid;
+  place-items: center;
+}
+.levels-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+/* hand split in the players list: resource cards and commodity cards, two stacks */
+.pm-com .pm-icon {
+  width: 15px;
+  height: 15px;
+}
+.pm-split {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pm-split .pm {
+  gap: 2px;
+}
+.score-split {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.score-split .pm-icon {
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+}
+/* the Inventor's line in the feed over the board may take two lines: both numbers stay readable */
+.feed-line.swap {
+  white-space: normal;
+  align-items: flex-start;
+}
+.feed-line.swap .feed-dot {
+  margin-top: 0.45em;
+}
+.feed-line.swap .feed-text {
+  overflow: visible;
+}
+/* the little tracks as a side-panel button's icon */
+.db-icon:has(.ltracks) {
+  width: auto;
+}
+.db-icon .ltracks {
+  padding: 2px 3px;
+  gap: 1.5px;
+}
+.db-icon .ltracks .lpips {
+  gap: 1px;
+}
+.db-icon .ltracks .lpips i {
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+}
+/* wide screens: the hand split takes a little more room on the first line; the knights lead the second, which wraps when a player holds many awards */
+.panel.desk .pmeta.ck-meta,
+.panel.desk .pmeta.ck-awards {
+  gap: 6px;
+}
+.panel.desk .pmeta.ck-awards {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.panel.desk .pm-kn .pm-sub {
+  display: none;
+}
+.panel.desk .pm-split {
+  gap: 4px;
+}
+.panel.desk .pm-split .pm-icon {
+  width: 13px;
+  height: 13px;
+}

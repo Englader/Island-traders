@@ -136,6 +136,8 @@ export function cuesFor(action: Action, before: GameView, after: GameView, seat:
         break;
       case 'progPlay':
         add('cardPlay', 'fx', { quiet: !mine && e.target !== seat });
+        // the Inventor: the tokens slide across on the board once the card has been shown
+        if (e.card === 'inventor') add('swap', 'fx', { beat: 1 });
         break;
       case 'improve':
         if (e.metropolis) add('metropolis', 'fx', { beat: 0.1, quiet: false });

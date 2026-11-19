@@ -132,6 +132,11 @@ export type GuestMessage =
  * no hands, no cards, no legal moves). Hosts list who is watching in
  * `watching` on lobby and state messages; older guests ignore it. All of it
  * is optional, so PROTOCOL stays 3.
+ *
+ * Cities & Knights: a log line may carry `hexes` (the Inventor's two swapped
+ * numbers), which the board lights for everyone; older guests ignore it, and
+ * a newer guest of an older host finds the hexes in the move itself
+ * (`last.action.args.hexes`). Also optional: PROTOCOL stays 3.
  */
 
 export type HostMessage =

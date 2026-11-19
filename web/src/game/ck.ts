@@ -11,7 +11,9 @@ import {
   type Commodity,
   type EventFace,
   type GameView,
+  type HexId,
   type ImprovementTrack,
+  type LogEntry,
   type KnightLevel,
   type PlayerId,
   type ProgressCardName,
@@ -263,3 +265,33 @@ export const KNIGHT_COST = CK_COSTS.knight;
 export const ACTIVATE_COST = CK_COSTS.activate;
 export const PROMOTE_COST = CK_COSTS.promote;
 export const WALL_COST = CK_COSTS.cityWall;
+
+/**
+ * A player's hand in two public counts: resource cards and commodity cards.
+ * Which cards they are stays hidden (only the owner sees them); null outside
+ * Cities & Knights, where the hand is one count.
+ */
+export function handSplit(view: GameView, p: PlayerId): { resources: number; commodities: number } | null {
+  const cp = view.ck?.players[p];
+  const pl = view.players[p];
+  if (!cp || !pl) return null;
+  return { resources: Math.max(0, pl.resourceCount - cp.commodityCount), commodities: cp.commodityCount };
+}
+
+/** The two hexes a log line points at (the Inventor's swap), if it does. */
+export function swapOf(e: LogEntry | undefined): [HexId, HexId] | null {
+  const h = e?.hexes;
+  return Array.isArray(h) && h.length === 2 && typeof h[0] === 'string' && typeof h[1] === 'string' && h[0] !== h[1] ? [h[0], h[1]] : null;
+}
+
+/** The newest swap among the log lines from `from` on, with its index. */
+export function newestSwap(view: GameView, from: number): { at: number; hexes: [HexId, HexId]; by: PlayerId | null } | null {
+  for (let i = view.log.length - 1; i >= Math.max(0, from); i--) {
+    const hexes = swapOf(view.log[i]);
+    if (!hexes) continue;
+    const msg = view.log[i].msg;
+    const who = view.players.find((p) => p.name && msg.startsWith(p.name + ' '));
+    return { at: i, hexes, by: who?.id ?? null };
+  }
+  return null;
+}

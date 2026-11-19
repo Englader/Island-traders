@@ -16,7 +16,7 @@ import type {
   VertexId,
 } from '../core/types.js';
 import { legalCities, legalEdgePlacements, legalRoads, legalShips } from '../engine/placements.js';
-import { describeCounts, log, nameOf, payFromBank } from '../rules/helpers.js';
+import { describeCounts, log, logHexes, nameOf, payFromBank } from '../rules/helpers.js';
 import { updateLongestRoute } from '../rules/longestRoute.js';
 import { handSize, legalRobberMoves, publicVP, topo } from '../rules/queries.js';
 import { commodityCount } from './basics.js';
@@ -199,6 +199,22 @@ registerProgressEffect('engineer', {
 /** Number tokens the Inventor never moves (p. 14). */
 const FIXED_TOKENS = new Set([2, 12, 6, 8]);
 
+/** Where a number token lies, for the log ("the 9 on the hills"). */
+const TOKEN_PLACE: Partial<Record<Terrain, string>> = {
+  hills: 'on the hills',
+  forest: 'in the forest',
+  pasture: 'on the pasture',
+  fields: 'in the fields',
+  mountains: 'in the mountains',
+  gold: 'on the gold field',
+  desert: 'in the desert',
+};
+
+function tokenPlace(s: GameState, h: HexId): string {
+  const t = s.board.hexes[h].terrain;
+  return TOKEN_PLACE[t] ?? `on the ${t}`;
+}
+
 function swappableHexes(s: GameState): HexId[] {
   return Object.keys(s.board.hexes)
     .filter((h) => {
@@ -235,7 +251,8 @@ registerProgressEffect('inventor', {
     if (ta === tb) return 'choose two different numbers';
     s.board.hexes[a].token = tb;
     s.board.hexes[b].token = ta;
-    log(s, `${nameOf(s, p)} swaps the ${ta} and the ${tb}`);
+    // the swap is public: the line names both numbers and where they lie, and carries the hexes for the screen
+    logHexes(s, `${nameOf(s, p)} swaps the ${ta} ${tokenPlace(s, a)} ↔ the ${tb} ${tokenPlace(s, b)}`, [a, b]);
     return null;
   },
 });

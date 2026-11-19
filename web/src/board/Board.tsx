@@ -50,6 +50,21 @@ export interface Ghost {
   track?: ImprovementTrack;
 }
 
+/**
+ * Two number tokens just swapped (the Inventor), shown to everyone: both hexes
+ * ringed, an arrow between them and the tokens sliding into place. A new `key`
+ * plays it again (tapping the line in the log).
+ */
+export interface SwapLight {
+  a: HexId;
+  b: HexId;
+  key: number;
+  /** Who swapped them (the colour of the rings), if known. */
+  by: number | null;
+  /** Ms before it starts (while the played card is shown); the tokens wait on their old hexes. */
+  delay?: number;
+}
+
 /** Where a metropolis tower stands beside its city. */
 const TOWER_AT = { x: 0.2, y: -0.01 };
 
@@ -73,6 +88,8 @@ interface Props {
   selectedHex?: string | null;
   /** The number tokens are what is picked (the Inventor): the tokens of target hexes are ringed, the others dimmed. */
   focusTokens?: boolean;
+  /** Two numbers just swapped, highlighted for a few seconds. */
+  swap?: SwapLight | null;
 }
 
 interface Pt {
@@ -200,7 +217,7 @@ export function useTurned(layoutKey: string | null): boolean {
   return tall && aspect > 1.15;
 }
 
-export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned, selected, selectedHex, focusTokens }: Props) {
+export function Board({ view, colors, targets, accent, ghost, flash, onPick, tools, turned, selected, selectedHex, focusTokens, swap }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 360, h: 360 });
@@ -456,6 +473,57 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
       return null;
     }
 
+    // The Inventor's swap: both hexes ringed (under the tokens), an arrow between them (over everything)
+    const sw = swap && hexPts[swap.a] && hexPts[swap.b] && swap.a !== swap.b ? swap : null;
+    const swCol = sw ? (sw.by !== null ? color(sw.by).fill : '#ffe066') : '';
+    const swDelay = sw ? ({ '--swap-delay': `${Math.max(0, Math.round(sw.delay ?? 0))}ms` } as Record<string, string>) : undefined;
+    const swapRings = sw && (
+      <g key={`swr${sw.key}`} class="swap-light swap-rings" data-swap={`${sw.a} ${sw.b}`} style={swDelay}>
+        {[sw.a, sw.b].map((h) => (
+          <g key={h} data-swap-hex={h}>
+            <polygon points={polygon(hexPts[h])} class="swap-hex-glow" />
+            <polygon points={polygon(scaleAround(hexPts[h], centers[h], 0.94))} class="swap-hex" stroke={swCol} />
+          </g>
+        ))}
+      </g>
+    );
+    const swapArrow = (() => {
+      if (!sw) return null;
+      const p = centers[sw.a];
+      const q = centers[sw.b];
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < 0.5) return null;
+      const ux = (q.x - p.x) / d;
+      const uy = (q.y - p.y) / d;
+      // a gentle arc, bowed to one side, starting and ending just off the tokens
+      const bow = Math.min(1.1, 0.18 * d + 0.25);
+      const m = { x: (p.x + q.x) / 2 - uy * bow, y: (p.y + q.y) / 2 + ux * bow };
+      const off = 0.42;
+      const start = { x: p.x + (m.x - p.x) * (off / Math.hypot(m.x - p.x, m.y - p.y)), y: p.y + (m.y - p.y) * (off / Math.hypot(m.x - p.x, m.y - p.y)) };
+      const end = { x: q.x + (m.x - q.x) * (off / Math.hypot(m.x - q.x, m.y - q.y)), y: q.y + (m.y - q.y) * (off / Math.hypot(m.x - q.x, m.y - q.y)) };
+      const path = `M${fmt(start.x)} ${fmt(start.y)} Q${fmt(m.x)} ${fmt(m.y)} ${fmt(end.x)} ${fmt(end.y)}`;
+      // arrowheads at both ends, along the curve's tangents
+      const head = (tip: Pt, from: Pt) => {
+        const l = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
+        const tx = (tip.x - from.x) / l;
+        const ty = (tip.y - from.y) / l;
+        const s2 = 0.17;
+        const w = 0.1;
+        const a = { x: tip.x - tx * s2 - ty * w, y: tip.y - ty * s2 + tx * w };
+        const c = { x: tip.x - tx * s2 + ty * w, y: tip.y - ty * s2 - tx * w };
+        return `M${fmt(a.x)} ${fmt(a.y)} L${fmt(tip.x)} ${fmt(tip.y)} L${fmt(c.x)} ${fmt(c.y)}`;
+      };
+      const heads = `${head(start, m)} ${head(end, m)}`;
+      return (
+        <g key={`swa${sw.key}`} class="swap-light swap-arrow-g" aria-hidden="true" style={swDelay}>
+          <path d={path} class="swap-arrow-halo" />
+          <path d={heads} class="swap-arrow-halo" />
+          <path d={path} class="swap-arrow" stroke={swCol} />
+          <path d={heads} class="swap-arrow-head" stroke={swCol} />
+        </g>
+      );
+    })();
+
     // Pieces are drawn back to front as well.
     const pieces = Object.entries(b.pieces)
       .filter(([e]) => t.edgeVertices[e])
@@ -514,6 +582,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               pirateIslands.circuit.map((h, i) => (
                 <ellipse key={`c${i}`} cx={centers[h].x} cy={centers[h].y} rx={0.08} ry={0.08 * TILT} class="circuit-dot" />
               ))}
+            {swapRings}
             {/* number tokens: little discs standing on the tiles */}
             {land.map((h) => {
               const hex = b.hexes[h];
@@ -524,8 +593,17 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               const blocked = b.robber === h;
               const r = 0.3;
               const focus = focusTokens ? (targets.hexes.has(h) || selectedHex === h ? ' focus' : ' dim') : '';
+              // a swapped token slides in from the other hex
+              const from = sw && (h === sw.a ? sw.b : h === sw.b ? sw.a : null);
+              const fly = from ? ({ ...swDelay, '--dx': fmt(centers[from].x - c.x), '--dy': fmt(centers[from].y - c.y) } as Record<string, string>) : undefined;
               return (
-                <g key={`tk${h}`} class={(blocked ? 'token blocked' : 'token') + focus}>
+                <g
+                  key={from ? `tk${h}-${sw!.key}` : `tk${h}`}
+                  class={(blocked ? 'token blocked' : 'token') + focus + (from ? ' swap-fly' : '')}
+                  style={fly}
+                  data-swapped={from ? '' : undefined}
+                >
+                  {from && <ellipse cx={c.x} cy={c.y + 0.02} rx={r + 0.08} ry={(r + 0.08) * TILT} class="swap-token-ring" stroke={swCol} />}
                   {focus === ' focus' && <ellipse cx={c.x} cy={c.y + 0.02} rx={r + 0.07} ry={(r + 0.07) * TILT} class="token-focus" stroke={accent} />}
                   <ellipse cx={c.x + 0.03} cy={c.y + 0.07} rx={r} ry={r * TILT} class="token-shadow" />
                   <ellipse cx={c.x} cy={c.y + 0.045} rx={r} ry={r * TILT} class="token-rim" />
@@ -723,6 +801,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
               </g>
             )}
             {flash ? renderFlash(flash) : null}
+            {swapArrow}
             {/* targets */}
             {[...targets.hexes].map((h) =>
               hexPts[h] ? <polygon key={`th${h}`} points={polygon(hexPts[h])} class="target-hex" stroke={accent} data-pick={`h:${h}`} /> : null,
@@ -760,7 +839,7 @@ export function Board({ view, colors, targets, accent, ghost, flash, onPick, too
             )}
       </>
     );
-  }, [view, g, targets, ghost, flash, colors, accent, selected, selectedHex, focusTokens]);
+  }, [view, g, targets, ghost, flash, colors, accent, selected, selectedHex, focusTokens, swap?.key, swap?.a, swap?.b, swap?.by, swap?.delay]);
 
   return (
     <div class="board-wrap" ref={wrap}>
