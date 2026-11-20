@@ -59,7 +59,13 @@ GitHub Actions)
   too, and an adjustable pace, with a feed of their moves
 - Trading with players, including open offers ("who gives me a brick?" or
   "what will you give for my brick?") that the others answer with
-  counter-offers; the trade menu shows your cards
+  counter-offers; the trade menu shows your cards. An offer to you shows
+  your cards as they would be after it and the offerer's hand as far as
+  the table has seen it (card count, VP, and per kind a range from public
+  events only: tap one to ask for it). **Hide** folds the offer, or your
+  half-made counter-offer, into a chip over the board while you look at
+  the players, the log or the dice; the chip opens it again, and nothing is
+  answered for you
 - Official maps: every scenario starts on the set-up map printed in its
   rulebook, or pick **Random** for a new map generated in the scenario's
   style: the same kind of islands in new shapes, with the gold fields,

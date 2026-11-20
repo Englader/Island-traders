@@ -51,6 +51,7 @@ import {
   LogSheet,
   RespondSheet,
   RobAnySheet,
+  offersTo,
   ScenarioSheet,
   TradeSheet,
   type BuildPiece,
@@ -528,6 +529,43 @@ export function GameScreen(props: GameScreenProps) {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [diceFor, setDiceFor] = useState<PlayerId | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  // An offer to you can be hidden while you look around; it stays open until you answer it.
+  // If it goes away meanwhile (withdrawn, traded with someone else, the turn ended), a note says so.
+  const [offerHidden, setOfferHidden] = useState(false);
+  const [offerNote, setOfferNote] = useState<{ key: number; text: string } | null>(null);
+  const myOffers = seat !== null ? offersTo(view, seat) : [];
+  const offerKey = myOffers.map((t) => t.id).join(',');
+  const lastOffers = useRef<{ ids: number[]; from: PlayerId; turn: number; log: number } | null>(null);
+  useEffect(() => {
+    const before = lastOffers.current;
+    if (myOffers.length > 0) {
+      lastOffers.current = { ids: myOffers.map((t) => t.id), from: myOffers[0].from, turn: view.turn.number, log: before?.log ?? view.log.length };
+      return;
+    }
+    lastOffers.current = null;
+    if (!offerHidden) return;
+    setOfferHidden(false);
+    // answered here (from the trade sheet): still on the table, with your answer
+    if (!before || before.ids.some((id) => view.turn.trades.some((t) => t.id === id))) return;
+    const who = view.players[before.from]?.name ?? 'The player';
+    const traded = view.log
+      .slice(before.log)
+      .map((e) => e.msg)
+      .find((m) => m.startsWith(`${who} trades `) && !m.includes(' with the bank '));
+    const partner = traded ? view.players.find((p) => p.id !== before.from && p.id !== seat && traded.includes(` to ${p.name} for `)) : undefined;
+    const text =
+      view.turn.number !== before.turn || view.turn.actor !== before.from
+        ? `${who}'s turn ended: the offer is gone`
+        : partner
+          ? `${who} traded with ${partner.name}: the offer is gone`
+          : `${who} withdrew the offer`;
+    setOfferNote({ key: Date.now(), text });
+  }, [offerKey]);
+  useEffect(() => {
+    if (!offerNote) return;
+    const t = setTimeout(() => setOfferNote(null), 4500);
+    return () => clearTimeout(t);
+  }, [offerNote?.key]);
   // Cities & Knights: a progress card whose choices are made in a sheet (a player, a card kind, the Alchemist's dice)
   const [flow, setFlow] = useState<{ card: ProgressCardName } | null>(null);
   // a choice picked before the card was played, sent once the engine asks for it (the Smith's second knight)
@@ -839,13 +877,11 @@ export function GameScreen(props: GameScreenProps) {
       !legal.some((a) => a.type === 'progressChoice' && (typeof a.args?.vertex === 'string' || typeof a.args?.edge === 'string'))
     )
       forced = <CardChoiceSheet view={view} legal={legal} seat={seat} send={doSend} covered={covered} />;
-    else if (
-      !covered &&
-      ph.kind === 'main' &&
-      view.turn.actor !== seat &&
-      view.turn.trades.some((t) => t.from === view.turn.actor && t.to.includes(seat) && !t.accepted.includes(seat) && !t.rejected.includes(seat))
-    )
-      forced = <RespondSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} />;
+    // an offer to you: it can be hidden (a chip over the board) while you look around, and waits for your answer
+    else if (offersTo(view, seat).length > 0)
+      forced = (
+        <RespondSheet view={view} legal={legal} seat={seat} colors={colors} send={doSend} covered={covered} hidden={offerHidden} onHide={setOfferHidden} />
+      );
   }
   const gameOver = ph.kind === 'gameOver';
 
@@ -1573,6 +1609,11 @@ export function GameScreen(props: GameScreenProps) {
         {hint && !pending && !mode && (
           <div class="mode-hint" role="status">
             {hint}
+          </div>
+        )}
+        {offerNote && (
+          <div class="mode-hint offer-gone" role="status" key={offerNote.key}>
+            {offerNote.text}
           </div>
         )}
         {eventNote && (
