@@ -152,15 +152,13 @@ test('a friend who tries while the host is away gets in once the host is back', 
   await guestCtx.close();
 });
 
-test('open trade: the active player asks what a friend would give for a card; the friend answers and the deal is done', async ({ browser }) => {
-  const { hostCtx, guestCtx, host, guest } = await pages(browser);
-  const code = await openRoom(host);
-  await join(guest, code, 'Trader');
-  await expect(guest.locator('main')).toContainText('Waiting for');
-  await playSetup(host, guest, 'Trader');
-
-  // play until the host or the friend may trade a card the other can answer with a different
-  // one (rolling, moving the robber after a 7, and passing turns until the hands allow it)
+/**
+ * Plays until the host or the friend may trade a card the other can answer
+ * with a different one (rolling, moving the robber after a 7, and passing
+ * turns until the hands allow it): `a` is on turn, `b` the other, `offered`
+ * the kind (0 brick … 4 ore) `a` can give.
+ */
+async function untilTrade(host: Page, guest: Page): Promise<{ a: Page; b: Page; offered: number }> {
   let actor: Page | null = null;
   let other: Page | null = null;
   let offered = -1;
@@ -200,8 +198,17 @@ test('open trade: the active player asks what a friend would give for a card; th
     if (!actor) await host.waitForTimeout(250);
   }
   expect(actor).not.toBeNull();
-  const a = actor!;
-  const b = other!;
+  return { a: actor!, b: other!, offered };
+}
+
+test('open trade: the active player asks what a friend would give for a card; the friend answers and the deal is done', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  await join(guest, code, 'Trader');
+  await expect(guest.locator('main')).toContainText('Waiting for');
+  await playSetup(host, guest, 'Trader');
+
+  const { a, b, offered } = await untilTrade(host, guest);
   const otherName = b === guest ? 'Trader' : 'Host';
 
   // "what will you give for my card?"
@@ -230,6 +237,61 @@ test('open trade: the active player asks what a friend would give for a card; th
   const after = (await a.locator('.your-cards .rtile-n').allTextContents()).map(Number);
   expect(after[offered]).toBe(before[offered] - 1);
   expect(after.reduce((x, y) => x + y, 0)).toBe(before.reduce((x, y) => x + y, 0));
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
+test('a friend hides a trade offer to look around: it waits for their answer, and they are told when it is withdrawn', async ({ browser }) => {
+  const { hostCtx, guestCtx, host, guest } = await pages(browser);
+  const code = await openRoom(host);
+  await join(guest, code, 'Trader');
+  await expect(guest.locator('main')).toContainText('Waiting for');
+  await playSetup(host, guest, 'Trader');
+
+  const { a, b, offered } = await untilTrade(host, guest);
+  const [me, other] = a === host ? ['Host', 'Trader'] : ['Trader', 'Host'];
+  const cards = async (p: Page) => (await p.locator('.hand .rtile:not(.dev) .rtile-n').allTextContents()).map(Number);
+  const theirs = await cards(b);
+  const wanted = theirs.findIndex((m, s) => s !== offered && m > 0);
+  const names = ['Brick', 'Lumber', 'Wool', 'Grain', 'Ore'];
+
+  // one card for one of theirs, to the friend alone
+  await a.getByRole('button', { name: /Trade/ }).first().click();
+  await a.getByRole('button', { name: `Give one more ${names[offered]}` }).click();
+  await a.getByRole('button', { name: `Get one more ${names[wanted]}` }).click();
+  for (const chip of await a.locator('.tto .chip.on').all()) if (!((await chip.textContent()) ?? '').includes(other)) await chip.click();
+  await a.getByRole('button', { name: 'Make offer' }).click();
+  const waiting = a.locator('.offer .status-chip', { hasText: other });
+  await expect(waiting).toContainText('waiting');
+
+  // the friend sees it with the offerer's hand as far as it is known, and hides it
+  const sheet = b.locator('.sheet[aria-label="Trade offer"]');
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator('.seen-head')).toContainText(me);
+  await sheet.getByRole('button', { name: 'Hide the offer' }).click();
+  await expect(sheet).toHaveCount(0);
+  const chip = b.locator('.offer-chip');
+  await expect(chip).toContainText(`${me}'s offer`);
+
+  // the players can be looked at meanwhile; the offer waits for the answer
+  await b.locator('.player', { hasText: me }).click();
+  await expect(b.locator('.sheet[aria-label="Players"]')).toBeVisible();
+  await b.locator('.sheet[aria-label="Players"]').getByRole('button', { name: 'Close' }).click();
+  await expect(chip).toBeVisible();
+  await b.waitForTimeout(2000);
+  await expect(waiting).toContainText('waiting');
+
+  // open again, as it was, and hide it once more
+  await chip.click();
+  await expect(sheet.getByRole('button', { name: 'Accept' })).toBeVisible();
+  await sheet.getByRole('button', { name: 'Hide the offer' }).click();
+  await expect(chip).toBeVisible();
+
+  // the offer is withdrawn: the chip goes, and a note says why
+  await a.locator('.offers .offer', { hasText: 'You give' }).getByRole('button', { name: 'Withdraw' }).click();
+  await expect(chip).toHaveCount(0);
+  await expect(b.locator('.offer-gone')).toHaveText(`${me} withdrew the offer`);
+  await expect(b.locator('.offer-gone')).toHaveCount(0, { timeout: 8000 });
   await hostCtx.close();
   await guestCtx.close();
 });

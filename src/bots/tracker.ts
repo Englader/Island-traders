@@ -45,20 +45,32 @@ interface Tally {
   unC: number;
   /** A Crane was played: the next improvement costs a commodity less. */
   crane: boolean;
+  /**
+   * Cards of each kind surely in the hand: a whole-card lower bound, which a
+   * card of unknown kind leaving lowers for every kind it could have been
+   * (for people, see seenHands; the estimates above don't use it).
+   */
+  sure: Hand;
 }
 
 function freshTally(): Tally {
-  return { known: emptyHand(), unR: 0, unC: 0, crane: false };
+  return { known: emptyHand(), unR: 0, unC: 0, crane: false, sure: emptyHand() };
 }
 
 function cloneTallies(ts: Tally[]): Tally[] {
-  return ts.map((t) => ({ known: { ...t.known }, unR: t.unR, unC: t.unC, crane: t.crane }));
+  return ts.map((t) => ({ known: { ...t.known }, unR: t.unR, unC: t.unC, crane: t.crane, sure: { ...t.sure } }));
 }
 
 const isCom = (k: Card) => (COMMODITIES as readonly string[]).includes(k);
 
 function gain(t: Tally, k: Card, n: number): void {
   t.known[k] += n;
+  t.sure[k] += n;
+}
+
+/** Up to `n` cards of each of `kinds` may have left the hand. */
+function unsure(t: Tally, n: number, kinds: readonly Card[] = CARDS): void {
+  for (const k of kinds) t.sure[k] = Math.max(0, t.sure[k] - n);
 }
 
 function gainAll(t: Tally, c: CardCounts): void {
@@ -67,6 +79,7 @@ function gainAll(t: Tally, c: CardCounts): void {
 
 /** Specific cards leave the hand: from the known ones first, then from the unknown ones. */
 function pay(t: Tally, k: Card, n: number): void {
+  unsure(t, n, [k]);
   const known = Math.min(t.known[k], n);
   t.known[k] -= known;
   const rest = n - known;
@@ -87,6 +100,7 @@ function size(t: Tally): number {
 
 /** `n` cards of unknown kind leave the hand: each kind loses its share. Returns how many were resources. */
 function loseUnknown(t: Tally, n: number): number {
+  unsure(t, n);
   const all = size(t);
   if (all <= 0) return n;
   const f = Math.min(1, n / all);
@@ -115,9 +129,9 @@ function moveUnknown(from: Tally, to: Tally, n: number): void {
 /** Player names, longest first; a name two players share is ambiguous (-1). */
 export type Names = Array<[string, PlayerId]>;
 
-const namesCache = new WeakMap<GameState['players'], Names>();
+const namesCache = new WeakMap<Followed['players'], Names>();
 
-export function namesOf(s: GameState): Names {
+export function namesOf(s: Pick<Followed, 'players'>): Names {
   let n = namesCache.get(s.players);
   if (n) return n;
   const count = new Map<string, number>();
@@ -177,8 +191,19 @@ const BUILD_COSTS: Array<[string, CardCounts]> = [
   [' builds a city wall', CK_COSTS.cityWall],
 ];
 
+/**
+ * What following the hands needs: the log as the seat sees it, the players'
+ * names, and whether it is a Cities & Knights game. A GameState has it, and
+ * so has a seat's GameView (the web app follows the hands from its own view).
+ */
+export interface Followed {
+  log: LogEntry[];
+  players: ReadonlyArray<{ id: PlayerId; name: string }>;
+  ck?: unknown;
+}
+
 interface Reader {
-  s: GameState;
+  s: Followed;
   me: PlayerId;
   names: Names;
   log: LogEntry[];
@@ -247,7 +272,11 @@ function read(r: Reader, ts: Tally[], i: number): void {
     const m = /^(brick|lumber|wool|grain|ore) and collects (\d+)$/.exec(msg.slice(at));
     if (!m) return;
     const k = m[1] as Card;
-    for (const o of ts) if (o !== t) o.known[k] = 0;
+    for (const o of ts) {
+      if (o === t) continue;
+      o.known[k] = 0;
+      o.sure[k] = 0;
+    }
     gain(t, k, Number(m[2]));
     return;
   }
@@ -269,6 +298,8 @@ function read(r: Reader, ts: Tally[], i: number): void {
         ts[q[0]].unR += 1;
         ts[q[0]].unC = Math.max(0, ts[q[0]].unC - 1);
         t.unC += 1;
+        unsure(t, 1, RESOURCES);
+        unsure(ts[q[0]], 1, COMMODITIES);
       }
       return;
     }
@@ -298,6 +329,7 @@ function read(r: Reader, ts: Tally[], i: number): void {
     const c = countsAt(msg, at);
     if (!c) return;
     for (const k of CARDS) {
+      t.sure[k] = Math.max(t.sure[k], c.counts[k] ?? 0);
       const lack = (c.counts[k] ?? 0) - t.known[k];
       if (lack <= 0) continue;
       const fam = isCom(k) ? 'unC' : 'unR';
@@ -390,7 +422,7 @@ const kept = new WeakMap<LogEntry, Map<PlayerId, Tally[]>>();
 /** Every few entries the tallies are kept, so a game read from scratch has places to resume from. */
 const KEEP_EVERY = 32;
 
-function tallies(s: GameState, me: PlayerId): Tally[] {
+function tallies(s: Followed, me: PlayerId): Tally[] {
   const log = s.log;
   let start = 0;
   let ts: Tally[] | null = null;
@@ -516,4 +548,89 @@ export function handEstimates(s: GameState, me: PlayerId): Hand[] {
     }
   }
   return est;
+}
+
+// ---------------------------------------------------------------------------
+// What a seat has seen of the other hands, for people (the trade screens)
+// ---------------------------------------------------------------------------
+
+/** How many cards of one kind a hand holds, as far as a seat can tell: at least `min`, at most `max`. */
+export interface SeenRange {
+  min: number;
+  max: number;
+}
+
+export interface SeenHand {
+  /** Per kind (the resources; the commodities too in Cities & Knights). */
+  cards: Partial<Record<Card, SeenRange>>;
+  /** The cards in the hand beyond every kind's `min`: of no kind the seat can name. */
+  unknown: number;
+}
+
+/** What everyone at the table can count: the hand sizes and the cards out of the bank. */
+export interface PublicCounts {
+  /** Every hand's size, resource cards and commodity cards apart (public). */
+  sizes: Array<{ resources: number; commodities: number }>;
+  /**
+   * Per kind: the cards in all the other players' hands together (the supply,
+   * less the bank, less the seat's own hand), or null when that can't be told.
+   */
+  held: Partial<Record<Card, number>> | null;
+}
+
+/**
+ * What `me` has seen of every other hand, as ranges per kind: the cards the
+ * tracker saw go into the hand, less every card that may have left it since,
+ * are there for sure; the hand sizes and the cards out of the bank
+ * (`counts.held`) bound the rest. Only public information goes in: the
+ * log as the seat sees it and the public counts. Null for the seat itself.
+ */
+export function seenHands(s: Followed, me: PlayerId, counts: PublicCounts): Array<SeenHand | null> {
+  const ts = tallies(s, me);
+  const others = s.players.map((pl) => pl.id).filter((q) => q !== me);
+  const out: Array<SeenHand | null> = s.players.map((pl) => (pl.id === me ? null : { cards: {}, unknown: 0 }));
+  for (const family of s.ck ? [RESOURCES, COMMODITIES] : [RESOURCES]) {
+    const size = (q: PlayerId) => {
+      const z = counts.sizes[q];
+      return z ? (family === COMMODITIES ? z.commodities : z.resources) : 0;
+    };
+    // the cards followed into each hand, whole cards only, never more than the hand holds
+    const seen = new Map<PlayerId, Hand>();
+    for (const q of others) {
+      const h = emptyHand();
+      for (const k of family) h[k] = ts[q].sure[k];
+      const sum = family.reduce((n, k) => n + h[k], 0);
+      const n = size(q);
+      if (sum > n) for (const k of family) h[k] = Math.floor((h[k] * n) / sum);
+      seen.set(q, h);
+    }
+    for (const q of others) {
+      const n = size(q);
+      const lo = emptyHand();
+      const hi = emptyHand();
+      for (const k of family) {
+        lo[k] = seen.get(q)![k];
+        hi[k] = n;
+        const held = counts.held?.[k];
+        if (held === undefined) continue;
+        // the cards of this kind the others hold: what the rest of them can't hold is here, and what they hold isn't
+        const rest = others.filter((o) => o !== q);
+        lo[k] = Math.max(lo[k], held - rest.reduce((m, o) => m + size(o), 0));
+        hi[k] = Math.min(hi[k], held - rest.reduce((m, o) => m + seen.get(o)![k], 0));
+      }
+      let pinned = family.reduce((m, k) => m + lo[k], 0);
+      if (pinned > n) {
+        // the counts don't add up (they always should): only what was seen
+        for (const k of family) lo[k] = seen.get(q)![k];
+        pinned = family.reduce((m, k) => m + lo[k], 0);
+      }
+      for (const k of family) {
+        // the hand's other sure cards leave less room
+        const max = Math.max(lo[k], Math.min(hi[k], n - (pinned - lo[k])));
+        out[q]!.cards[k] = { min: lo[k], max };
+      }
+      out[q]!.unknown += n - pinned;
+    }
+  }
+  return out;
 }

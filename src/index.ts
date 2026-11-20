@@ -22,4 +22,5 @@ export { baseRules, seafarersRules, DEFAULT_SETUP, type ScenarioDef, type Scenar
 export { BUILT_IN_SCENARIOS } from './scenarios/all.js';
 export { randomAction, simulate } from './bots/randomBot.js';
 export * from './ck/index.js';
+export { seenHands, type PublicCounts, type SeenHand, type SeenRange } from './bots/tracker.js';
 export { BOT_LEVELS, botProfile, heuristicAction, simulateHeuristic, spotValue, production, potentialField, type BotLevel } from './bots/heuristicBot.js';

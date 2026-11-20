@@ -2315,6 +2315,159 @@ button.peek-btn:active:not(:disabled) {
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   z-index: 30;
 }
+/* A trade offer to you, hidden: a chip at the foot of the map that opens it again (RespondSheet in ui/sheets.tsx) */
+button.offer-chip {
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 10px 8px 14px;
+  border: 2px solid var(--accent);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  font-weight: 400;
+}
+button.offer-chip:active:not(:disabled) {
+  border-bottom-width: 2px;
+}
+.board-area:not(.docked) > button.offer-chip {
+  right: auto;
+  max-width: calc(100% - 16px);
+}
+.board-area:not(.docked):has(> .chat-layer) > button.offer-chip {
+  max-width: calc(100% - 90px);
+}
+.offer-chip .dot {
+  flex: none;
+}
+.offer-chip .peek-text {
+  flex: 0 1 auto;
+}
+.offer-chip-cards {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.offer-chip .offer-chip-open {
+  flex: none;
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  background: var(--sun);
+  border: 1px solid var(--sun-edge);
+  color: var(--sun-ink);
+  font-weight: 700;
+  font-size: 0.94rem;
+}
+@media (hover: hover) {
+  button.offer-chip:hover {
+    background: var(--accent-soft);
+  }
+}
+/* the note when a hidden offer goes away */
+.mode-hint.offer-gone {
+  font-weight: 700;
+  border: 2px solid var(--line);
+}
+.board-area:not(.docked) > .mode-hint.offer-gone {
+  right: auto;
+  max-width: calc(100% - 16px);
+}
+/* Another player's hand as you know it: counts, VP, and what was seen of it (ui/SeenHand.tsx) */
+.seen {
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.seen-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 0.92rem;
+}
+.seen-head b {
+  font-family: var(--display);
+  font-weight: 800;
+}
+.seen-count {
+  color: var(--ink-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.seen-vp {
+  margin-left: auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.seen-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+.seen-row.cards8 {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+@media (max-width: 520px) {
+  .seen-row.cards8 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.seen-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chip);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 0.98rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+button.seen-chip {
+  min-height: 34px;
+  padding: 2px 6px;
+  border-bottom-width: 2px;
+}
+button.seen-chip:active:not(:disabled) {
+  border-bottom-width: 1px;
+}
+@media (hover: hover) {
+  button.seen-chip:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+}
+.seen-chip .glyph {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
+}
+.seen-chip.some {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.seen-chip.none,
+.seen-chip.unknown {
+  color: var(--ink-2);
+}
+.seen-chip.none {
+  opacity: 0.55;
+}
+.seen-note {
+  margin: 5px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.3;
+  color: var(--ink-2);
+}
 /* the trade row (ui/TradeRow.tsx): one box per resource, ▲ get / ▼ give */
 .trow {
   display: grid;

@@ -22,6 +22,7 @@ export function tradeGame({
   trades = [],
   ada = { brick: 1, lumber: 2, wool: 3, grain: 2, ore: 1 },
   adaSettles = false,
+  log = [],
 }: {
   hand?: PartialCounts;
   actor?: number;
@@ -30,6 +31,8 @@ export function tradeGame({
   ada?: PartialCounts;
   /** Ada has a settlement with a road to a free spot: she saves for a settlement. */
   adaSettles?: boolean;
+  /** Lines for the game log (public), oldest first: what the players saw happen. */
+  log?: string[];
 } = {}) {
   const s = createGame({ scenario: 'base', players: ['Sam', 'Ada', 'Björn'], seed: 'trade-ui', options: { firstPlayer: 0 } });
   s.turn.number = 1;
@@ -43,6 +46,7 @@ export function tradeGame({
   give(s, 1, ada);
   give(s, 2, { brick: 2, lumber: 1, wool: 2, grain: 1, ore: 2 });
   s.turn.trades = trades;
+  for (const msg of log) s.log.push({ turn: 1, msg });
   s.turn.nextTradeId = trades.length + 1;
   const t = topo(s);
   const generic = s.board.harbors.find((h) => h.type === 'generic')!;

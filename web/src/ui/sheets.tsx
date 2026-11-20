@@ -27,7 +27,8 @@ import { Counts } from './icons';
 import { DevCardView, ResourceCard } from './cards';
 import { TradeRow, TradeSummary, type RowVerbs } from './TradeRow';
 import { LogLine, logItems } from './GameLog';
-import { bankCheck, countsPhrase, pickRules, rowCount, rowKind, rowOf, rowSides, signed, type BoxRule, type SignedCounts } from '../game/trade';
+import { bankCheck, countsPhrase, pickRules, rowCount, rowKind, rowOf, rowSides, signed, stepRow, stepValue, type BoxRule, type SignedCounts } from '../game/trade';
+import { SeenHand } from './SeenHand';
 
 export interface SheetProps {
   view: GameView;
@@ -117,17 +118,35 @@ export function BuildSheet({
  * (cards being discarded, or taken) each tile counts what will be left,
  * marked with the change, and underneath says what was held before.
  */
-function YourCards({ hand, change, kinds = RESOURCE_LIST }: { hand: CardCounts; change?: SignedCounts; kinds?: Card[] }) {
+function YourCards({
+  hand,
+  change,
+  kinds = RESOURCE_LIST,
+  label = 'Your cards',
+  verbs = { get: 'take', give: 'discard' },
+}: {
+  hand: CardCounts;
+  change?: SignedCounts;
+  kinds?: Card[];
+  label?: string;
+  /** What the change does to a card, for screen readers: taking and discarding, or getting and giving in a trade. */
+  verbs?: RowVerbs;
+}) {
   return (
-    <div class={change ? 'your-cards picking' : 'your-cards'} role="group" aria-label="Your cards">
-      <span class="your-cards-label">Your cards</span>
+    <div class={change ? 'your-cards picking' : 'your-cards'} role="group" aria-label={label}>
+      <span class="your-cards-label">{label}</span>
       <div class={kinds.length > 5 ? 'your-cards-row cards8' : 'your-cards-row'}>
         {kinds.map((r) => {
           const held = hand[r] ?? 0;
           const d = change?.[r] ?? 0;
           const after = held + d;
           const name = CARD_INFO[r].label;
-          const said = d < 0 ? `${name}: you hold ${held}, discard ${-d}, keep ${after}` : d > 0 ? `${name}: you hold ${held}, take ${d}, then ${after}` : `${name}: ${held}`;
+          const said =
+            d < 0
+              ? `${name}: you hold ${held}, ${verbs.give} ${-d}, ${verbs.give === 'discard' ? 'keep' : 'then'} ${after}`
+              : d > 0
+                ? `${name}: you hold ${held}, ${verbs.get} ${d}, then ${after}`
+                : `${name}: ${held}`;
           return (
             <span key={r} class={d < 0 ? 'yc out' : d > 0 ? 'yc in' : 'yc'} data-res={r} role="img" aria-label={said} title={said}>
               <ResourceCard r={r} n={after} look="tile" empty={after === 0} />
@@ -450,18 +469,144 @@ function counterRules(t: TradeOffer, hand: CardCounts): Record<Card, BoxRule> {
   return out;
 }
 
-/** A player answers the active player's offer: accept, decline, or make a counter-offer. */
-export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProps, 'close'>) {
-  const offers = view.turn.trades.filter((t) => t.to.includes(seat) && t.from === view.turn.actor && !t.accepted.includes(seat) && !t.rejected.includes(seat));
-  const [counter, setCounter] = useState<TradeOffer | null>(null);
+/** The offers the active player has made to this seat that it has not answered yet. */
+export function offersTo(view: GameView, seat: PlayerId): TradeOffer[] {
+  if (view.phase.kind !== 'main' || view.turn.actor === seat) return [];
+  return view.turn.trades.filter((t) => t.from === view.turn.actor && t.to.includes(seat) && !t.accepted.includes(seat) && !t.rejected.includes(seat));
+}
+
+const TRADE_VERBS: RowVerbs = { get: 'get', give: 'give' };
+
+function HideIcon() {
+  return (
+    <svg class="peek-eye" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 13 L12 20 L19 13" />
+      <path d="M5 4.5 H19" />
+    </svg>
+  );
+}
+
+/**
+ * A player answers the active player's offer: accept, decline, or make a
+ * counter-offer. Both the offer and the counter-offer can be hidden
+ * (`hidden`, kept by the game screen): they fold into a chip over the board,
+ * with the counter-offer as far as it was made, and nothing is answered
+ * until the player answers. Under another sheet (`covered`) it waits, hidden.
+ */
+export function RespondSheet({
+  view,
+  legal,
+  seat,
+  colors,
+  send,
+  covered,
+  hidden,
+  onHide,
+}: Omit<SheetProps, 'close'> & { covered?: boolean; hidden: boolean; onHide(hidden: boolean): void }) {
+  const offers = offersTo(view, seat);
+  const [counterId, setCounterId] = useState<number | null>(null);
   const [row, setRow] = useState<SignedCounts>({});
   const hand = handOfView(view, seat);
   const kinds = cardKindsOf(view);
-  if (offers.length === 0) return null;
+  // the board's area, for the chip (or the foot of the screen without one)
+  const [area, setArea] = useState<Element | null>(null);
+  useLayoutEffect(() => setArea(document.querySelector('.game .board-area')), []);
+  // keyboard users land on the button that undoes the fold
+  const toggled = useRef(false);
+  const chipBtn = useRef<HTMLButtonElement>(null);
+  const hideBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!toggled.current) return;
+    toggled.current = false;
+    (hidden ? chipBtn : hideBtn).current?.focus();
+  }, [hidden]);
+  const fold = (on: boolean) => {
+    toggled.current = true;
+    onHide(on);
+  };
+  // Esc hides it
+  const open = offers.length > 0 && !hidden && !covered;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      fold(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+  if (offers.length === 0 || covered) return null;
+  const counter = counterId === null ? null : (offers.find((t) => t.id === counterId) ?? null);
+  const from = offers[0].from;
+  const who = nameOf(view, from);
+  const startCounter = (t: TradeOffer, base: SignedCounts) => {
+    setRow(base);
+    setCounterId(t.id);
+  };
+  /** The row an answer to `t` starts from: the offer from this side, or the side an open offer names. */
+  const baseRow = (t: TradeOffer) => (t.open === 'give' ? rowOf(t.get, {}) : t.open === 'get' ? rowOf({}, t.give) : rowOf(t.get, t.give));
+
+  if (hidden) {
+    const { give, get } = rowSides(row);
+    const chip = (
+      <button
+        type="button"
+        class={area ? 'confirm-bar peek-bar offer-chip' : 'confirm-bar peek-bar offer-chip floating'}
+        ref={chipBtn}
+        aria-label={counter ? `Your counter-offer to ${who}, hidden. Open it again` : `${who}'s trade offer, hidden. Open it again`}
+        onClick={() => fold(false)}
+      >
+        <Dot color={colors[from]} />
+        <span class="peek-text">
+          <b>{counter ? `Your counter-offer to ${who}` : offers.length > 1 ? `${who}'s ${offers.length} offers` : `${who}'s offer`}</b>
+          <small class="offer-chip-cards">
+            {counter ? (
+              <>
+                you give <Counts c={give} /> · you get <Counts c={get} />
+              </>
+            ) : offers[0].open === 'give' ? (
+              <>
+                wants <Counts c={offers[0].get} />
+              </>
+            ) : offers[0].open === 'get' ? (
+              <>
+                gives <Counts c={offers[0].give} />
+              </>
+            ) : (
+              <>
+                gives <Counts c={offers[0].give} /> · wants <Counts c={offers[0].get} />
+              </>
+            )}
+          </small>
+        </span>
+        <span class="offer-chip-open" aria-hidden="true">
+          Open
+        </span>
+      </button>
+    );
+    return area ? createPortal(chip, area) : chip;
+  }
+
+  const hideTool = (
+    <button
+      type="button"
+      class="peek-btn"
+      ref={hideBtn}
+      aria-label={counter ? 'Hide your counter-offer' : 'Hide the offer'}
+      title="Hide it to look around: it stays open until you answer"
+      onClick={() => fold(true)}
+    >
+      <HideIcon />
+      <span>Hide</span>
+    </button>
+  );
+
   if (counter) {
     const { give, get } = rowSides(row);
     const gives = sumCounts(give) > 0;
     const gets = sumCounts(get) > 0;
+    const rules = counterRules(counter, hand);
     const why = !gets
       ? counter.open === 'give'
         ? 'Pick what you want for it (▲)'
@@ -474,19 +619,31 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
           ? "You don't have those cards"
           : null;
     return (
-      <Sheet title={counter.open ? `Your offer to ${nameOf(view, counter.from)}` : `Counter-offer to ${nameOf(view, counter.from)}`} onClose={() => setCounter(null)} wide>
-        <YourCards hand={hand} kinds={kinds} />
+      <Sheet
+        title={counter.open ? `Your offer to ${who}` : `Counter-offer to ${who}`}
+        onClose={() => setCounterId(null)}
+        tools={hideTool}
+        wide
+      >
+        <YourCards hand={hand} kinds={kinds} change={row} label="Your cards after this trade" verbs={TRADE_VERBS} />
         <p class="tctx">
           <Dot color={colors[counter.from]} /> {offerText(counter, view, seat)}
         </p>
-        <TradeRow row={row} rules={counterRules(counter, hand)} kinds={kinds} onChange={setRow} />
+        <SeenHand
+          view={view}
+          seat={seat}
+          p={counter.from}
+          colors={colors}
+          onAsk={(r) => (stepValue(row[r] ?? 0, 1, rules[r]) === null ? null : () => setRow(stepRow(row, r, 1, rules[r])))}
+        />
+        <TradeRow row={row} rules={rules} kinds={kinds} onChange={setRow} />
         <TradeSummary row={row} tip="▲ a card you want · ▼ a card you give" />
         <SendButton
           disabled={why !== null}
           why={why}
           onClick={() => {
             send({ type: 'proposeTrade', player: seat, give, get, to: [counter.from], replyTo: counter.id });
-            setCounter(null);
+            setCounterId(null);
           }}
         >
           Send offer
@@ -494,9 +651,19 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
       </Sheet>
     );
   }
+  // one offer: your cards as they would be after it (an open offer's named side only)
+  const only = offers.length === 1 ? offers[0] : null;
+  const after = only && !only.open ? baseRow(only) : undefined;
+  const askable = offers.find((t) => t.open !== 'get');
   return (
-    <Sheet title="Trade offer">
-      <YourCards hand={hand} kinds={kinds} />
+    <Sheet title="Trade offer" tools={hideTool}>
+      <YourCards
+        hand={hand}
+        kinds={kinds}
+        change={after}
+        label={after ? 'Your cards if you accept' : 'Your cards'}
+        verbs={TRADE_VERBS}
+      />
       {offers.map((t) => (
         <OfferRow key={t.id} t={t} view={view} colors={colors} seat={seat}>
           {t.open ? (
@@ -504,10 +671,7 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
               type="button"
               class="primary"
               disabled={t.open === 'give' && !CARD_LIST.every((r) => (t.get[r] ?? 0) <= (hand[r] ?? 0))}
-              onClick={() => {
-                setRow(t.open === 'give' ? rowOf(t.get, {}) : rowOf({}, t.give));
-                setCounter(t);
-              }}
+              onClick={() => startCounter(t, baseRow(t))}
             >
               Make an offer…
             </button>
@@ -521,14 +685,7 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
               >
                 Accept
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  // the same trade from this side: give what they ask for, get what they give
-                  setRow(rowOf(t.get, t.give));
-                  setCounter(t);
-                }}
-              >
+              <button type="button" onClick={() => startCounter(t, baseRow(t))}>
                 Counter…
               </button>
             </>
@@ -538,6 +695,18 @@ export function RespondSheet({ view, legal, seat, colors, send }: Omit<SheetProp
           </button>
         </OfferRow>
       ))}
+      <SeenHand
+        view={view}
+        seat={seat}
+        p={from}
+        colors={colors}
+        onAsk={(r) => {
+          if (!askable || (askable.open === 'give' && !CARD_LIST.every((k) => (askable.get[k] ?? 0) <= (hand[k] ?? 0)))) return null;
+          const rules = counterRules(askable, hand);
+          const base = baseRow(askable);
+          return stepValue(base[r] ?? 0, 1, rules[r]) === null ? null : () => startCounter(askable, stepRow(base, r, 1, rules[r]));
+        }}
+      />
     </Sheet>
   );
 }
